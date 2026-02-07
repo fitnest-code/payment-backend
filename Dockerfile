@@ -7,13 +7,18 @@ WORKDIR /app
 
 # Copy Gradle project files
 COPY build.gradle settings.gradle ./
-COPY gradle ./gradle
+
+# Regenerate the wrapper jar (gitignored) so ./gradlew can run
+RUN gradle wrapper
+
+# Download dependencies (this layer will be cached)
+RUN ./gradlew build -x test --no-daemon || true
 
 # Copy source code
 COPY src ./src
 
 # Build the JAR
-RUN gradle wrapper && ./gradlew clean build -x test --no-daemon
+RUN ./gradlew bootJar -x test --no-daemon
 
 ## -----------------------------
 ## Stage 2: Package minimal Alpine image
@@ -27,7 +32,7 @@ WORKDIR /app
 # Copy the JAR from builder
 COPY --from=builder /app/build/libs/*.jar app.jar
 
-# Add curl for health checks (optional but helpful)
+# Add curl for health checks
 RUN apk add --no-cache curl
 
 # Create non-root user
@@ -43,7 +48,6 @@ ENTRYPOINT [ \
   "-Djava.security.egd=file:/dev/urandom", \
   "-Djava.net.preferIPv4Stack=true", \
   "-Djava.net.preferIPv4Addresses=true", \
-  "-Dspring.profiles.active=dev", \
   "-jar", \
   "app.jar" \
 ]
