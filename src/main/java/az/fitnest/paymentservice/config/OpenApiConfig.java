@@ -4,31 +4,62 @@ import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.media.StringSchema;
+import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
+import org.springdoc.core.customizers.OpenApiCustomizer;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
 
 @Configuration
 public class OpenApiConfig {
 
+    @Value("${springdoc.server-url:}")
+    private String serverUrl;
+
     @Bean
     public OpenAPI customOpenAPI() {
-        return new OpenAPI()
-                .addSecurityItem(new SecurityRequirement().addList("Bearer Authentication"))
-                .components(new Components().addSecuritySchemes("Bearer Authentication", createAPIKeyScheme()))
+        OpenAPI openAPI = new OpenAPI()
                 .info(new Info()
                         .title("Payment Service API")
-                        .version("1.0")
-                        .description("API documentation for Payment Service")
+                        .version("1.0.0")
+                        .description("Fitnest Payment Service endpoints")
                         .contact(new Contact()
-                                .name("API Support")
-                                .email("support@fitnest.az")));
+                                .name("FitNest Team")
+                                .email("support@fitnest.az")))
+                .components(new Components()
+                        .addSecuritySchemes("bearerAuth", new SecurityScheme()
+                                .type(SecurityScheme.Type.HTTP)
+                                .scheme("bearer")
+                                .bearerFormat("JWT")
+                                .description("Enter your JWT token")))
+                .addSecurityItem(new SecurityRequirement().addList("bearerAuth"));
+
+        // Add server URL for Istio routing if configured
+        if (serverUrl != null && !serverUrl.isEmpty()) {
+            openAPI.servers(List.of(new Server().url(serverUrl).description("API Server")));
+        }
+
+        return openAPI;
     }
 
-    private SecurityScheme createAPIKeyScheme() {
-        return new SecurityScheme().type(SecurityScheme.Type.HTTP)
-                .bearerFormat("JWT")
-                .scheme("bearer");
+    @Bean
+    public OpenApiCustomizer internalTokenForInternalPaths() {
+        return openApi -> openApi.getPaths().forEach((path, item) -> {
+            if (path.startsWith("/api/v1/internal/")) {
+                item.readOperations().forEach(op -> op.addParametersItem(
+                        new Parameter()
+                                .in("header")
+                                .name("X-Internal-Token")
+                                .required(true)
+                                .schema(new StringSchema()._default("fitnest-internal-token-2024-secure-v1"))
+                ));
+            }
+        });
     }
 }
