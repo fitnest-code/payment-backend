@@ -1,0 +1,114 @@
+package az.fitnest.paymentservice.security;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.stereotype.Component;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class FitnestSecurityFilter extends OncePerRequestFilter {
+
+    private static final String INTERNAL_TOKEN_HEADER = "X-Internal-Token";
+    private static final String INTERNAL_TOKEN_VALUE = "fitnest-internal-token-2024-secure-v1";
+    private static final String USER_ID_HEADER = "X-User-Id";
+    private static final String USER_EMAIL_HEADER = "X-User-Email";
+    private static final String USER_ROLES_HEADER = "X-User-Roles";
+    
+    private final JwtService jwtService;
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws ServletException, IOException {
+        
+        SecurityContextHolder.clearContext();
+
+        String internalToken = request.getHeader(INTERNAL_TOKEN_HEADER);
+        String authHeader = request.getHeader("Authorization");
+
+        if (internalToken != null && INTERNAL_TOKEN_VALUE.equals(internalToken)) {
+            authenticateViaInternalHeaders(request);
+        } else if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            authenticateViaJwt(authHeader.substring(7));
+        }
+
+        filterChain.doFilter(request, response);
+    }
+
+    private void authenticateViaInternalHeaders(HttpServletRequest request) {
+        String userIdStr = request.getHeader(USER_ID_HEADER);
+        
+        if (userIdStr != null && !userIdStr.isBlank()) {
+            authenticateGatewayUser(request);
+        } else {
+            authenticateInternalService();
+        }
+    }
+
+    private void authenticateViaJwt(String token) {
+        try {
+            Long userId = jwtService.parseUserId(token);
+            List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+            
+            UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                    userId, null, authorities);
+            
+            SecurityContextHolder.getContext().setAuthentication(auth);
+            log.debug("Authenticated user {} via JWT", userId);
+        } catch (Exception e) {
+            log.warn("JWT validation failed: {}", e.getMessage());
+        }
+    }
+
+    private void authenticateInternalService() {
+        List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_INTERNAL"));
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                "INTERNAL_SERVICE", null, authorities);
+        SecurityContextHolder.getContext().setAuthentication(auth);
+    }
+
+    private void authenticateGatewayUser(HttpServletRequest request) {
+        String userIdStr = request.getHeader(USER_ID_HEADER);
+        String email = request.getHeader(USER_EMAIL_HEADER);
+        String rolesStr = request.getHeader(USER_ROLES_HEADER);
+
+        try {
+            Long userId = Long.parseLong(userIdStr);
+            List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+            authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
+            authorities.add(new SimpleGrantedAuthority("ROLE_INTERNAL"));
+
+            if (rolesStr != null && !rolesStr.isBlank()) {
+                authorities.addAll(Arrays.stream(rolesStr.split(","))
+                        .map(role -> role.trim().toUpperCase())
+                        .map(role -> role.startsWith("ROLE_") ? role : "ROLE_" + role)
+                        .map(SimpleGrantedAuthority::new)
+                        .collect(Collectors.toList()));
+            }
+
+            UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                    userId, null, authorities);
+            
+            auth.setDetails(email);
+            SecurityContextHolder.getContext().setAuthentication(auth);
+            log.debug("Authenticated internal request for user {} with ROLE_INTERNAL", userId);
+        } catch (NumberFormatException e) {
+        }
+    }
+}
