@@ -1,4 +1,4 @@
-package az.fitnest.paymentservice.dto.common;
+package az.fitnest.payment.dto.common;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

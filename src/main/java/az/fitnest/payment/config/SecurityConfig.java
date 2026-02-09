@@ -1,6 +1,6 @@
-package az.fitnest.paymentservice.config;
+package az.fitnest.payment.config;
 
-import az.fitnest.paymentservice.security.FitnestSecurityFilter;
+import az.fitnest.payment.security.FitnestSecurityFilter;
 import lombok.RequiredArgsConstructor;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;

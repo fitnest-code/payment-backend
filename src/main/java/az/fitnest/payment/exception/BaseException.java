@@ -1,4 +1,4 @@
-package az.fitnest.paymentservice.exception;
+package az.fitnest.payment.exception;
 
 import org.springframework.http.HttpStatus;
 

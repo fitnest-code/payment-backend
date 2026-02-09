@@ -1,4 +1,4 @@
-package az.fitnest.paymentservice.criteria;
+package az.fitnest.payment.criteria;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AccessLevel;

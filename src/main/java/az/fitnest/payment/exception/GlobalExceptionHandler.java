@@ -1,4 +1,4 @@
-package az.fitnest.paymentservice.exception;
+package az.fitnest.payment.exception;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 
-import az.fitnest.paymentservice.dto.common.ErrorResponse;
+import az.fitnest.payment.dto.common.ErrorResponse;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {

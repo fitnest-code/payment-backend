@@ -1,4 +1,4 @@
-package az.fitnest.paymentservice.security;
+package az.fitnest.payment.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
