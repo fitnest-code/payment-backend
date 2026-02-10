@@ -10,6 +10,8 @@ server:
 spring:
   application:
     name: payment-service
+  main:
+    lazy-initialization: false
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgresql-payment:5432/fitnest_payment}
     username: ${SPRING_DATASOURCE_USERNAME:fitnest_payment}
@@ -100,11 +102,18 @@ management:
 springdoc:
   api-docs:
     path: /v3/api-docs
+    cache:
+      enabled: true
   paths-to-exclude: /api/v1/internal/**
   swagger-ui:
     enabled: true
     path: /swagger-ui.html
+    doc-expansion: none
+    display-request-duration: true
+    operations-sorter: alpha
+    tags-sorter: alpha
   show-actuator: false
   default-consumes-media-type: application/json
   default-produces-media-type: application/json
+  writer-with-default-pretty-printer: false
 
