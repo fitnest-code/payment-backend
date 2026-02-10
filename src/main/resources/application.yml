@@ -4,14 +4,14 @@ server:
     enabled: true
   compression:
     enabled: true
-    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
-    min-response-size: 1024
+    mime-types: application/json,text/plain,text/css,application/javascript,application/openapi+json,application/vnd.api+json
+    min-response-size: 2048
 
 spring:
   application:
     name: payment-service
   main:
-    lazy-initialization: false
+    lazy-initialization: ${SPRING_MAIN_LAZY_INITIALIZATION:true}
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgresql-payment:5432/fitnest_payment}
     username: ${SPRING_DATASOURCE_USERNAME:fitnest_payment}
@@ -21,9 +21,10 @@ spring:
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
-      minimum-idle: 5
-      maximum-pool-size: 20
+      minimum-idle: ${HIKARI_MIN_IDLE:1}
+      maximum-pool-size: ${HIKARI_MAX_POOL:10}
       auto-commit: true
+      connection-test-query: SELECT 1
   jpa:
     hibernate:
       ddl-auto: update
@@ -58,9 +59,18 @@ spring:
 
   cloud:
     openfeign:
+      httpclient:
+        hc5:
+          enabled: true
+          pool:
+            max-connections: ${FEIGN_MAX_CONNECTIONS:50}
+            max-connections-per-route: ${FEIGN_CONNECTIONS_PER_ROUTE:20}
+            conn-pool-policy: LIFO
       client:
         config:
           default:
+            connect-timeout: ${FEIGN_CONNECT_TIMEOUT:5000}
+            read-timeout: ${FEIGN_READ_TIMEOUT:10000}
             connectTimeout: 5000
             readTimeout: 5000
             loggerLevel: BASIC
@@ -109,7 +119,9 @@ springdoc:
     enabled: true
     path: /swagger-ui.html
     doc-expansion: none
+    filter: true
     display-request-duration: true
+    try-it-out-enabled: true
     operations-sorter: alpha
     tags-sorter: alpha
   show-actuator: false
