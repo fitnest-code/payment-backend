@@ -86,7 +86,7 @@ jwt:
 # Service URLs
 iam:
   service:
-    url: ${IAM_SERVICE_URL:http://iam-service:8080}
+    url: ${IDENTITY_SERVICE_URL:http://identity-service:8080}
 
 user:
   service:
