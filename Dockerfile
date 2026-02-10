@@ -1,7 +1,6 @@
-# -----------------------------
 # Stage 1: Build JAR
 # -----------------------------
-FROM gradle:8.5.0-jdk17-alpine AS builder
+FROM gradle:8.5.0-jdk17 AS builder
 WORKDIR /app
 
 # Cache dependencies
