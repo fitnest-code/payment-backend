@@ -59,13 +59,23 @@ public class FitnestSecurityFilter extends OncePerRequestFilter {
     private void authenticateViaJwt(String token) {
         try {
             Long userId = jwtService.parseUserId(token);
-            List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+            List<String> roles = jwtService.parseRoles(token);
+            
+            List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+            if (roles.isEmpty()) {
+                authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
+            } else {
+                authorities = roles.stream()
+                        .map(role -> role.startsWith("ROLE_") ? role : "ROLE_" + role)
+                        .map(SimpleGrantedAuthority::new)
+                        .collect(Collectors.toList());
+            }
             
             UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                     userId, null, authorities);
             
             SecurityContextHolder.getContext().setAuthentication(auth);
-            log.debug("Authenticated user {} via JWT", userId);
+            log.debug("Authenticated user {} via JWT with authorities {}", userId, authorities);
         } catch (Exception e) {
             log.warn("JWT validation failed: {}", e.getMessage());
         }

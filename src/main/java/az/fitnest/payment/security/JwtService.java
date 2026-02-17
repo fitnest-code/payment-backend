@@ -44,6 +44,17 @@ public class JwtService {
         }
     }
 
+    public java.util.List<String> parseRoles(String token) {
+        Claims claims = parseClaims(token);
+        Object rolesObj = claims.get("roles");
+        if (rolesObj instanceof java.util.List<?>) {
+            return ((java.util.List<?>) rolesObj).stream()
+                    .map(Object::toString)
+                    .collect(java.util.stream.Collectors.toList());
+        }
+        return java.util.Collections.emptyList();
+    }
+
     private Claims parseClaims(String token) {
         Jws<Claims> jws = Jwts.parserBuilder()
                 .setSigningKey(key)
