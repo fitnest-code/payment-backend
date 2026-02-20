@@ -86,15 +86,15 @@ jwt:
 # Service URLs
 iam:
   service:
-    url: ${IDENTITY_SERVICE_URL:http://identity-service:9090}
+    url: ${IDENTITY_SERVICE_URL:http://identity-service:8080}
 
 user:
   service:
-    url: ${USER_SERVICE_URL:http://user-service:9090}
+    url: ${USER_SERVICE_URL:http://user-service:8080}
 
 media:
   service:
-    url: ${STORAGE_SERVICE_URL:http://storage-service:9090}
+    url: ${STORAGE_SERVICE_URL:http://storage-service:8080}
 
 app:
   security:
