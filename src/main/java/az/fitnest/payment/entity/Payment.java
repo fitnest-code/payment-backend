@@ -30,4 +30,31 @@ public class Payment {
     
     @Column(name = "status", nullable = false)
     private String status;
+
+    @Column(name = "order_id", unique = true)
+    private String orderId;
+
+    @Column(name = "transaction_id")
+    private String transactionId;
+
+    @Column(name = "amount")
+    private Double amount;
+
+    @Column(name = "currency")
+    private String currency;
+
+    @Column(name = "rrn")
+    private String rrn;
+
+    @Column(name = "card_mask")
+    private String cardMask;
+
+    @Column(name = "card_name")
+    private String cardName;
+
+    @Column(name = "message")
+    private String message;
+
+    @Column(name = "bank_transaction")
+    private String bankTransaction;
 }
