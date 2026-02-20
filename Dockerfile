@@ -8,7 +8,6 @@ WORKDIR /app
 COPY gradlew .
 COPY gradle gradle
 COPY build.gradle settings.gradle ./
-COPY src/main/proto src/main/proto
 RUN ./gradlew dependencies --no-daemon
 
 # Copy source and build
