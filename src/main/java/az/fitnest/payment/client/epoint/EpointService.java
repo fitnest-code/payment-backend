@@ -45,12 +45,14 @@ public class EpointService {
     }
 
     public EpointResponse reverse(String transactionId, Double amount, String currency) {
-        EpointResponse requestBody = new EpointResponse(); // Using EpointResponse as a generic map holder or creating a dedicated one
-        // For simplicity, let's use a dedicated DTO if reverse has specific fields
-        return httpClient.postSigned("/reverse", EpointStatusRequest.builder()
+        EpointReverseRequest request = EpointReverseRequest.builder()
                 .publicKey(properties.getPublicKey())
+                .language("en") // Defaulting to english, could be parameterized
                 .transaction(transactionId)
-                .build());
+                .amount(amount)
+                .currency(currency)
+                .build();
+        return httpClient.postSigned("/reverse", request);
     }
 
     public EpointResponse splitRequest(EpointSplitPaymentRequest request) {
