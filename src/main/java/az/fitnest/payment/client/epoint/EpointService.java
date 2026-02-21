@@ -1,6 +1,6 @@
 package az.fitnest.payment.client.epoint;
 
-import az.fitnest.payment.client.epoint.dto.*;
+import az.fitnest.payment.dto.epoint.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

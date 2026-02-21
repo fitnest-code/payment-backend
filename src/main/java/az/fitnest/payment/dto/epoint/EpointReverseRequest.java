@@ -1,4 +1,4 @@
-package az.fitnest.payment.client.epoint.dto;
+package az.fitnest.payment.dto.epoint;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;

@@ -1,4 +1,4 @@
-package az.fitnest.payment.client.epoint.dto;
+package az.fitnest.payment.dto.epoint;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;

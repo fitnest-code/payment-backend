@@ -2,8 +2,8 @@ package az.fitnest.payment.service;
 
 import az.fitnest.payment.client.epoint.EpointService;
 import az.fitnest.payment.client.epoint.EpointSigner;
-import az.fitnest.payment.client.epoint.dto.EpointPaymentRequest;
-import az.fitnest.payment.client.epoint.dto.EpointResponse;
+import az.fitnest.payment.dto.epoint.EpointPaymentRequest;
+import az.fitnest.payment.dto.epoint.EpointResponse;
 import az.fitnest.payment.entity.Payment;
 import az.fitnest.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;

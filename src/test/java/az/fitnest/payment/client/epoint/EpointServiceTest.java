@@ -1,7 +1,7 @@
 package az.fitnest.payment.client.epoint;
 
-import az.fitnest.payment.client.epoint.dto.EpointPaymentRequest;
-import az.fitnest.payment.client.epoint.dto.EpointResponse;
+import az.fitnest.payment.dto.epoint.EpointPaymentRequest;
+import az.fitnest.payment.dto.epoint.EpointResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;

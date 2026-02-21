@@ -1,6 +1,6 @@
 package az.fitnest.payment.client.epoint;
 
-import az.fitnest.payment.client.epoint.dto.EpointResponse;
+import az.fitnest.payment.dto.epoint.EpointResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;

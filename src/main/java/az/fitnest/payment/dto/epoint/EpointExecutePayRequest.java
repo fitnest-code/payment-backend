@@ -1,4 +1,4 @@
-package az.fitnest.payment.client.epoint.dto;
+package az.fitnest.payment.dto.epoint;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
@@ -10,6 +10,7 @@ import lombok.experimental.SuperBuilder;
 @SuperBuilder
 @NoArgsConstructor
 @EqualsAndHashCode(callSuper = true)
-public class EpointStatusRequest extends EpointRequestPayload {
-    private String transaction;
+public class EpointExecutePayRequest extends EpointPaymentRequest {
+    @JsonProperty("card_id")
+    private String cardId;
 }
