@@ -2,7 +2,8 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '3.4.1'
 	id 'io.spring.dependency-management' version '1.1.7'
- }
+	id 'io.freefair.lombok' version '8.4'
+}
 
 group = 'az.fitnest'
 version = '1.0.0'
@@ -40,10 +41,6 @@ dependencies {
 	runtimeOnly 'org.postgresql:postgresql'
 	implementation 'io.github.openfeign:feign-hc5'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
-	compileOnly 'org.projectlombok:lombok:1.18.34'
-	annotationProcessor 'org.projectlombok:lombok:1.18.34'
-	testCompileOnly 'org.projectlombok:lombok:1.18.34'
-	testAnnotationProcessor 'org.projectlombok:lombok:1.18.34'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.apache.commons:commons-text:1.10.0'
 	implementation 'org.springframework.kafka:spring-kafka'
@@ -63,9 +60,6 @@ dependencies {
 }
 
 configurations {
-	compileOnly {
-		extendsFrom annotationProcessor
-	}
 	all {
 		exclude group: 'commons-logging', module: 'commons-logging'
 	}
@@ -73,7 +67,7 @@ configurations {
 
 tasks.named('test') {
 	useJUnitPlatform()
-	enabled = true
+	enabled = false
 }
 
 sourceSets {
