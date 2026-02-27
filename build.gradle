@@ -70,13 +70,7 @@ tasks.named('test') {
 	enabled = false
 }
 
-sourceSets {
-    main {
-        java {
-            srcDirs 'src/main/java'
-        }
-    }
-}
+sourceSets.main.java.srcDirs = ['src/main/java', 'build/generated/source/proto/main/java', 'build/generated/source/proto/main/grpc']
 
 tasks.withType(JavaCompile) {
     sourceCompatibility = '17'
