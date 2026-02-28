@@ -1,6 +1,6 @@
 package az.fitnest.payment.config;
 
-import az.fitnest.payment.entity.Payment;
+import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;

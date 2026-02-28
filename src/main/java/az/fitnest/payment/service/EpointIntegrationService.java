@@ -3,7 +3,7 @@ package az.fitnest.payment.service;
 import az.fitnest.payment.client.epoint.EpointService;
 import az.fitnest.payment.client.epoint.EpointSigner;
 import az.fitnest.payment.dto.epoint.*;
-import az.fitnest.payment.entity.Payment;
+import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

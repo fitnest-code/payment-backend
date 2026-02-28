@@ -1,6 +1,6 @@
 package az.fitnest.payment.repository;
 
-import az.fitnest.payment.entity.Payment;
+import az.fitnest.payment.model.entity.Payment;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

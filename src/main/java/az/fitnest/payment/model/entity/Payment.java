@@ -1,4 +1,4 @@
-package az.fitnest.payment.entity;
+package az.fitnest.payment.model.entity;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
