@@ -57,7 +57,7 @@ public class GlobalExceptionHandler {
 		details.put("validationErrors", validationErrors);
 		
 		ErrorResponse errorResponse = ErrorResponse.builder()
-				.message("Validation failed")
+				.message("Doğrulama xətası")
 				.code("VALIDATION_ERROR")
 				.path(request.getDescription(false).replace("uri=", ""))
 				.details(details)
@@ -70,7 +70,7 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException(HttpMessageNotReadableException exception, WebRequest request) {
 
 		ErrorResponse errorResponse = ErrorResponse.builder()
-				.message("Invalid request format")
+				.message("Yanlış sorğu formatı")
 				.code("HTTP_MESSAGE_NOT_READABLE")
 				.path(request.getDescription(false).replace("uri=", ""))
 				.build();
@@ -82,7 +82,7 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ErrorResponse> handleRuntimeException(RuntimeException ex, WebRequest request) {
 
 		ErrorResponse errorResponse = ErrorResponse.builder()
-				.message("Internal server error")
+				.message("Daxili server xətası")
 				.code("RUNTIME_EXCEPTION")
 				.path(request.getDescription(false).replace("uri=", ""))
 				.build();
