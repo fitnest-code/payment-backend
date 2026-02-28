@@ -175,4 +175,3 @@ public class EpointController {
         return ResponseEntity.ok(integrationService.sendInvoiceEmail(id, email));
     }
 }
-}
