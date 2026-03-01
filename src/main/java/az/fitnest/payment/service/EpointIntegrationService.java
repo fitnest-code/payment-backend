@@ -94,7 +94,7 @@ public class EpointIntegrationService {
         savePaymentIfSuccess(response, request.getOrderId(), request.getAmount(), request.getCurrency());
         return response;
     }
-    
+
     @Transactional
     public EpointResponse preAuthComplete(EpointPreAuthCompleteRequest request) {
         log.info("Completing Epoint pre auth for transaction: {}", request.getTransaction());
@@ -155,11 +155,11 @@ public class EpointIntegrationService {
     @Transactional
     public void processCallback(String base64Data) {
         EpointResponse callbackData = signer.decodeData(base64Data, EpointResponse.class);
-        log.info("Processing Epoint callback for order: {}, status: {}", 
+        log.info("Processing Epoint callback for order: {}, status: {}",
                 callbackData.getOrderId(), callbackData.getStatus());
 
         Optional<Payment> optionalPayment = paymentRepository.findByOrderId(callbackData.getOrderId());
-        
+
         if (optionalPayment.isPresent()) {
             Payment payment = optionalPayment.get();
             updatePaymentFromEpointResponse(payment, callbackData);
@@ -175,7 +175,7 @@ public class EpointIntegrationService {
     public void syncStatus(String transactionId) {
         log.info("Syncing status for transaction: {}", transactionId);
         EpointResponse response = epointService.getStatus(transactionId);
-        
+
         paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
             updatePaymentFromEpointResponse(payment, response);
             paymentRepository.save(payment);

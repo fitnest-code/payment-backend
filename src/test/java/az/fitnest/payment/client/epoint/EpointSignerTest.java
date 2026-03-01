@@ -12,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class EpointSignerTest {
 
-    private EpointSigner signer;
     private final String privateKey = "test_private_key";
+    private EpointSigner signer;
 
     @BeforeEach
     void setUp() {
@@ -24,10 +24,10 @@ class EpointSignerTest {
     void testEncodeData() {
         Map<String, String> payload = new HashMap<>();
         payload.put("key", "value");
-        
+
         String encoded = signer.encodeData(payload);
         assertNotNull(encoded);
-        
+
         String decodedJson = new String(Base64.getDecoder().decode(encoded));
         assertTrue(decodedJson.contains("\"key\":\"value\""));
     }
@@ -36,7 +36,7 @@ class EpointSignerTest {
     void testSignAndVerify() {
         String data = "some_base64_data";
         String signature = signer.sign(data, privateKey);
-        
+
         assertNotNull(signature);
         assertTrue(signer.verify(data, signature, privateKey));
     }
@@ -45,7 +45,7 @@ class EpointSignerTest {
     void testVerifyFailure() {
         String data = "some_base64_data";
         String signature = signer.sign(data, privateKey);
-        
+
         assertFalse(signer.verify(data + "tampered", signature, privateKey));
         assertFalse(signer.verify(data, signature, "wrong_key"));
     }

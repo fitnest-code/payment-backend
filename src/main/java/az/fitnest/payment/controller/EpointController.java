@@ -35,9 +35,9 @@ public class EpointController {
     public ResponseEntity<String> handleCallback(
             @RequestParam("data") String data,
             @RequestParam("signature") String signature) {
-        
+
         log.info("Received Epoint callback");
-        
+
         if (!signer.verify(data, signature, properties.getPrivateKey())) {
             log.error("Invalid Epoint signature");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid signature");
@@ -84,12 +84,12 @@ public class EpointController {
 
     @Operation(summary = "Ödənişi ləğv edin", description = "Tranzaksiyanı ləğv edir.")
     @PostMapping("/reverse")
-    public ResponseEntity<EpointResponse> reverse(@RequestParam String transactionId, 
-                                                  @RequestParam Double amount, 
+    public ResponseEntity<EpointResponse> reverse(@RequestParam String transactionId,
+                                                  @RequestParam Double amount,
                                                   @RequestParam String currency) {
         return ResponseEntity.ok(integrationService.reverse(transactionId, amount, currency));
     }
-    
+
     @Operation(summary = "Bölünmüş ödəniş sorğusu", description = "Bölünmüş (split) ödəniş yaradır.")
     @PostMapping("/split-request")
     public ResponseEntity<EpointResponse> splitRequest(@RequestBody EpointSplitPaymentRequest request) {
@@ -158,7 +158,7 @@ public class EpointController {
 
     @Operation(summary = "Hesab-fakturaların siyahısı", description = "Bütün hesab-fakturaları sadalayır.")
     @GetMapping("/invoices")
-    public ResponseEntity<EpointResponse> listInvoices(@RequestParam(required = false) String type, 
+    public ResponseEntity<EpointResponse> listInvoices(@RequestParam(required = false) String type,
                                                        @RequestParam(required = false) String order) {
         return ResponseEntity.ok(integrationService.listInvoices(type, order));
     }

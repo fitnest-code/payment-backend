@@ -92,7 +92,8 @@ public class EpointService {
     }
 
     public EpointResponse walletStatus() {
-        EpointRequestPayload request = new EpointRequestPayload() {};
+        EpointRequestPayload request = new EpointRequestPayload() {
+        };
         fillPublicKey(request);
         return httpClient.postSigned("/wallet/status", request);
     }

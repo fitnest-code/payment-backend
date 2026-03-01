@@ -33,7 +33,7 @@ public class DataInitializer {
             payment.setCardMask("424242****4242");
             payment.setCardName("Test Card");
             payment.setMessage("Payment successful");
-            
+
             paymentRepository.save(payment);
         }
     }

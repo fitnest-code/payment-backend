@@ -13,17 +13,17 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ErrorResponse {
-    
+
     private String message;
-    
+
     private String code;
-    
+
     private LocalDateTime timestamp;
-    
+
     private String path;
-    
+
     private Map<String, Object> details;
-    
+
     public static ErrorResponse of(String message, String code) {
         return ErrorResponse.builder()
                 .message(message)
@@ -31,7 +31,7 @@ public class ErrorResponse {
                 .timestamp(LocalDateTime.now())
                 .build();
     }
-    
+
     public static ErrorResponse of(String message, String code, String path) {
         return ErrorResponse.builder()
                 .message(message)

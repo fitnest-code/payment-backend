@@ -17,88 +17,88 @@ import az.fitnest.payment.dto.common.ErrorResponse;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-	
-	@ExceptionHandler(BaseException.class)
-	public ResponseEntity<ErrorResponse> handleBaseException(BaseException exception, WebRequest request) {
 
-		ErrorResponse.ErrorResponseBuilder builder = ErrorResponse.builder()
-				.message(exception.getMessage())
-				.code(exception.getErrorCode())
-				.path(request.getDescription(false).replace("uri=", ""));
-		
-		if (exception instanceof ValidationException) {
-			ValidationException validationException = (ValidationException) exception;
-			BindingResult result = validationException.getBindingResult();
-			if (result != null) {
-				Map<String, Object> details = new HashMap<>();
-				Map<String, String> validationErrors = new HashMap<>();
-				for (FieldError error : result.getFieldErrors()) {
-					validationErrors.put(error.getField(), error.getDefaultMessage());
-				}
-				details.put("validationErrors", validationErrors);
-				builder.details(details);
-			}
-		}
-		
-		ErrorResponse errorResponse = builder.build();
-		return ResponseEntity.status(exception.getHttpStatus()).body(errorResponse);
-	}
-	
-	@ExceptionHandler(MethodArgumentNotValidException.class)
-	public ResponseEntity<ErrorResponse> handleMethodArgumentNotValidException(MethodArgumentNotValidException exception, WebRequest request) {
+    @ExceptionHandler(BaseException.class)
+    public ResponseEntity<ErrorResponse> handleBaseException(BaseException exception, WebRequest request) {
 
-		BindingResult result = exception.getBindingResult();
-		Map<String, Object> details = new HashMap<>();
-		Map<String, String> validationErrors = new HashMap<>();
-		
-		for (FieldError error : result.getFieldErrors()) {
-			validationErrors.put(error.getField(), error.getDefaultMessage());
-		}
-		details.put("validationErrors", validationErrors);
-		
-		ErrorResponse errorResponse = ErrorResponse.builder()
-				.message("Doğrulama xətası")
-				.code("VALIDATION_ERROR")
-				.path(request.getDescription(false).replace("uri=", ""))
-				.details(details)
-				.build();
-		
-		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
-	}
-	
-	@ExceptionHandler(HttpMessageNotReadableException.class)
-	public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException(HttpMessageNotReadableException exception, WebRequest request) {
+        ErrorResponse.ErrorResponseBuilder builder = ErrorResponse.builder()
+                .message(exception.getMessage())
+                .code(exception.getErrorCode())
+                .path(request.getDescription(false).replace("uri=", ""));
 
-		ErrorResponse errorResponse = ErrorResponse.builder()
-				.message("Yanlış sorğu formatı")
-				.code("HTTP_MESSAGE_NOT_READABLE")
-				.path(request.getDescription(false).replace("uri=", ""))
-				.build();
-		
-		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
-	}
-	
-	@ExceptionHandler(RuntimeException.class)
-	public ResponseEntity<ErrorResponse> handleRuntimeException(RuntimeException ex, WebRequest request) {
+        if (exception instanceof ValidationException) {
+            ValidationException validationException = (ValidationException) exception;
+            BindingResult result = validationException.getBindingResult();
+            if (result != null) {
+                Map<String, Object> details = new HashMap<>();
+                Map<String, String> validationErrors = new HashMap<>();
+                for (FieldError error : result.getFieldErrors()) {
+                    validationErrors.put(error.getField(), error.getDefaultMessage());
+                }
+                details.put("validationErrors", validationErrors);
+                builder.details(details);
+            }
+        }
 
-		ErrorResponse errorResponse = ErrorResponse.builder()
-				.message("Daxili server xətası")
-				.code("RUNTIME_EXCEPTION")
-				.path(request.getDescription(false).replace("uri=", ""))
-				.build();
-		
-		return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-	}
-	
-	@ExceptionHandler(Exception.class)
-	public ResponseEntity<ErrorResponse> handleGenericException(Exception ex, WebRequest request) {
+        ErrorResponse errorResponse = builder.build();
+        return ResponseEntity.status(exception.getHttpStatus()).body(errorResponse);
+    }
 
-		ErrorResponse errorResponse = ErrorResponse.builder()
-				.message("Internal server error")
-				.code("INTERNAL_SERVER_ERROR")
-				.path(request.getDescription(false).replace("uri=", ""))
-				.build();
-		
-		return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-	}
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleMethodArgumentNotValidException(MethodArgumentNotValidException exception, WebRequest request) {
+
+        BindingResult result = exception.getBindingResult();
+        Map<String, Object> details = new HashMap<>();
+        Map<String, String> validationErrors = new HashMap<>();
+
+        for (FieldError error : result.getFieldErrors()) {
+            validationErrors.put(error.getField(), error.getDefaultMessage());
+        }
+        details.put("validationErrors", validationErrors);
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .message("Doğrulama xətası")
+                .code("VALIDATION_ERROR")
+                .path(request.getDescription(false).replace("uri=", ""))
+                .details(details)
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException(HttpMessageNotReadableException exception, WebRequest request) {
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .message("Yanlış sorğu formatı")
+                .code("HTTP_MESSAGE_NOT_READABLE")
+                .path(request.getDescription(false).replace("uri=", ""))
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ErrorResponse> handleRuntimeException(RuntimeException ex, WebRequest request) {
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .message("Daxili server xətası")
+                .code("RUNTIME_EXCEPTION")
+                .path(request.getDescription(false).replace("uri=", ""))
+                .build();
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleGenericException(Exception ex, WebRequest request) {
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .message("Internal server error")
+                .code("INTERNAL_SERVER_ERROR")
+                .path(request.getDescription(false).replace("uri=", ""))
+                .build();
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+    }
 }
