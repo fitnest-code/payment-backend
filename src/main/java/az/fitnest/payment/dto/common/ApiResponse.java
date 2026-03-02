@@ -2,20 +2,15 @@ package az.fitnest.payment.dto.common;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonValue;
-import lombok.*;
-
 import java.util.Map;
+import lombok.Builder;
 
-@Getter
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class ApiResponse<T> {
-
-    private T data;
-    private ApiError error;
-
+public record ApiResponse<T>(
+    T data,
+    ApiError error
+) {
     public static <T> ApiResponse<T> success(T data) {
         return ApiResponse.<T>builder()
                 .data(data)

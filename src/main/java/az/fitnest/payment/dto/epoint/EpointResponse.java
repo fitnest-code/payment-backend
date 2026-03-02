@@ -1,38 +1,35 @@
 package az.fitnest.payment.dto.epoint;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import java.util.Map;
+import lombok.Builder;
 
-@Data
-@NoArgsConstructor
-public class EpointResponse {
-    private String status; // success, error
-    private String transaction;
+@Builder
+public record EpointResponse(
+    String status,
+    String transaction,
     @JsonProperty("order_id")
-    private String orderId;
+    String orderId,
     @JsonProperty("redirect_url")
-    private String redirectUrl;
+    String redirectUrl,
     @JsonProperty("bank_transaction")
-    private String bankTransaction;
+    String bankTransaction,
     @JsonProperty("bank_response")
-    private String bankResponse;
+    String bankResponse,
     @JsonProperty("operation_code")
-    private String operationCode;
-    private String rrn;
+    String operationCode,
+    String rrn,
     @JsonProperty("card_name")
-    private String cardName;
+    String cardName,
     @JsonProperty("card_mask")
-    private String cardMask;
-    private Double amount;
+    String cardMask,
+    Double amount,
     @JsonProperty("card_id")
-    private String cardId;
+    String cardId,
     @JsonProperty("widget_url")
-    private String widgetUrl;
-    private String message;
-    private String code;
+    String widgetUrl,
+    String message,
+    String code,
     @JsonProperty("other_attr")
-    private Map<String, Object> otherAttr;
-}
+    Map<String, Object> otherAttr
+) {}

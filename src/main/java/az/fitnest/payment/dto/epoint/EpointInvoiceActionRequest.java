@@ -1,18 +1,15 @@
 package az.fitnest.payment.dto.epoint;
 
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.experimental.SuperBuilder;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Builder;
 
-@Data
-@SuperBuilder
-@NoArgsConstructor
-@EqualsAndHashCode(callSuper = true)
-public class EpointInvoiceActionRequest extends EpointRequestPayload {
-    private Long id;
-    private String phone;
-    private String email;
-    private String type; // incoming, outgoing, static
-    private String order; // ascending, descending
-}
+@Builder
+public record EpointInvoiceActionRequest(
+    @JsonProperty("public_key")
+    String publicKey,
+    Long id,
+    String phone,
+    String email,
+    String type,
+    String order
+) {}

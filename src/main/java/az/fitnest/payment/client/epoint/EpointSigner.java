@@ -3,7 +3,6 @@ package az.fitnest.payment.client.epoint;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -11,7 +10,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class EpointSigner {
@@ -23,7 +21,6 @@ public class EpointSigner {
             String json = objectMapper.writeValueAsString(payload);
             return Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
         } catch (JsonProcessingException e) {
-            log.error("Failed to encode Epoint data", e);
             throw new RuntimeException("Epoint data encoding failed", e);
         }
     }
@@ -35,7 +32,6 @@ public class EpointSigner {
             byte[] hash = digest.digest(combined.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(hash);
         } catch (NoSuchAlgorithmException e) {
-            log.error("SHA-1 algorithm not found", e);
             throw new RuntimeException("Crypto error", e);
         }
     }
@@ -53,7 +49,6 @@ public class EpointSigner {
             byte[] decoded = Base64.getDecoder().decode(base64Data);
             return objectMapper.readValue(decoded, clazz);
         } catch (Exception e) {
-            log.error("Failed to decode Epoint callback data", e);
             throw new RuntimeException("Epoint data decoding failed", e);
         }
     }

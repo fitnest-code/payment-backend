@@ -1,18 +1,24 @@
 package az.fitnest.payment.dto.epoint;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.experimental.SuperBuilder;
+import lombok.Builder;
 
-@Data
-@SuperBuilder
-@NoArgsConstructor
-@EqualsAndHashCode(callSuper = true)
-public class EpointSplitPaymentRequest extends EpointPaymentRequest {
+@Builder
+public record EpointSplitPaymentRequest(
+    @JsonProperty("public_key")
+    String publicKey,
+    String language,
+    @JsonProperty("order_id")
+    String orderId,
+    Double amount,
+    String currency,
+    String description,
+    @JsonProperty("success_redirect_url")
+    String successRedirectUrl,
+    @JsonProperty("error_redirect_url")
+    String errorRedirectUrl,
     @JsonProperty("split_user")
-    private String splitUser;
+    String splitUser,
     @JsonProperty("split_amount")
-    private Double splitAmount;
-}
+    Double splitAmount
+) {}

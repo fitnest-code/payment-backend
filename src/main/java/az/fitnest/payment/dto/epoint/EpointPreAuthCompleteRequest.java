@@ -1,16 +1,12 @@
 package az.fitnest.payment.dto.epoint;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.experimental.SuperBuilder;
+import lombok.Builder;
 
-@Data
-@SuperBuilder
-@NoArgsConstructor
-@EqualsAndHashCode(callSuper = true)
-public class EpointPreAuthCompleteRequest extends EpointRequestPayload {
-    private Double amount;
-    private String transaction;
-}
+@Builder
+public record EpointPreAuthCompleteRequest(
+    @JsonProperty("public_key")
+    String publicKey,
+    Double amount,
+    String transaction
+) {}

@@ -12,7 +12,7 @@ public class EpointService {
     private final EpointProperties properties;
 
     public EpointResponse createPayment(EpointPaymentRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/request", request);
     }
 
@@ -25,22 +25,22 @@ public class EpointService {
     }
 
     public EpointResponse cardRegistration(EpointPaymentRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/card-registration", request);
     }
 
     public EpointResponse executePay(EpointExecutePayRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/execute-pay", request);
     }
 
     public EpointResponse cardRegistrationWithPay(EpointPaymentRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/card-registration-with-pay", request);
     }
 
     public EpointResponse refundRequest(EpointExecutePayRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/refund-request", request);
     }
 
@@ -56,66 +56,217 @@ public class EpointService {
     }
 
     public EpointResponse splitRequest(EpointSplitPaymentRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/split-request", request);
     }
 
     public EpointResponse createWidgetUrl(EpointPaymentRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/token/widget", request);
     }
 
-    private void fillPublicKey(EpointRequestPayload request) {
-        if (request.getPublicKey() == null) {
-            request.setPublicKey(properties.getPublicKey());
+    private EpointPaymentRequest fillPublicKey(EpointPaymentRequest request) {
+        if (request.publicKey() == null) {
+            return EpointPaymentRequest.builder()
+                    .publicKey(properties.getPublicKey())
+                    .language(request.language())
+                    .orderId(request.orderId())
+                    .amount(request.amount())
+                    .currency(request.currency())
+                    .description(request.description())
+                    .successRedirectUrl(request.successRedirectUrl())
+                    .errorRedirectUrl(request.errorRedirectUrl())
+                    .build();
         }
+        return request;
+    }
+
+    private EpointExecutePayRequest fillPublicKey(EpointExecutePayRequest request) {
+        if (request.publicKey() == null) {
+            return EpointExecutePayRequest.builder()
+                    .publicKey(properties.getPublicKey())
+                    .language(request.language())
+                    .orderId(request.orderId())
+                    .amount(request.amount())
+                    .currency(request.currency())
+                    .description(request.description())
+                    .successRedirectUrl(request.successRedirectUrl())
+                    .errorRedirectUrl(request.errorRedirectUrl())
+                    .cardId(request.cardId())
+                    .build();
+        }
+        return request;
+    }
+
+    private EpointSplitPaymentRequest fillPublicKey(EpointSplitPaymentRequest request) {
+        if (request.publicKey() == null) {
+            return EpointSplitPaymentRequest.builder()
+                    .publicKey(properties.getPublicKey())
+                    .language(request.language())
+                    .orderId(request.orderId())
+                    .amount(request.amount())
+                    .currency(request.currency())
+                    .description(request.description())
+                    .successRedirectUrl(request.successRedirectUrl())
+                    .errorRedirectUrl(request.errorRedirectUrl())
+                    .splitUser(request.splitUser())
+                    .splitAmount(request.splitAmount())
+                    .build();
+        }
+        return request;
+    }
+
+    private EpointSplitExecutePayRequest fillPublicKey(EpointSplitExecutePayRequest request) {
+        if (request.publicKey() == null) {
+            return EpointSplitExecutePayRequest.builder()
+                    .publicKey(properties.getPublicKey())
+                    .language(request.language())
+                    .orderId(request.orderId())
+                    .amount(request.amount())
+                    .currency(request.currency())
+                    .description(request.description())
+                    .successRedirectUrl(request.successRedirectUrl())
+                    .errorRedirectUrl(request.errorRedirectUrl())
+                    .splitUser(request.splitUser())
+                    .splitAmount(request.splitAmount())
+                    .cardId(request.cardId())
+                    .build();
+        }
+        return request;
+    }
+
+    private EpointPreAuthCompleteRequest fillPublicKey(EpointPreAuthCompleteRequest request) {
+        if (request.publicKey() == null) {
+            return EpointPreAuthCompleteRequest.builder()
+                    .publicKey(properties.getPublicKey())
+                    .amount(request.amount())
+                    .transaction(request.transaction())
+                    .build();
+        }
+        return request;
+    }
+
+    private EpointWalletPaymentRequest fillPublicKey(EpointWalletPaymentRequest request) {
+        if (request.publicKey() == null) {
+            return EpointWalletPaymentRequest.builder()
+                    .publicKey(properties.getPublicKey())
+                    .walletId(request.walletId())
+                    .amount(request.amount())
+                    .currency(request.currency())
+                    .orderId(request.orderId())
+                    .description(request.description())
+                    .language(request.language())
+                    .build();
+        }
+        return request;
+    }
+
+    private EpointInvoiceCreateRequest fillPublicKey(EpointInvoiceCreateRequest request) {
+        if (request.publicKey() == null) {
+            return EpointInvoiceCreateRequest.builder()
+                    .publicKey(properties.getPublicKey())
+                    .sum(request.sum())
+                    .display(request.display())
+                    .saveAsTemplate(request.saveAsTemplate())
+                    .statusInstallment(request.statusInstallment())
+                    .name(request.name())
+                    .description(request.description())
+                    .phone(request.phone())
+                    .email(request.email())
+                    .inn(request.inn())
+                    .contractNumber(request.contractNumber())
+                    .merchantOrderId(request.merchantOrderId())
+                    .periodFrom(request.periodFrom())
+                    .periodTo(request.periodTo())
+                    .invoiceImages(request.invoiceImages())
+                    .build();
+        }
+        return request;
+    }
+
+    private EpointInvoiceUpdateRequest fillPublicKey(EpointInvoiceUpdateRequest request) {
+        if (request.publicKey() == null) {
+            return EpointInvoiceUpdateRequest.builder()
+                    .publicKey(properties.getPublicKey())
+                    .sum(request.sum())
+                    .display(request.display())
+                    .saveAsTemplate(request.saveAsTemplate())
+                    .statusInstallment(request.statusInstallment())
+                    .name(request.name())
+                    .description(request.description())
+                    .phone(request.phone())
+                    .email(request.email())
+                    .inn(request.inn())
+                    .contractNumber(request.contractNumber())
+                    .merchantOrderId(request.merchantOrderId())
+                    .periodFrom(request.periodFrom())
+                    .periodTo(request.periodTo())
+                    .invoiceImages(request.invoiceImages())
+                    .id(request.id())
+                    .build();
+        }
+        return request;
+    }
+
+    private EpointInvoiceActionRequest fillPublicKey(EpointInvoiceActionRequest request) {
+        if (request.publicKey() == null) {
+            return EpointInvoiceActionRequest.builder()
+                    .publicKey(properties.getPublicKey())
+                    .id(request.id())
+                    .phone(request.phone())
+                    .email(request.email())
+                    .type(request.type())
+                    .order(request.order())
+                    .build();
+        }
+        return request;
     }
 
     public EpointResponse splitExecutePay(EpointSplitExecutePayRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/split-execute-pay", request);
     }
 
     public EpointResponse splitCardRegistrationWithPay(EpointSplitPaymentRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/split-card-registration-with-pay", request);
     }
 
     public EpointResponse preAuthRequest(EpointPaymentRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/pre-auth-request", request);
     }
 
     public EpointResponse preAuthComplete(EpointPreAuthCompleteRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/pre-auth-complete", request);
     }
 
     public EpointResponse walletStatus() {
-        EpointRequestPayload request = new EpointRequestPayload() {
-        };
-        fillPublicKey(request);
+        EpointRequestPayload request = EpointRequestPayload.builder()
+                .publicKey(properties.getPublicKey())
+                .build();
         return httpClient.postSigned("/wallet/status", request);
     }
 
     public EpointResponse walletPayment(EpointWalletPaymentRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/wallet/payment", request);
     }
 
     public EpointResponse createInvoice(EpointInvoiceCreateRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/invoices/create", request);
     }
 
     public EpointResponse updateInvoice(EpointInvoiceUpdateRequest request) {
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/invoices/update", request);
     }
 
     public EpointResponse viewInvoice(Long id) {
         EpointInvoiceActionRequest request = EpointInvoiceActionRequest.builder().id(id).build();
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/invoices/view", request);
     }
 
@@ -124,7 +275,7 @@ public class EpointService {
                 .type(type)
                 .order(order)
                 .build();
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/invoices/list", request);
     }
 
@@ -133,7 +284,7 @@ public class EpointService {
                 .id(id)
                 .phone(phone)
                 .build();
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/invoices/send-sms", request);
     }
 
@@ -142,7 +293,7 @@ public class EpointService {
                 .id(id)
                 .email(email)
                 .build();
-        fillPublicKey(request);
+        request = fillPublicKey(request);
         return httpClient.postSigned("/invoices/send-email", request);
     }
 }
