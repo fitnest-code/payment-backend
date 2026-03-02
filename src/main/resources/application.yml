@@ -6,6 +6,13 @@ server:
     enabled: true
     mime-types: application/json,text/plain,text/css,application/javascript,application/openapi+json,application/vnd.api+json
     min-response-size: 2048
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+    connection-timeout: 20000
+    max-connections: 10000
+    accept-count: 200
 
 spring:
   threads:
