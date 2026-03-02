@@ -35,6 +35,34 @@ public class DataInitializer {
             payment.setMessage("Payment successful");
 
             paymentRepository.save(payment);
+
+            Payment payment2 = new Payment();
+            payment2.setProvider("STRIPE");
+            payment2.setPaymentIntentClientSecret("pi_test_secret_124");
+            payment2.setStatus("PENDING");
+            payment2.setOrderId("ORD998");
+            payment2.setTransactionId("txn_test_124");
+            payment2.setAmount(19.99);
+            payment2.setCurrency("AZN");
+            payment2.setCardMask("555555****4444");
+            payment2.setCardName("John Doe");
+            payment2.setMessage("Awaiting confirmation");
+
+            paymentRepository.save(payment2);
+
+            Payment payment3 = new Payment();
+            payment3.setProvider("STRIPE");
+            payment3.setPaymentIntentClientSecret("pi_test_secret_125");
+            payment3.setStatus("FAILED");
+            payment3.setOrderId("ORD997");
+            payment3.setTransactionId("txn_test_125");
+            payment3.setAmount(99.99);
+            payment3.setCurrency("AZN");
+            payment3.setCardMask("411111****1111");
+            payment3.setCardName("Jane Smith");
+            payment3.setMessage("Insufficient funds");
+
+            paymentRepository.save(payment3);
         }
     }
 }
