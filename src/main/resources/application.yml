@@ -127,6 +127,18 @@ media:
 app:
   security:
     internal-token: ${APP_SECURITY_INTERNAL_TOKEN:fitnest-internal-token-2024-secure-v1}
+  warmup:
+    enabled: ${APP_WARMUP_ENABLED:true}
+    db: ${APP_WARMUP_DB:true}
+
+# Epoint Configuration
+epoint:
+  public-key: ${EPOINT_PUBLIC_KEY:}
+  private-key: ${EPOINT_PRIVATE_KEY:}
+  base-url: ${EPOINT_BASE_URL:https://epoint.az/api/1}
+  result-url: ${EPOINT_RESULT_URL:https://your-domain.com/epoint/result}
+  success-redirect-url: ${EPOINT_SUCCESS_REDIRECT_URL:https://your-domain.com/payment/success}
+  error-redirect-url: ${EPOINT_ERROR_REDIRECT_URL:https://your-domain.com/payment/error}
 
 management:
   endpoints:
@@ -141,7 +153,7 @@ springdoc:
   api-docs:
     path: /v3/api-docs
     cache:
-      enabled: true
+      enabled: false
   paths-to-exclude: /api/v1/internal/**
   swagger-ui:
     enabled: true

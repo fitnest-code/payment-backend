@@ -16,7 +16,7 @@ import org.springframework.web.client.RestTemplate;
 @RequiredArgsConstructor
 public class EpointHttpClient {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
     private final EpointSigner signer;
     private final EpointProperties properties;
 
