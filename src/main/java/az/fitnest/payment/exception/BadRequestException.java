@@ -6,7 +6,7 @@ public class BadRequestException extends BaseException {
 
     private static final long serialVersionUID = 1L;
 
-    public ConflictException(String message) {
-        super(message, "CONFLICT", HttpStatus.CONFLICT);
+    public BadRequestException(String message) {
+        super(message, "BAD_REQUEST", HttpStatus.BAD_REQUEST);
     }
 }
