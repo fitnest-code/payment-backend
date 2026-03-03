@@ -148,12 +148,15 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+      probes:
+        enabled: true
 
 springdoc:
   api-docs:
     path: /v3/api-docs
     cache:
       enabled: true
+    pre-loading-enabled: true
   paths-to-exclude: /api/v1/internal/**
   swagger-ui:
     enabled: true
