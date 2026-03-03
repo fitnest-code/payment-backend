@@ -47,13 +47,14 @@ public class OpenApiWarmupConfig {
                     openApiResource.openapiJson(null, "", Locale.getDefault());
                     return;
                 } catch (Exception e) {
-                    // Fall back to HTTP
+                    // Fall back to HTTP if internal pre-generation fails
                 }
             }
 
             warmupViaHttp();
         } catch (Exception e) {
-            // Non-critical, don't fail startup
+            // Non-critical, but we can print stack trace for debugging in dev logs
+            e.printStackTrace();
         }
     }
 

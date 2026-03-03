@@ -21,7 +21,7 @@ spring:
   application:
     name: payment-service
   main:
-    lazy-initialization: ${SPRING_MAIN_LAZY_INITIALIZATION:true}
+    lazy-initialization: ${SPRING_MAIN_LAZY_INITIALIZATION:false}
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgresql-payment:5432/fitnest_payment}
     username: ${SPRING_DATASOURCE_USERNAME:fitnest_payment}
@@ -153,7 +153,7 @@ springdoc:
   api-docs:
     path: /v3/api-docs
     cache:
-      enabled: false
+      enabled: true
   paths-to-exclude: /api/v1/internal/**
   swagger-ui:
     enabled: true
