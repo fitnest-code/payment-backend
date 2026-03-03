@@ -1,8 +1,8 @@
 package az.fitnest.payment.dto.common;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import java.time.OffsetDateTime;
 import lombok.Builder;
+import java.time.OffsetDateTime;
 
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)

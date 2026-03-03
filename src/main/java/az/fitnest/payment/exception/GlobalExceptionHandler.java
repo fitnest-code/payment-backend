@@ -11,94 +11,142 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import az.fitnest.payment.dto.common.ApiError;
+import java.time.OffsetDateTime;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.web.context.request.WebRequest;
-
-import az.fitnest.payment.dto.common.ErrorResponse;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private final MessageSource messageSource;
+
+    public GlobalExceptionHandler(MessageSource messageSource) {
+        this.messageSource = messageSource;
+    }
+
     @ExceptionHandler(BaseException.class)
-    public ResponseEntity<ErrorResponse> handleBaseException(BaseException exception, WebRequest request) {
+    public ResponseEntity<ApiError> handleBaseException(BaseException exception, WebRequest request) {
 
-        ErrorResponse.ErrorResponseBuilder builder = ErrorResponse.builder()
-                .message(exception.getMessage())
-                .code(exception.getErrorCode())
-                .path(request.getDescription(false).replace("uri=", ""));
-
-        if (exception instanceof ValidationException) {
-            ValidationException validationException = (ValidationException) exception;
+        Map<String, Object> details = null;
+        if (exception instanceof ValidationException validationException) {
             BindingResult result = validationException.getBindingResult();
             if (result != null) {
-                Map<String, Object> details = new HashMap<>();
+                details = new HashMap<>();
                 Map<String, String> validationErrors = new HashMap<>();
                 for (FieldError error : result.getFieldErrors()) {
-                    validationErrors.put(error.getField(), error.getDefaultMessage());
+                    validationErrors.put(error.getField(), safeMessage(error.getDefaultMessage()));
                 }
                 details.put("validationErrors", validationErrors);
-                builder.details(details);
             }
         }
 
-        ErrorResponse errorResponse = builder.build();
-        return ResponseEntity.status(exception.getHttpStatus()).body(errorResponse);
-    }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleMethodArgumentNotValidException(MethodArgumentNotValidException exception, WebRequest request) {
-
-        BindingResult result = exception.getBindingResult();
-        Map<String, Object> details = new HashMap<>();
-        Map<String, String> validationErrors = new HashMap<>();
-
-        for (FieldError error : result.getFieldErrors()) {
-            validationErrors.put(error.getField(), error.getDefaultMessage());
-        }
-        details.put("validationErrors", validationErrors);
-
-        ErrorResponse errorResponse = ErrorResponse.builder()
-                .message("Doğrulama xətası")
-                .code("VALIDATION_ERROR")
+        ApiError apiError = ApiError.builder()
+                .code(exception.getErrorCode())
+                .message(getLocalizedMessage(exception.getErrorCode(), exception.getMessage()))
+                .status(exception.getHttpStatus().value())
                 .path(request.getDescription(false).replace("uri=", ""))
+                .timestamp(OffsetDateTime.now())
                 .details(details)
                 .build();
 
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+        return ResponseEntity.status(exception.getHttpStatus()).body(apiError);
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiError> handleMethodArgumentNotValidException(MethodArgumentNotValidException exception, WebRequest request) {
+        BindingResult result = exception.getBindingResult();
+        Map<String, String> validationErrors = new HashMap<>();
+        for (FieldError error : result.getFieldErrors()) {
+            validationErrors.put(error.getField(), safeMessage(error.getDefaultMessage()));
+        }
+
+        ApiError apiError = ApiError.builder()
+                .code("VALIDATION_ERROR")
+                .message(getMessage("error.validation"))
+                .status(HttpStatus.BAD_REQUEST.value())
+                .path(request.getDescription(false).replace("uri=", ""))
+                .timestamp(OffsetDateTime.now())
+                .details(Map.of("validationErrors", validationErrors))
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException(HttpMessageNotReadableException exception, WebRequest request) {
-
-        ErrorResponse errorResponse = ErrorResponse.builder()
-                .message("Yanlış sorğu formatı")
+    public ResponseEntity<ApiError> handleHttpMessageNotReadableException(HttpMessageNotReadableException exception, WebRequest request) {
+        ApiError apiError = ApiError.builder()
                 .code("HTTP_MESSAGE_NOT_READABLE")
+                .message(getMessage("error.invalid_json_format"))
+                .status(HttpStatus.BAD_REQUEST.value())
                 .path(request.getDescription(false).replace("uri=", ""))
+                .timestamp(OffsetDateTime.now())
                 .build();
 
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
     }
 
     @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<ErrorResponse> handleRuntimeException(RuntimeException ex, WebRequest request) {
-
-        ErrorResponse errorResponse = ErrorResponse.builder()
-                .message("Daxili server xətası")
+    public ResponseEntity<ApiError> handleRuntimeException(RuntimeException ex, WebRequest request) {
+        ApiError apiError = ApiError.builder()
                 .code("RUNTIME_EXCEPTION")
+                .message(getMessage("error.unexpected"))
+                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .path(request.getDescription(false).replace("uri=", ""))
+                .timestamp(OffsetDateTime.now())
+                .details(Map.of("exception", ex.getClass().getSimpleName()))
                 .build();
 
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(apiError);
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleGenericException(Exception ex, WebRequest request) {
-
-        ErrorResponse errorResponse = ErrorResponse.builder()
-                .message("Internal server error")
+    public ResponseEntity<ApiError> handleGenericException(Exception ex, WebRequest request) {
+        ApiError apiError = ApiError.builder()
                 .code("INTERNAL_SERVER_ERROR")
+                .message(getMessage("error.internal_server_error"))
+                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .path(request.getDescription(false).replace("uri=", ""))
+                .timestamp(OffsetDateTime.now())
+                .details(Map.of("exception", ex.getClass().getSimpleName()))
                 .build();
 
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(apiError);
+    }
+
+    private String getLocalizedMessage(String errorCode, String defaultMessage) {
+        String key = "error." + errorCode.toLowerCase();
+        String message = getMessage(key);
+        if (message.equals(key)) {
+            // Try resolving by original errorCode
+            message = getMessage(errorCode);
+            if (message.equals(errorCode)) {
+                return safeMessage(defaultMessage);
+            }
+        }
+        return message;
+    }
+
+    private String safeMessage(String msg) {
+        if (msg == null || msg.isBlank()) {
+            return getMessage("error.unexpected");
+        }
+        // If the message looks like a key, try to resolve it
+        if (msg.startsWith("error.")) {
+            String resolved = getMessage(msg);
+            if (!resolved.equals(msg)) {
+                return resolved;
+            }
+        }
+        return msg;
+    }
+
+    private String getMessage(String code) {
+        try {
+            return messageSource.getMessage(code, null, LocaleContextHolder.getLocale());
+        } catch (Exception e) {
+            return code; // Fallback to code if message not found
+        }
     }
 }
