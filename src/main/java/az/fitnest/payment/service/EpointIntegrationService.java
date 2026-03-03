@@ -4,7 +4,10 @@ import az.fitnest.payment.client.epoint.EpointService;
 import az.fitnest.payment.client.epoint.EpointSigner;
 import az.fitnest.payment.dto.epoint.*;
 import az.fitnest.payment.model.entity.Payment;
+import az.fitnest.payment.model.entity.UserCard;
 import az.fitnest.payment.repository.PaymentRepository;
+import az.fitnest.payment.repository.UserCardRepository;
+import az.fitnest.payment.util.CardBrandDetector;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +21,7 @@ public class EpointIntegrationService {
     private final EpointService epointService;
     private final EpointSigner signer;
     private final PaymentRepository paymentRepository;
+    private final UserCardRepository userCardRepository;
 
     @Transactional
     public EpointResponse initiatePayment(EpointPaymentRequest request) {
@@ -27,8 +31,10 @@ public class EpointIntegrationService {
     }
 
     @Transactional
-    public EpointResponse cardRegistration(EpointPaymentRequest request) {
-        return epointService.cardRegistration(request);
+    public EpointResponse cardRegistration(Long userId, EpointPaymentRequest request) {
+        EpointResponse response = epointService.cardRegistration(request);
+        saveCardIfProvided(userId, response);
+        return response;
     }
 
     @Transactional
@@ -39,9 +45,10 @@ public class EpointIntegrationService {
     }
 
     @Transactional
-    public EpointResponse cardRegistrationWithPay(EpointPaymentRequest request) {
+    public EpointResponse cardRegistrationWithPay(Long userId, EpointPaymentRequest request) {
         EpointResponse response = epointService.cardRegistrationWithPay(request);
         savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency());
+        saveCardIfProvided(userId, response);
         return response;
     }
 
@@ -176,6 +183,23 @@ public class EpointIntegrationService {
             payment.setCurrency(currency);
             payment.setStatus("NEW");
             paymentRepository.save(payment);
+        }
+    }
+
+    private void saveCardIfProvided(Long userId, EpointResponse response) {
+        if (response.cardId() != null && !response.cardId().isBlank()) {
+            // Check if card already exists to avoid duplicates
+            if (userCardRepository.findByCardId(response.cardId()).isEmpty()) {
+                UserCard userCard = UserCard.builder()
+                        .userId(userId)
+                        .cardId(response.cardId())
+                        .cardMask(response.cardMask())
+                        .cardName(response.cardName())
+                        .brand(CardBrandDetector.detectBrand(response.cardMask()))
+                        .isDefault(userCardRepository.findAllByUserId(userId).isEmpty()) // First card is default
+                        .build();
+                userCardRepository.save(userCard);
+            }
         }
     }
 }

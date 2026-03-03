@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
 import az.fitnest.payment.dto.epoint.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -55,8 +56,9 @@ public class EpointController {
 
     @Operation(summary = "Kartın qeydiyyatı", description = "Yeni bir kartı sistemdə qeydiyyatdan keçirir.")
     @PostMapping("/card-registration")
-    public ResponseEntity<EpointResponse> cardRegistration(@RequestBody EpointPaymentRequest request) {
-        return ResponseEntity.ok(integrationService.cardRegistration(request));
+    public ResponseEntity<EpointResponse> cardRegistration(Authentication authentication, @RequestBody EpointPaymentRequest request) {
+        Long userId = (Long) authentication.getPrincipal();
+        return ResponseEntity.ok(integrationService.cardRegistration(userId, request));
     }
 
     @Operation(summary = "Ödənişi icra edin", description = "Mövcud kartla ödənişi icra edir.")
@@ -67,8 +69,9 @@ public class EpointController {
 
     @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir.")
     @PostMapping("/card-registration-with-pay")
-    public ResponseEntity<EpointResponse> cardRegistrationWithPay(@RequestBody EpointPaymentRequest request) {
-        return ResponseEntity.ok(integrationService.cardRegistrationWithPay(request));
+    public ResponseEntity<EpointResponse> cardRegistrationWithPay(Authentication authentication, @RequestBody EpointPaymentRequest request) {
+        Long userId = (Long) authentication.getPrincipal();
+        return ResponseEntity.ok(integrationService.cardRegistrationWithPay(userId, request));
     }
 
     @Operation(summary = "Geri qaytarma sorğusu", description = "Ödənişin geri qaytarılmasını tələb edir.")
