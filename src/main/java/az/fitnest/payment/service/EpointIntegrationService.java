@@ -162,6 +162,10 @@ public class EpointIntegrationService {
         });
     }
 
+    public EpointResponse getStatus(String transactionId) {
+        return epointService.getStatus(transactionId);
+    }
+
     private void updatePaymentFromEpointResponse(Payment payment, EpointResponse response) {
         payment.setStatus(response.status() != null ? response.status().toUpperCase() : payment.getStatus());
         payment.setTransactionId(response.transaction() != null ? response.transaction() : payment.getTransactionId());

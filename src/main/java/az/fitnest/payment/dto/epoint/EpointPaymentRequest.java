@@ -16,5 +16,10 @@ public record EpointPaymentRequest(
     @JsonProperty("success_redirect_url")
     String successRedirectUrl,
     @JsonProperty("error_redirect_url")
-    String errorRedirectUrl
+    String errorRedirectUrl,
+    @JsonProperty("is_installment")
+    Integer isInstallment,
+    Integer refund,
+    @JsonProperty("other_attr")
+    java.util.List<Object> otherAttr
 ) {}

@@ -18,5 +18,7 @@ public record EpointExecutePayRequest(
     @JsonProperty("error_redirect_url")
     String errorRedirectUrl,
     @JsonProperty("card_id")
-    String cardId
+    String cardId,
+    @JsonProperty("is_installment")
+    Integer isInstallment
 ) {}

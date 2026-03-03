@@ -76,6 +76,9 @@ public class EpointService {
                     .description(request.description())
                     .successRedirectUrl(request.successRedirectUrl())
                     .errorRedirectUrl(request.errorRedirectUrl())
+                    .isInstallment(request.isInstallment())
+                    .refund(request.refund())
+                    .otherAttr(request.otherAttr())
                     .build();
         }
         return request;
@@ -93,6 +96,7 @@ public class EpointService {
                     .successRedirectUrl(request.successRedirectUrl())
                     .errorRedirectUrl(request.errorRedirectUrl())
                     .cardId(request.cardId())
+                    .isInstallment(request.isInstallment())
                     .build();
         }
         return request;

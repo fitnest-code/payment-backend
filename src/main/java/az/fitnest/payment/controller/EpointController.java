@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.core.Authentication;
 import az.fitnest.payment.dto.epoint.*;
+import java.util.Map;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -61,10 +62,27 @@ public class EpointController {
         return ResponseEntity.ok(integrationService.cardRegistration(userId, request));
     }
 
-    @Operation(summary = "Ödənişi icra edin", description = "Mövcud kartla ödənişi icra edir.")
     @PostMapping("/execute-pay")
     public ResponseEntity<EpointResponse> executePay(@RequestBody EpointExecutePayRequest request) {
         return ResponseEntity.ok(integrationService.executePay(request));
+    }
+
+    @Operation(summary = "Tranzaksiya statusunu yoxlayın", description = "Tranzaksiyanın statusunu sorğulayır.")
+    @PostMapping("/get-status")
+    public ResponseEntity<EpointResponse> getStatus(@RequestParam String transactionId) {
+        return ResponseEntity.ok(integrationService.getStatus(transactionId));
+    }
+
+    @Operation(summary = "Birbaşa ödəniş forması", description = "Birbaşa ödəniş üçün data və signature təqdim edir.")
+    @PostMapping("/checkout")
+    public ResponseEntity<Map<String, String>> directCheckout(@RequestBody EpointPaymentRequest request) {
+        String data = signer.encodeData(request);
+        String signature = signer.sign(data, properties.getPrivateKey());
+        return ResponseEntity.ok(Map.of(
+            "data", data,
+            "signature", signature,
+            "action", properties.getBaseUrl() + "/checkout"
+        ));
     }
 
     @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir.")
@@ -125,7 +143,7 @@ public class EpointController {
     }
 
     @Operation(summary = "Pul kisəsi statusu", description = "Epoint pul kisəsinin statusunu yoxlayır.")
-    @GetMapping("/wallet/status")
+    @PostMapping("/wallet/status")
     public ResponseEntity<EpointResponse> walletStatus() {
         return ResponseEntity.ok(integrationService.walletStatus());
     }
@@ -149,13 +167,13 @@ public class EpointController {
     }
 
     @Operation(summary = "Hesab-fakturaya baxın", description = "Hesab haqqında məlumatı əldə edir.")
-    @GetMapping("/invoices/{id}")
-    public ResponseEntity<EpointResponse> viewInvoice(@PathVariable Long id) {
+    @PostMapping("/invoices/view")
+    public ResponseEntity<EpointResponse> viewInvoice(@RequestParam Long id) {
         return ResponseEntity.ok(integrationService.viewInvoice(id));
     }
 
     @Operation(summary = "Hesab-fakturaların siyahısı", description = "Bütün hesab-fakturaları sadalayır.")
-    @GetMapping("/invoices")
+    @PostMapping("/invoices/list")
     public ResponseEntity<EpointResponse> listInvoices(@RequestParam(required = false) String type,
                                                        @RequestParam(required = false) String order) {
         return ResponseEntity.ok(integrationService.listInvoices(type, order));
@@ -171,5 +189,11 @@ public class EpointController {
     @PostMapping("/invoices/{id}/send-email")
     public ResponseEntity<EpointResponse> sendInvoiceEmail(@PathVariable Long id, @RequestParam String email) {
         return ResponseEntity.ok(integrationService.sendInvoiceEmail(id, email));
+    }
+
+    @Operation(summary = "Sağlamlıq yoxlanışı", description = "Sistemin işləkliyini yoxlayır.")
+    @GetMapping("/api/heartbeat")
+    public ResponseEntity<Map<String, String>> heartbeat() {
+        return ResponseEntity.ok(Map.of("status", "ok"));
     }
 }
