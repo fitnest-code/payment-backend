@@ -12,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import az.fitnest.payment.dto.common.ApiError;
+import az.fitnest.payment.dto.common.ApiResponse;
 import java.time.OffsetDateTime;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
