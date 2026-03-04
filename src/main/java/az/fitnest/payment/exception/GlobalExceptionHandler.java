@@ -27,7 +27,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(BaseException.class)
-    public ResponseEntity<ApiError> handleBaseException(BaseException exception, WebRequest request) {
+    public ResponseEntity<ApiResponse<Void>> handleBaseException(BaseException exception, WebRequest request) {
 
         Map<String, Object> details = null;
         if (exception instanceof ValidationException validationException) {
@@ -38,7 +38,7 @@ public class GlobalExceptionHandler {
                 for (FieldError error : result.getFieldErrors()) {
                     validationErrors.put(error.getField(), safeMessage(error.getDefaultMessage()));
                 }
-                details.put("validationErrors", validationErrors);
+                details.put("fieldIssues", validationErrors);
             }
         }
 
@@ -51,11 +51,11 @@ public class GlobalExceptionHandler {
                 .details(details)
                 .build();
 
-        return ResponseEntity.status(exception.getHttpStatus()).body(apiError);
+        return ResponseEntity.status(exception.getHttpStatus()).body(ApiResponse.error(apiError));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiError> handleMethodArgumentNotValidException(MethodArgumentNotValidException exception, WebRequest request) {
+    public ResponseEntity<ApiResponse<Void>> handleMethodArgumentNotValidException(MethodArgumentNotValidException exception, WebRequest request) {
         BindingResult result = exception.getBindingResult();
         Map<String, String> validationErrors = new HashMap<>();
         for (FieldError error : result.getFieldErrors()) {
@@ -68,14 +68,14 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.BAD_REQUEST.value())
                 .path(request.getDescription(false).replace("uri=", ""))
                 .timestamp(OffsetDateTime.now())
-                .details(Map.of("validationErrors", validationErrors))
+                .details(Map.of("fieldIssues", validationErrors))
                 .build();
 
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(apiError));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ApiError> handleHttpMessageNotReadableException(HttpMessageNotReadableException exception, WebRequest request) {
+    public ResponseEntity<ApiResponse<Void>> handleHttpMessageNotReadableException(HttpMessageNotReadableException exception, WebRequest request) {
         ApiError apiError = ApiError.builder()
                 .code("HTTP_MESSAGE_NOT_READABLE")
                 .message(getMessage("error.invalid_json_format"))
@@ -84,35 +84,33 @@ public class GlobalExceptionHandler {
                 .timestamp(OffsetDateTime.now())
                 .build();
 
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(apiError));
     }
 
     @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<ApiError> handleRuntimeException(RuntimeException ex, WebRequest request) {
+    public ResponseEntity<ApiResponse<Void>> handleRuntimeException(RuntimeException ex, WebRequest request) {
         ApiError apiError = ApiError.builder()
                 .code("RUNTIME_EXCEPTION")
                 .message(getMessage("error.unexpected"))
                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .path(request.getDescription(false).replace("uri=", ""))
                 .timestamp(OffsetDateTime.now())
-                .details(Map.of("exception", ex.getClass().getSimpleName()))
                 .build();
 
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(apiError);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse.error(apiError));
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiError> handleGenericException(Exception ex, WebRequest request) {
+    public ResponseEntity<ApiResponse<Void>> handleGenericException(Exception ex, WebRequest request) {
         ApiError apiError = ApiError.builder()
                 .code("INTERNAL_SERVER_ERROR")
                 .message(getMessage("error.internal_server_error"))
                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .path(request.getDescription(false).replace("uri=", ""))
                 .timestamp(OffsetDateTime.now())
-                .details(Map.of("exception", ex.getClass().getSimpleName()))
                 .build();
 
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(apiError);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse.error(apiError));
     }
 
     private String getLocalizedMessage(String errorCode, String defaultMessage) {
