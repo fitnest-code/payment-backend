@@ -21,7 +21,7 @@ public class EpointSigner {
             String json = objectMapper.writeValueAsString(payload);
             return Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
         } catch (JsonProcessingException e) {
-            throw new RuntimeException("Epoint data encoding failed", e);
+            throw new RuntimeException("error.payment_encoding_failed", e);
         }
     }
 
@@ -32,7 +32,7 @@ public class EpointSigner {
             byte[] hash = digest.digest(combined.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(hash);
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("Crypto error", e);
+            throw new RuntimeException("error.payment_crypto_error", e);
         }
     }
 
@@ -49,7 +49,7 @@ public class EpointSigner {
             byte[] decoded = Base64.getDecoder().decode(base64Data);
             return objectMapper.readValue(decoded, clazz);
         } catch (Exception e) {
-            throw new RuntimeException("Epoint data decoding failed", e);
+            throw new RuntimeException("error.payment_decoding_failed", e);
         }
     }
 }
