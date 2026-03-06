@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -51,20 +52,31 @@ public class EpointController {
 
     @Operation(summary = "Ödənişi başladın", description = "Yeni bir ödəniş sorğusu yaradır.")
     @PostMapping("/request")
-    public ResponseEntity<EpointResponse> initiatePayment(@RequestBody EpointPaymentRequest request) {
-        return ResponseEntity.ok(integrationService.initiatePayment(request));
+    public ResponseEntity<EpointResponse> initiatePayment(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestBody EpointPaymentRequest request,
+            Authentication authentication) {
+        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        return ResponseEntity.ok(integrationService.initiatePayment(idempotencyKey, request, userId));
     }
 
     @Operation(summary = "Kartın qeydiyyatı", description = "Yeni bir kartı sistemdə qeydiyyatdan keçirir.")
     @PostMapping("/card-registration")
-    public ResponseEntity<EpointResponse> cardRegistration(Authentication authentication, @RequestBody EpointPaymentRequest request) {
+    public ResponseEntity<EpointResponse> cardRegistration(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            Authentication authentication,
+            @RequestBody EpointPaymentRequest request) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.ok(integrationService.cardRegistration(userId, request));
+        return ResponseEntity.ok(integrationService.cardRegistration(idempotencyKey, userId, request));
     }
 
     @PostMapping("/execute-pay")
-    public ResponseEntity<EpointResponse> executePay(@RequestBody EpointExecutePayRequest request) {
-        return ResponseEntity.ok(integrationService.executePay(request));
+    public ResponseEntity<EpointResponse> executePay(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestBody EpointExecutePayRequest request,
+            Authentication authentication) {
+        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        return ResponseEntity.ok(integrationService.executePay(idempotencyKey, request, userId));
     }
 
     @Operation(summary = "Tranzaksiya statusunu yoxlayın", description = "Tranzaksiyanın statusunu sorğulayır.")
@@ -87,9 +99,12 @@ public class EpointController {
 
     @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir.")
     @PostMapping("/card-registration-with-pay")
-    public ResponseEntity<EpointResponse> cardRegistrationWithPay(Authentication authentication, @RequestBody EpointPaymentRequest request) {
+    public ResponseEntity<EpointResponse> cardRegistrationWithPay(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            Authentication authentication,
+            @RequestBody EpointPaymentRequest request) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.ok(integrationService.cardRegistrationWithPay(userId, request));
+        return ResponseEntity.ok(integrationService.cardRegistrationWithPay(idempotencyKey, userId, request));
     }
 
     @Operation(summary = "Geri qaytarma sorğusu", description = "Ödənişin geri qaytarılmasını tələb edir.")

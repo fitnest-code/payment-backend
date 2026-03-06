@@ -9,6 +9,7 @@ import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
 import az.fitnest.payment.util.CardBrandDetector;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,39 +17,104 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class EpointIntegrationService {
 
     private final EpointService epointService;
     private final EpointSigner signer;
     private final PaymentRepository paymentRepository;
     private final UserCardRepository userCardRepository;
+    private final IdempotencyService idempotencyService;
 
     @Transactional
-    public EpointResponse initiatePayment(EpointPaymentRequest request) {
+    public EpointResponse initiatePayment(String idempotencyKey, EpointPaymentRequest request, Long userId) {
+        // Check for cached response
+        Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
+        if (cachedResponse.isPresent()) {
+            log.info("Returning cached response for idempotency key: {}", idempotencyKey);
+            return cachedResponse.get();
+        }
+
+        // Check if payment with this orderId already exists
+        Optional<Payment> existingPayment = paymentRepository.findByOrderId(request.orderId());
+        if (existingPayment.isPresent()) {
+            log.warn("Payment with orderId {} already exists", request.orderId());
+            Payment payment = existingPayment.get();
+            EpointResponse response = buildResponseFromPayment(payment);
+            idempotencyService.storeResponse(idempotencyKey, response, payment);
+            return response;
+        }
+
+        // Proceed with new payment
         EpointResponse response = epointService.createPayment(request);
-        savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency());
+        Payment payment = savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        idempotencyService.storeResponse(idempotencyKey, response, payment);
         return response;
     }
 
     @Transactional
-    public EpointResponse cardRegistration(Long userId, EpointPaymentRequest request) {
+    public EpointResponse cardRegistration(String idempotencyKey, Long userId, EpointPaymentRequest request) {
+        // Check for cached response
+        Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
+        if (cachedResponse.isPresent()) {
+            log.info("Returning cached card registration response for idempotency key: {}", idempotencyKey);
+            return cachedResponse.get();
+        }
+
         EpointResponse response = epointService.cardRegistration(request);
         saveCardIfProvided(userId, response);
+        idempotencyService.storeResponse(idempotencyKey, response, null);
         return response;
     }
 
     @Transactional
-    public EpointResponse executePay(EpointExecutePayRequest request) {
+    public EpointResponse executePay(String idempotencyKey, EpointExecutePayRequest request, Long userId) {
+        // Check for cached response
+        Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
+        if (cachedResponse.isPresent()) {
+            log.info("Returning cached execute-pay response for idempotency key: {}", idempotencyKey);
+            return cachedResponse.get();
+        }
+
+        // Check if payment with this orderId already exists
+        Optional<Payment> existingPayment = paymentRepository.findByOrderId(request.orderId());
+        if (existingPayment.isPresent()) {
+            log.warn("Payment with orderId {} already exists", request.orderId());
+            Payment payment = existingPayment.get();
+            EpointResponse response = buildResponseFromPayment(payment);
+            idempotencyService.storeResponse(idempotencyKey, response, payment);
+            return response;
+        }
+
         EpointResponse response = epointService.executePay(request);
-        savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency());
+        Payment payment = savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency(), userId, null);
+        idempotencyService.storeResponse(idempotencyKey, response, payment);
         return response;
     }
 
     @Transactional
-    public EpointResponse cardRegistrationWithPay(Long userId, EpointPaymentRequest request) {
+    public EpointResponse cardRegistrationWithPay(String idempotencyKey, Long userId, EpointPaymentRequest request) {
+        // Check for cached response
+        Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
+        if (cachedResponse.isPresent()) {
+            log.info("Returning cached card-registration-with-pay response for idempotency key: {}", idempotencyKey);
+            return cachedResponse.get();
+        }
+
+        // Check if payment with this orderId already exists
+        Optional<Payment> existingPayment = paymentRepository.findByOrderId(request.orderId());
+        if (existingPayment.isPresent()) {
+            log.warn("Payment with orderId {} already exists", request.orderId());
+            Payment payment = existingPayment.get();
+            EpointResponse response = buildResponseFromPayment(payment);
+            idempotencyService.storeResponse(idempotencyKey, response, payment);
+            return response;
+        }
+
         EpointResponse response = epointService.cardRegistrationWithPay(request);
-        savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency());
+        Payment payment = savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
         saveCardIfProvided(userId, response);
+        idempotencyService.storeResponse(idempotencyKey, response, payment);
         return response;
     }
 
@@ -177,7 +243,7 @@ public class EpointIntegrationService {
         // Map Epoint status success to our internal code if needed
     }
 
-    private void savePaymentIfSuccess(EpointResponse response, String orderId, Double amount, String currency) {
+    private Payment savePaymentIfSuccess(EpointResponse response, String orderId, Double amount, String currency, Long userId, String description) {
         if ("success".equalsIgnoreCase(response.status())) {
             Payment payment = new Payment();
             payment.setProvider("EPOINT");
@@ -186,8 +252,36 @@ public class EpointIntegrationService {
             payment.setAmount(amount);
             payment.setCurrency(currency);
             payment.setStatus("NEW");
-            paymentRepository.save(payment);
+            payment.setUserId(userId);
+            payment.setDescription(description);
+            payment.setRedirectUrl(response.redirectUrl());
+            payment.setCardMask(response.cardMask());
+            payment.setCardName(response.cardName());
+            payment.setRrn(response.rrn());
+            payment.setBankTransaction(response.bankTransaction());
+            payment.setMessage(response.message());
+            return paymentRepository.save(payment);
         }
+        return null;
+    }
+
+    private void savePaymentIfSuccess(EpointResponse response, String orderId, Double amount, String currency) {
+        savePaymentIfSuccess(response, orderId, amount, currency, null, null);
+    }
+
+    private EpointResponse buildResponseFromPayment(Payment payment) {
+        return EpointResponse.builder()
+                .status(payment.getStatus())
+                .transaction(payment.getTransactionId())
+                .orderId(payment.getOrderId())
+                .redirectUrl(payment.getRedirectUrl())
+                .bankTransaction(payment.getBankTransaction())
+                .rrn(payment.getRrn())
+                .cardName(payment.getCardName())
+                .cardMask(payment.getCardMask())
+                .amount(payment.getAmount())
+                .message(payment.getMessage())
+                .build();
     }
 
     private void saveCardIfProvided(Long userId, EpointResponse response) {
