@@ -1,16 +1,14 @@
 package az.fitnest.payment.controller;
 
-import az.fitnest.payment.client.epoint.EpointProperties;
-import az.fitnest.payment.client.epoint.EpointSigner;
 import az.fitnest.payment.service.EpointIntegrationService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,18 +16,18 @@ import org.springframework.security.core.Authentication;
 import az.fitnest.payment.dto.epoint.*;
 import java.util.Map;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/epoint")
 @RequiredArgsConstructor
+@Slf4j
 @Tag(name = "Epoint Ödənişləri", description = "Epoint.az ödəniş inteqrasiyası üçün ucluqlar")
 public class EpointController {
 
-    private final EpointSigner signer;
     private final EpointIntegrationService integrationService;
-    private final EpointProperties properties;
+
+    // ==================== Callback Handling ====================
 
     @Operation(summary = "Geri çağırışı emal edin", description = "Epoint-dən ödəniş nəticələrini qəbul edir.")
     @PostMapping("/result")
@@ -37,46 +35,30 @@ public class EpointController {
             @RequestParam("data") String data,
             @RequestParam("signature") String signature) {
 
-
-        if (!signer.verify(data, signature, properties.getPrivateKey())) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid signature");
-        }
-
         try {
-            integrationService.processCallback(data);
+            integrationService.processCallback(data, signature);
             return ResponseEntity.ok("OK");
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid callback request: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid request");
+        } catch (SecurityException e) {
+            log.warn("Callback signature verification failed");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error");
+            log.error("Error processing callback", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Internal server error");
         }
     }
+
+    // ==================== Payment Operations ====================
 
     @Operation(summary = "Ödənişi başladın", description = "Yeni bir ödəniş sorğusu yaradır.")
     @PostMapping("/request")
     public ResponseEntity<EpointResponse> initiatePayment(
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody EpointPaymentRequest request,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        return ResponseEntity.ok(integrationService.initiatePayment(idempotencyKey, request, userId));
-    }
-
-    @Operation(summary = "Kartın qeydiyyatı", description = "Yeni bir kartı sistemdə qeydiyyatdan keçirir.")
-    @PostMapping("/card-registration")
-    public ResponseEntity<EpointResponse> cardRegistration(
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-            Authentication authentication,
-            @RequestBody EpointPaymentRequest request) {
-        Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.ok(integrationService.cardRegistration(idempotencyKey, userId, request));
-    }
-
-    @PostMapping("/execute-pay")
-    public ResponseEntity<EpointResponse> executePay(
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-            @RequestBody EpointExecutePayRequest request,
-            Authentication authentication) {
-        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        return ResponseEntity.ok(integrationService.executePay(idempotencyKey, request, userId));
+        return ResponseEntity.ok(integrationService.initiatePayment(request, userId));
     }
 
     @Operation(summary = "Tranzaksiya statusunu yoxlayın", description = "Tranzaksiyanın statusunu sorğulayır.")
@@ -85,27 +67,35 @@ public class EpointController {
         return ResponseEntity.ok(integrationService.getStatus(transactionId));
     }
 
-    @Operation(summary = "Birbaşa ödəniş forması", description = "Birbaşa ödəniş üçün data və signature təqdim edir.")
-    @PostMapping("/checkout")
-    public ResponseEntity<Map<String, String>> directCheckout(@RequestBody EpointPaymentRequest request) {
-        String data = signer.encodeData(request);
-        String signature = signer.sign(data, properties.getPrivateKey());
-        return ResponseEntity.ok(Map.of(
-            "data", data,
-            "signature", signature,
-            "action", properties.getBaseUrl() + "/checkout"
-        ));
+    // ==================== Card Operations ====================
+
+    @Operation(summary = "Kartın qeydiyyatı", description = "Yeni bir kartı sistemdə qeydiyyatdan keçirir.")
+    @PostMapping("/card-registration")
+    public ResponseEntity<EpointResponse> cardRegistration(
+            Authentication authentication,
+            @RequestBody EpointCardRegistrationRequest request) {
+        Long userId = (Long) authentication.getPrincipal();
+        return ResponseEntity.ok(integrationService.cardRegistration(userId, request));
+    }
+
+    @PostMapping("/execute-pay")
+    public ResponseEntity<EpointResponse> executePay(
+            @RequestBody EpointExecutePayRequest request,
+            Authentication authentication) {
+        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        return ResponseEntity.ok(integrationService.executePay(request, userId));
     }
 
     @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir.")
     @PostMapping("/card-registration-with-pay")
     public ResponseEntity<EpointResponse> cardRegistrationWithPay(
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             Authentication authentication,
             @RequestBody EpointPaymentRequest request) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.ok(integrationService.cardRegistrationWithPay(idempotencyKey, userId, request));
+        return ResponseEntity.ok(integrationService.cardRegistrationWithPay(userId, request));
     }
+
+    // ==================== Refund & Reverse ====================
 
     @Operation(summary = "Geri qaytarma sorğusu", description = "Ödənişin geri qaytarılmasını tələb edir.")
     @PostMapping("/refund-request")
@@ -120,6 +110,8 @@ public class EpointController {
                                                   @RequestParam String currency) {
         return ResponseEntity.ok(integrationService.reverse(transactionId, amount, currency));
     }
+
+    // ==================== Split Payments ====================
 
     @Operation(summary = "Bölünmüş ödəniş sorğusu", description = "Bölünmüş (split) ödəniş yaradır.")
     @PostMapping("/split-request")
@@ -139,6 +131,8 @@ public class EpointController {
         return ResponseEntity.ok(integrationService.splitCardRegistrationWithPay(request));
     }
 
+    // ==================== Pre-Authorization ====================
+
     @Operation(summary = "İlkin avtorizasiya sorğusu", description = "Vəsaitin bloklanması üçün ilkin avtorizasiya yaradır.")
     @PostMapping("/pre-auth-request")
     public ResponseEntity<EpointResponse> preAuthRequest(@RequestBody EpointPaymentRequest request) {
@@ -150,6 +144,8 @@ public class EpointController {
     public ResponseEntity<EpointResponse> preAuthComplete(@RequestBody EpointPreAuthCompleteRequest request) {
         return ResponseEntity.ok(integrationService.preAuthComplete(request));
     }
+
+    // ==================== Widgets & Wallets ====================
 
     @Operation(summary = "Vidcet URL-i yaradın", description = "Ödəniş vidceti üçün keçid yaradır.")
     @PostMapping("/widget-url")
@@ -168,6 +164,8 @@ public class EpointController {
     public ResponseEntity<EpointResponse> walletPayment(@RequestBody EpointWalletPaymentRequest request) {
         return ResponseEntity.ok(integrationService.walletPayment(request));
     }
+
+    // ==================== Invoices ====================
 
     @Operation(summary = "Hesab-faktura yaradın", description = "Yeni ödəniş hesabı yaradır.")
     @PostMapping("/invoices/create")
@@ -205,10 +203,5 @@ public class EpointController {
     public ResponseEntity<EpointResponse> sendInvoiceEmail(@PathVariable Long id, @RequestParam String email) {
         return ResponseEntity.ok(integrationService.sendInvoiceEmail(id, email));
     }
-
-    @Operation(summary = "Sağlamlıq yoxlanışı", description = "Sistemin işləkliyini yoxlayır.")
-    @GetMapping("/api/heartbeat")
-    public ResponseEntity<Map<String, String>> heartbeat() {
-        return ResponseEntity.ok(Map.of("status", "ok"));
-    }
 }
+

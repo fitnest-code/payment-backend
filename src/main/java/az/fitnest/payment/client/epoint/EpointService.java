@@ -29,6 +29,11 @@ public class EpointService {
         return httpClient.postSigned("/card-registration", request);
     }
 
+    public EpointResponse cardRegistration(EpointCardRegistrationRequest request) {
+        request = fillPublicKey(request);
+        return httpClient.postSigned("/card-registration", request);
+    }
+
     public EpointResponse executePay(EpointExecutePayRequest request) {
         request = fillPublicKey(request);
         return httpClient.postSigned("/execute-pay", request);
@@ -79,6 +84,20 @@ public class EpointService {
                     .isInstallment(request.isInstallment())
                     .refund(request.refund())
                     .otherAttr(request.otherAttr())
+                    .build();
+        }
+        return request;
+    }
+
+    private EpointCardRegistrationRequest fillPublicKey(EpointCardRegistrationRequest request) {
+        if (request.publicKey() == null) {
+            return EpointCardRegistrationRequest.builder()
+                    .publicKey(properties.getPublicKey())
+                    .language(request.language())
+                    .refund(request.refund())
+                    .description(request.description())
+                    .successRedirectUrl(request.successRedirectUrl())
+                    .errorRedirectUrl(request.errorRedirectUrl())
                     .build();
         }
         return request;

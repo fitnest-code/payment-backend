@@ -140,6 +140,45 @@ epoint:
   success-redirect-url: ${EPOINT_SUCCESS_REDIRECT_URL:https://your-domain.com/payment/success}
   error-redirect-url: ${EPOINT_ERROR_REDIRECT_URL:https://your-domain.com/payment/error}
 
+# Idempotency Key Configuration
+payment:
+  idempotency:
+    # Time To Live for idempotency keys in hours
+    # Standard: 24 hours (Stripe, Square, PayPal use this)
+    # Options: 1, 6, 12, 24, 48 hours
+    ttl-hours: ${IDEMPOTENCY_TTL_HOURS:24}
+
+    # Cleanup schedule (cron expression)
+    # Default: Every hour at minute 0 (0 0 * * * *)
+    # Format: second minute hour day month weekday
+    # Examples:
+    #  - "0 0 * * * *" → Every hour
+    #  - "0 */30 * * * *" → Every 30 minutes
+    #  - "0 0 2 * * *" → Daily at 2:00 AM
+    cleanup-cron: ${IDEMPOTENCY_CLEANUP_CRON:0 0 * * * *}
+
+    # Maximum number of idempotency keys to keep in database
+    # Recommendations:
+    #  - 100,000: Small/medium systems (100-1000 tx/day)
+    #  - 500,000: Medium/large systems (1000-10,000 tx/day)
+    #  - 1,000,000: Large systems (10,000+ tx/day)
+    max-entries: ${IDEMPOTENCY_MAX_ENTRIES:100000}
+
+    # Enable Redis caching for idempotency keys
+    # true: Better performance, reduces DB load (recommended for production)
+    # false: Simpler setup, no Redis dependency
+    redis-enabled: ${IDEMPOTENCY_REDIS_ENABLED:true}
+
+    # Redis TTL in seconds (should be ≤ ttl-hours * 3600)
+    # Default: 86400 seconds (24 hours)
+    redis-ttl-seconds: ${IDEMPOTENCY_REDIS_TTL_SECONDS:86400}
+
+    # Enable logging for cleanup operations
+    cleanup-logging-enabled: ${IDEMPOTENCY_CLEANUP_LOGGING_ENABLED:true}
+
+    # Enable detailed logging for cache hits/misses (set to true for debugging)
+    detailed-logging-enabled: ${IDEMPOTENCY_DETAILED_LOGGING_ENABLED:false}
+
 management:
   endpoints:
     web:

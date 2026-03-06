@@ -73,6 +73,18 @@ public class Payment {
     @Column(name = "redirect_url")
     private String redirectUrl;
 
+    @Column(name = "code")
+    private String code;
+
+    @Column(name = "bank_response")
+    private String bankResponse;
+
+    @Column(name = "operation_code")
+    private String operationCode;
+
+    @Column(name = "callback_processed")
+    private Boolean callbackProcessed = false;
+
     @Column(name = "created_at")
     private Instant createdAt;
 

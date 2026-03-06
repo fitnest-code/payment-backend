@@ -24,6 +24,9 @@ public class PaymentResponse {
     private String message;
     private Long userId;
     private String description;
+    private String code;
+    private String bankResponse;
+    private String operationCode;
     private Instant createdAt;
     private Instant updatedAt;
 }

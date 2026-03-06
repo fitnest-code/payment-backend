@@ -182,6 +182,9 @@ public class UserPaymentService {
                 .message(payment.getMessage())
                 .userId(payment.getUserId())
                 .description(payment.getDescription())
+                .code(payment.getCode())
+                .bankResponse(payment.getBankResponse())
+                .operationCode(payment.getOperationCode())
                 .createdAt(payment.getCreatedAt())
                 .updatedAt(payment.getUpdatedAt())
                 .build();
