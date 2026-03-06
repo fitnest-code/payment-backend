@@ -11,17 +11,18 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
 /**
  * Admin endpoints for managing idempotency keys.
- * These endpoints should be restricted to ADMIN users in production.
  */
 @RestController
 @RequestMapping("/api/v1/admin/idempotency")
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('ADMIN')")
 @Tag(name = "Idempotency Management (Admin)", description = "Idempotency key yönetimi üçün admin ucluqları")
 @SecurityRequirement(name = "bearerAuth")
 public class IdempotencyManagementController {
@@ -49,7 +50,6 @@ public class IdempotencyManagementController {
     })
     @GetMapping("/stats")
     public ResponseEntity<IdempotencyService.IdempotencyStats> getStats() {
-        // Note: Add @PreAuthorize("hasRole('ADMIN')") in production
         return ResponseEntity.ok(idempotencyService.getStats());
     }
 
@@ -74,7 +74,6 @@ public class IdempotencyManagementController {
     public ResponseEntity<?> getKeyDetails(
             @Parameter(description = "Idempotency açarı (məs: payment:ORD12345:100)")
             @PathVariable String idempotencyKey) {
-        // Note: Add @PreAuthorize("hasRole('ADMIN')") in production
         return idempotencyService.getIdempotencyKeyRecord(idempotencyKey)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -96,7 +95,6 @@ public class IdempotencyManagementController {
     public ResponseEntity<Map<String, String>> clearCacheForKey(
             @Parameter(description = "Idempotency açarı")
             @PathVariable String idempotencyKey) {
-        // Note: Add @PreAuthorize("hasRole('ADMIN')") in production
         idempotencyService.clearRedisCache(idempotencyKey);
         return ResponseEntity.ok(Map.of(
                 "message", "Redis cache cleared for key: " + idempotencyKey,
@@ -119,7 +117,6 @@ public class IdempotencyManagementController {
     })
     @DeleteMapping("/cache")
     public ResponseEntity<Map<String, String>> clearAllCache() {
-        // Note: Add @PreAuthorize("hasRole('ADMIN')") in production
         idempotencyService.clearAllRedisCache();
         return ResponseEntity.ok(Map.of(
                 "message", "All Redis idempotency cache cleared",

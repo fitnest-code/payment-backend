@@ -10,6 +10,13 @@ import java.util.Optional;
 @Repository
 public interface UserCardRepository extends JpaRepository<UserCard, Long> {
     List<UserCard> findAllByUserId(Long userId);
-    Optional<UserCard> findByCardId(String cardId);
+
+    /**
+     * Find card by userId and cardId (user-scoped lookup).
+     * This ensures card_id uniqueness is scoped to the user, not global.
+     * SECURITY: Always use this instead of findByCardId() to prevent cross-user card access.
+     */
+    Optional<UserCard> findByUserIdAndCardId(Long userId, String cardId);
+
     Optional<UserCard> findByUserIdAndIsDefaultTrue(Long userId);
 }

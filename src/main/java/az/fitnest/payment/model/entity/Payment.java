@@ -85,6 +85,10 @@ public class Payment {
     @Column(name = "callback_processed")
     private Boolean callbackProcessed = false;
 
+    @Version
+    @Column(name = "version")
+    private Long version;
+
     @Column(name = "created_at")
     private Instant createdAt;
 

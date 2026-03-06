@@ -2,6 +2,7 @@ package az.fitnest.payment.service;
 
 import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.dto.common.UserCardResponse;
+import az.fitnest.payment.exception.ForbiddenException;
 import az.fitnest.payment.exception.ResourceNotFoundException;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.entity.UserCard;
@@ -22,6 +23,8 @@ public class UserPaymentService {
 
     private final UserCardRepository userCardRepository;
     private final PaymentRepository paymentRepository;
+
+    // ─── Card operations ───────────────────────────────────────────────
 
     /**
      * Get all saved cards for a user
@@ -55,7 +58,7 @@ public class UserPaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Card not found with id: " + cardId));
 
         if (!card.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("Card does not belong to user");
+            throw new ForbiddenException("You do not have permission to access this card");
         }
 
         // Remove default from other cards
@@ -84,7 +87,7 @@ public class UserPaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Card not found with id: " + cardId));
 
         if (!card.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("Card does not belong to user");
+            throw new ForbiddenException("You do not have permission to access this card");
         }
 
         boolean wasDefault = card.isDefault();
@@ -101,8 +104,10 @@ public class UserPaymentService {
         }
     }
 
+    // ─── Payment operations (user-scoped) ──────────────────────────────
+
     /**
-     * Get all payments for a user
+     * Get all payments for the authenticated user
      */
     public List<PaymentResponse> getUserPayments(Long userId) {
         log.info("Fetching all payments for user: {}", userId);
@@ -113,10 +118,45 @@ public class UserPaymentService {
     }
 
     /**
-     * Get all payments (admin only)
+     * Get payment by ID — verifies it belongs to the given user
+     */
+    public PaymentResponse getPaymentById(Long paymentId, Long userId) {
+        log.info("Fetching payment with id: {} for user: {}", paymentId, userId);
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found with id: " + paymentId));
+        verifyOwnership(payment, userId);
+        return mapToPaymentResponse(payment);
+    }
+
+    /**
+     * Get payment by order ID — verifies it belongs to the given user
+     */
+    public PaymentResponse getPaymentByOrderId(String orderId, Long userId) {
+        log.info("Fetching payment with order id: {} for user: {}", orderId, userId);
+        Payment payment = paymentRepository.findByOrderId(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
+        verifyOwnership(payment, userId);
+        return mapToPaymentResponse(payment);
+    }
+
+    /**
+     * Get payment by transaction ID — verifies it belongs to the given user
+     */
+    public PaymentResponse getPaymentByTransactionId(String transactionId, Long userId) {
+        log.info("Fetching payment with transaction id: {} for user: {}", transactionId, userId);
+        Payment payment = paymentRepository.findByTransactionId(transactionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction id: " + transactionId));
+        verifyOwnership(payment, userId);
+        return mapToPaymentResponse(payment);
+    }
+
+    // ─── Payment operations (admin — no ownership check) ───────────────
+
+    /**
+     * Get all payments (admin only — authorization enforced at controller)
      */
     public List<PaymentResponse> getAllPayments() {
-        log.info("Fetching all payments");
+        log.info("Admin: fetching all payments");
         return paymentRepository.findAll()
                 .stream()
                 .map(this::mapToPaymentResponse)
@@ -124,33 +164,43 @@ public class UserPaymentService {
     }
 
     /**
-     * Get payment by ID
+     * Get any payment by ID (admin only — authorization enforced at controller)
      */
-    public PaymentResponse getPaymentById(Long paymentId) {
-        log.info("Fetching payment with id: {}", paymentId);
+    public PaymentResponse getPaymentByIdAdmin(Long paymentId) {
+        log.info("Admin: fetching payment with id: {}", paymentId);
         return paymentRepository.findById(paymentId)
                 .map(this::mapToPaymentResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with id: " + paymentId));
     }
 
     /**
-     * Get payment by order ID
+     * Get any payment by order ID (admin only — authorization enforced at controller)
      */
-    public PaymentResponse getPaymentByOrderId(String orderId) {
-        log.info("Fetching payment with order id: {}", orderId);
+    public PaymentResponse getPaymentByOrderIdAdmin(String orderId) {
+        log.info("Admin: fetching payment with order id: {}", orderId);
         return paymentRepository.findByOrderId(orderId)
                 .map(this::mapToPaymentResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
     }
 
     /**
-     * Get payment by transaction ID
+     * Get any payment by transaction ID (admin only — authorization enforced at controller)
      */
-    public PaymentResponse getPaymentByTransactionId(String transactionId) {
-        log.info("Fetching payment with transaction id: {}", transactionId);
+    public PaymentResponse getPaymentByTransactionIdAdmin(String transactionId) {
+        log.info("Admin: fetching payment with transaction id: {}", transactionId);
         return paymentRepository.findByTransactionId(transactionId)
                 .map(this::mapToPaymentResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction id: " + transactionId));
+    }
+
+    // ─── Helpers ───────────────────────────────────────────────────────
+
+    private void verifyOwnership(Payment payment, Long userId) {
+        if (!userId.equals(payment.getUserId())) {
+            log.warn("User {} attempted to access payment {} owned by user {}",
+                    userId, payment.getPaymentId(), payment.getUserId());
+            throw new ForbiddenException("You do not have permission to access this payment");
+        }
     }
 
     private UserCardResponse mapToCardResponse(UserCard card) {
@@ -190,5 +240,3 @@ public class UserPaymentService {
                 .build();
     }
 }
-
-

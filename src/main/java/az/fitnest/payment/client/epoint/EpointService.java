@@ -265,10 +265,23 @@ public class EpointService {
         return httpClient.postSigned("/pre-auth-complete", request);
     }
 
+    /**
+     * Get wallet status from Epoint.
+     *
+     * IMPORTANT: This endpoint currently uses the standard data+signature envelope format.
+     * According to the PDF documentation, this endpoint may require a different format
+     * (direct public_key parameter without envelope). If you encounter format errors,
+     * try using httpClient.postDirect() instead of httpClient.postSigned().
+     *
+     * See: WALLET_STATUS_ENDPOINT_ANALYSIS.md for details.
+     *
+     * @return EpointResponse containing wallet status information
+     */
     public EpointResponse walletStatus() {
         EpointRequestPayload request = EpointRequestPayload.builder()
                 .publicKey(properties.getPublicKey())
                 .build();
+        // TODO: Verify with Epoint PDF documentation if this should use postDirect() instead
         return httpClient.postSigned("/wallet/status", request);
     }
 

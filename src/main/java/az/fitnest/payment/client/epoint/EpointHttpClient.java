@@ -47,4 +47,33 @@ public class EpointHttpClient {
             throw e;
         }
     }
+
+    /**
+     * Send a direct JSON POST request without data+signature envelope.
+     * Use this for endpoints that don't follow the standard signing pattern.
+     *
+     * @param endpoint The API endpoint path (e.g., "/wallet/status")
+     * @param payload The request payload object (will be serialized to JSON)
+     * @return EpointResponse from the API
+     */
+    @Retryable(
+            value = {Exception.class},
+            maxAttempts = 3,
+            backoff = @Backoff(delay = 1000, multiplier = 2),
+            exclude = {IllegalArgumentException.class}
+    )
+    public EpointResponse postDirect(String endpoint, Object payload) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        HttpEntity<Object> request = new HttpEntity<>(payload, headers);
+
+        String url = properties.getBaseUrl() + endpoint;
+
+        try {
+            return restTemplate.postForObject(url, request, EpointResponse.class);
+        } catch (Exception e) {
+            throw e;
+        }
+    }
 }
