@@ -49,6 +49,10 @@ public class EpointService {
         return httpClient.postSigned("/refund-request", request);
     }
 
+    /**
+     * Reverse a transaction (full or partial).
+     * When amount is less than the original transaction amount, a partial reversal is performed.
+     */
     public EpointResponse reverse(String transactionId, Double amount, String currency) {
         EpointReverseRequest request = EpointReverseRequest.builder()
                 .publicKey(properties.getPublicKey())

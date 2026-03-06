@@ -103,7 +103,8 @@ public class EpointController {
         return ResponseEntity.ok(integrationService.refundRequest(request));
     }
 
-    @Operation(summary = "Ödənişi ləğv edin", description = "Tranzaksiyanı ləğv edir.")
+    @Operation(summary = "Tranzaksiyanı geri qaytarın", description = "Tranzaksiyanı tam və ya qismən geri qaytarır (reverse). " +
+            "Əgər göndərilən məbləğ orijinal məbləğdən azdırsa, qismən geri qaytarma (partial reversal) həyata keçirilir.")
     @PostMapping("/reverse")
     public ResponseEntity<EpointResponse> reverse(@RequestParam String transactionId,
                                                   @RequestParam Double amount,

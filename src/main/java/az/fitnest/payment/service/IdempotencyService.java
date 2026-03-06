@@ -117,7 +117,7 @@ public class IdempotencyService {
             // Store in database (persistent)
             IdempotencyKey key = IdempotencyKey.builder()
                     .idempotencyKey(idempotencyKey)
-                    .paymentId(payment != null ? payment.getPaymentId() : null)
+                    .paymentId(payment != null ? payment.getId() : null)
                     .responseStatus(response.status())
                     .responseTransactionId(response.transaction())
                     .responseOrderId(response.orderId())
@@ -137,6 +137,16 @@ public class IdempotencyService {
 
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize response for key: {}", idempotencyKey, e);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            // Duplicate key race: another thread inserted the same idempotency key concurrently.
+            // Reconcile by loading the existing record — this ensures deterministic behavior.
+            log.warn("Duplicate idempotency key detected (concurrent insert race): {}. Reconciling with existing record.", idempotencyKey);
+            idempotencyKeyRepository.findByIdempotencyKey(idempotencyKey).ifPresent(existing -> {
+                // Re-cache in Redis from the winning record so subsequent lookups are fast
+                if (idempotencyConfig.isRedisEnabled()) {
+                    cacheInRedis(idempotencyKey, existing.getResponseBody(), existing.getExpiresAt());
+                }
+            });
         } catch (Exception e) {
             log.error("Error storing idempotency key: {}", idempotencyKey, e);
         }
@@ -222,13 +232,29 @@ public class IdempotencyService {
     }
 
     /**
-     * Clear all Redis cache keys (useful for maintenance/testing)
+     * Clear all Redis cache keys (useful for maintenance/testing).
+     * Uses SCAN instead of KEYS to avoid blocking Redis in production.
      */
     public void clearAllRedisCache() {
         try {
-            Long deleted = redisTemplate.delete(redisTemplate.keys(REDIS_KEY_PREFIX + "*"));
-            if (deleted != null && deleted > 0) {
-                log.info("Cleared {} Redis idempotency cache entries", deleted);
+            long deletedCount = 0;
+            var scanOptions = org.springframework.data.redis.core.ScanOptions.scanOptions()
+                    .match(REDIS_KEY_PREFIX + "*")
+                    .count(100)
+                    .build();
+
+            try (var cursor = redisTemplate.scan(scanOptions)) {
+                while (cursor.hasNext()) {
+                    String key = cursor.next();
+                    Boolean deleted = redisTemplate.delete(key);
+                    if (deleted != null && deleted) {
+                        deletedCount++;
+                    }
+                }
+            }
+
+            if (deletedCount > 0) {
+                log.info("Cleared {} Redis idempotency cache entries via SCAN", deletedCount);
             }
         } catch (Exception e) {
             log.warn("Failed to clear all Redis cache", e);

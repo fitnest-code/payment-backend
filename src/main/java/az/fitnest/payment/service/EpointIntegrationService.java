@@ -132,6 +132,16 @@ public class EpointIntegrationService {
         return epointService.refundRequest(request);
     }
 
+    /**
+     * Reverse a transaction (full or partial reversal).
+     * If the amount is less than the original transaction amount, a partial reversal is performed.
+     * If the amount equals the original transaction amount, the transaction is fully reversed.
+     *
+     * @param transactionId the provider transaction ID to reverse
+     * @param amount        the amount to reverse (can be less than or equal to original amount)
+     * @param currency      the currency code (e.g., "AZN")
+     * @return the provider response indicating reversal result
+     */
     @Transactional
     public EpointResponse reverse(String transactionId, Double amount, String currency) {
         return epointService.reverse(transactionId, amount, currency);
@@ -413,22 +423,6 @@ public class EpointIntegrationService {
         }
     }
 
-    private void saveCardIfProvided(Long userId, EpointResponse response) {
-        if (response.cardId() != null && !response.cardId().isBlank()) {
-            // SECURITY: Use user-scoped lookup to prevent cross-user card access
-            if (userCardRepository.findByUserIdAndCardId(userId, response.cardId()).isEmpty()) {
-                UserCard userCard = UserCard.builder()
-                        .userId(userId)
-                        .cardId(response.cardId())
-                        .cardMask(response.cardMask())
-                        .cardName(response.cardName())
-                        .brand(CardBrandDetector.detectBrand(response.cardMask()))
-                        .isDefault(userCardRepository.findAllByUserId(userId).isEmpty()) // First card is default
-                        .build();
-                userCardRepository.save(userCard);
-            }
-        }
-    }
 
     /**
      * Upsert (insert or update) a card from callback data.

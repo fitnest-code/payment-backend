@@ -198,7 +198,7 @@ public class UserPaymentService {
     private void verifyOwnership(Payment payment, Long userId) {
         if (!userId.equals(payment.getUserId())) {
             log.warn("User {} attempted to access payment {} owned by user {}",
-                    userId, payment.getPaymentId(), payment.getUserId());
+                    userId, payment.getId(), payment.getUserId());
             throw new ForbiddenException("You do not have permission to access this payment");
         }
     }
@@ -220,7 +220,7 @@ public class UserPaymentService {
 
     private PaymentResponse mapToPaymentResponse(Payment payment) {
         return PaymentResponse.builder()
-                .paymentId(payment.getPaymentId())
+                .paymentId(payment.getId())
                 .provider(payment.getProvider())
                 .status(payment.getStatus())
                 .orderId(payment.getOrderId())
@@ -235,8 +235,10 @@ public class UserPaymentService {
                 .code(payment.getCode())
                 .bankResponse(payment.getBankResponse())
                 .operationCode(payment.getOperationCode())
-                .createdAt(payment.getCreatedAt())
-                .updatedAt(payment.getUpdatedAt())
+                .createdAt(payment.getCreatedDate() != null ?
+                    payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
+                .updatedAt(payment.getLastModifiedDate() != null ?
+                    payment.getLastModifiedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
                 .build();
     }
 }

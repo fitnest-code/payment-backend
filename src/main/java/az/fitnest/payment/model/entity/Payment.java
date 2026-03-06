@@ -6,24 +6,17 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.Instant;
-
 @Entity
 @Table(name = "payments", indexes = {
         @Index(name = "idx_payments_status", columnList = "status"),
-        @Index(name = "idx_payments_transaction_id", columnList = "transaction_id"),
+        @Index(name = "idx_payments_transaction_id", columnList = "transaction_id", unique = true),
         @Index(name = "idx_payments_order_id", columnList = "order_id")
 })
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class Payment {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "payment_id")
-    private Long paymentId;
+public class Payment extends BaseAuditableEntity {
 
     @Column(name = "provider", nullable = false)
     private String provider;
@@ -40,7 +33,7 @@ public class Payment {
     @Column(name = "order_id", unique = true)
     private String orderId;
 
-    @Column(name = "transaction_id")
+    @Column(name = "transaction_id", unique = true)
     private String transactionId;
 
     @Column(name = "amount")
@@ -88,21 +81,4 @@ public class Payment {
     @Version
     @Column(name = "version")
     private Long version;
-
-    @Column(name = "created_at")
-    private Instant createdAt;
-
-    @Column(name = "updated_at")
-    private Instant updatedAt;
-
-    @PrePersist
-    protected void onCreate() {
-        createdAt = Instant.now();
-        updatedAt = Instant.now();
-    }
-
-    @PreUpdate
-    protected void onUpdate() {
-        updatedAt = Instant.now();
-    }
 }
