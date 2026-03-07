@@ -21,4 +21,3 @@ public class UserCardResponse {
     private Instant createdAt;
     private Instant updatedAt;
 }
-

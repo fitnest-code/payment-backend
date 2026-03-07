@@ -22,4 +22,15 @@ public interface IdempotencyKeyRepository extends JpaRepository<IdempotencyKey, 
 
     @Query("SELECT COUNT(i) FROM IdempotencyKey i WHERE i.expiresAt > :now")
     long countActiveKeys(Instant now);
+
+    @Query("SELECT COUNT(i) FROM IdempotencyKey i WHERE i.expiresAt <= :now")
+    long countExpiredKeys(Instant now);
+
+    @Modifying
+    @Query(value = "DELETE FROM idempotency_keys WHERE id IN " +
+            "(SELECT id FROM idempotency_keys ORDER BY expires_at ASC LIMIT :limit)", nativeQuery = true)
+    int evictOldestKeys(int limit);
+
+    @Query("SELECT MIN(i.createdAt) FROM IdempotencyKey i WHERE i.expiresAt > :now")
+    Optional<Instant> findOldestActiveCreatedAt(Instant now);
 }

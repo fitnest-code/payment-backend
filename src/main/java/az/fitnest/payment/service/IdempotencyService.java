@@ -7,287 +7,469 @@ import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.repository.IdempotencyKeyRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class IdempotencyService {
 
     private final IdempotencyKeyRepository idempotencyKeyRepository;
     private final ObjectMapper objectMapper;
     private final IdempotencyConfig idempotencyConfig;
+    private final StringRedisTemplate redisTemplate;
 
-    private final RedisTemplate<String, String> redisTemplate;
-
+    private static final long MIN_TTL_FOR_REDIS_CACHE = 5;
     private static final String REDIS_KEY_PREFIX = "idempotency:";
+    private static final String IDEMPOTENCY_KEY_CONSTRAINT = "idx_idempotency_key";
 
-    /**
-     * Check if an idempotency key has been used before.
-     * Uses Redis for fast lookup, falls back to database if Redis is unavailable.
-     * If yes, return the cached response.
-     * If no, return empty.
-     */
+    private final Counter redisHitCounter;
+    private final Counter redisMissCounter;
+    private final Counter dbHitCounter;
+    private final Counter dbMissCounter;
+    private final Counter redisDeserializeFailCounter;
+    private final Counter dbDeserializeFailCounter;
+    private final Counter duplicateInsertRaceCounter;
+    private final Timer lookupTimer;
+    private final Timer storeTimer;
+
+    private final AtomicReference<Instant> lastCleanupRun = new AtomicReference<>();
+    private final AtomicLong lastCleanupDeletedCount = new AtomicLong(0);
+
+    public IdempotencyService(
+            IdempotencyKeyRepository idempotencyKeyRepository,
+            ObjectMapper objectMapper,
+            IdempotencyConfig idempotencyConfig,
+            @Qualifier("stringRedisTemplate") StringRedisTemplate redisTemplate,
+            MeterRegistry meterRegistry) {
+        this.idempotencyKeyRepository = idempotencyKeyRepository;
+        this.objectMapper = objectMapper;
+        this.idempotencyConfig = idempotencyConfig;
+        this.redisTemplate = redisTemplate;
+
+        this.redisHitCounter = Counter.builder("idempotency.cache.redis.hit").register(meterRegistry);
+        this.redisMissCounter = Counter.builder("idempotency.cache.redis.miss").register(meterRegistry);
+        this.dbHitCounter = Counter.builder("idempotency.cache.db.hit").register(meterRegistry);
+        this.dbMissCounter = Counter.builder("idempotency.cache.db.miss").register(meterRegistry);
+        this.redisDeserializeFailCounter = Counter.builder("idempotency.cache.redis.deserialize_fail").register(meterRegistry);
+        this.dbDeserializeFailCounter = Counter.builder("idempotency.cache.db.deserialize_fail").register(meterRegistry);
+        this.duplicateInsertRaceCounter = Counter.builder("idempotency.store.duplicate_race").register(meterRegistry);
+        this.lookupTimer = Timer.builder("idempotency.lookup.duration").register(meterRegistry);
+        this.storeTimer = Timer.builder("idempotency.store.duration").register(meterRegistry);
+    }
+
     public Optional<EpointResponse> getCachedResponse(String idempotencyKey) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             return Optional.empty();
         }
 
-        try {
-            // First, try to get from Redis (fast) if enabled
-            if (idempotencyConfig.isRedisEnabled()) {
-                String redisKey = REDIS_KEY_PREFIX + idempotencyKey;
-                String cachedResponse = redisTemplate.opsForValue().get(redisKey);
+        Instant now = Instant.now();
 
-                if (cachedResponse != null) {
-                    if (idempotencyConfig.isDetailedLoggingEnabled()) {
-                        log.debug("Found idempotency key in Redis cache: {}", idempotencyKey);
+        return lookupTimer.record(() -> {
+            if (idempotencyConfig.isRedisEnabled()) {
+                try {
+                    Optional<EpointResponse> redisResult = getFromRedis(idempotencyKey);
+                    if (redisResult.isPresent()) {
+                        return redisResult;
                     }
-                    try {
-                        return Optional.of(objectMapper.readValue(cachedResponse, EpointResponse.class));
-                    } catch (JsonProcessingException e) {
-                        log.error("Failed to deserialize cached response from Redis for key: {}", idempotencyKey, e);
-                    }
+                } catch (RedisConnectionFailureException e) {
+                    log.warn("Redis unavailable for idempotency lookup (key: {}), falling back to DB",
+                            maskKey(idempotencyKey), e);
+                } catch (org.springframework.data.redis.RedisSystemException e) {
+                    log.warn("Redis system error for idempotency key: {}, falling back to DB",
+                            maskKey(idempotencyKey), e);
                 }
             }
 
-            // If not in Redis, check database (persistent storage)
             if (idempotencyConfig.isDetailedLoggingEnabled()) {
-                log.debug("Idempotency key not in Redis/disabled, checking database: {}", idempotencyKey);
+                log.debug("Checking database for idempotency key: {}", maskKey(idempotencyKey));
             }
-            return getCachedResponseFromDatabase(idempotencyKey);
+            return getCachedResponseFromDatabase(idempotencyKey, now);
+        });
+    }
 
-        } catch (Exception e) {
-            log.warn("Error checking Redis cache for idempotency key: {}, falling back to database", idempotencyKey, e);
-            return getCachedResponseFromDatabase(idempotencyKey);
+    private Optional<EpointResponse> getFromRedis(String idempotencyKey) {
+        String redisKey = REDIS_KEY_PREFIX + idempotencyKey;
+        String cachedResponse = redisTemplate.opsForValue().get(redisKey);
+
+        if (cachedResponse == null) {
+            redisMissCounter.increment();
+            return Optional.empty();
         }
-    }
 
-    /**
-     * Retrieve cached response from database
-     */
-    @Transactional(readOnly = true)
-    private Optional<EpointResponse> getCachedResponseFromDatabase(String idempotencyKey) {
-        return idempotencyKeyRepository.findByIdempotencyKey(idempotencyKey)
-                .filter(key -> key.getExpiresAt().isAfter(Instant.now()))
-                .map(key -> {
-                    try {
-                        EpointResponse response = objectMapper.readValue(key.getResponseBody(), EpointResponse.class);
-                        // Cache it in Redis for next time if Redis is enabled
-                        if (idempotencyConfig.isRedisEnabled()) {
-                            cacheInRedis(idempotencyKey, key.getResponseBody(), key.getExpiresAt());
-                        }
-                        return response;
-                    } catch (JsonProcessingException e) {
-                        log.error("Failed to deserialize cached response from database for key: {}", idempotencyKey, e);
-                        return null;
-                    }
-                });
-    }
-
-    /**
-     * Store the response for the idempotency key in both Redis and database.
-     * - Database: Persistent storage, expires after configurable TTL
-     * - Redis: Fast retrieval, expires after configurable TTL (if enabled)
-     */
-    @Transactional
-    public void storeResponse(String idempotencyKey, EpointResponse response, Payment payment) {
-        if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            return;
+        if (idempotencyConfig.isDetailedLoggingEnabled()) {
+            log.debug("Found idempotency key in Redis cache: {}", maskKey(idempotencyKey));
         }
 
         try {
-            String responseBody = objectMapper.writeValueAsString(response);
-
-            // Calculate expiration time
-            Instant now = Instant.now();
-            Instant expiresAt = now.plusSeconds(idempotencyConfig.getTtlSeconds());
-
-            // Store in database (persistent)
-            IdempotencyKey key = IdempotencyKey.builder()
-                    .idempotencyKey(idempotencyKey)
-                    .paymentId(payment != null ? payment.getId() : null)
-                    .responseStatus(response.status())
-                    .responseTransactionId(response.transaction())
-                    .responseOrderId(response.orderId())
-                    .responseBody(responseBody)
-                    .createdAt(now)
-                    .expiresAt(expiresAt)
-                    .build();
-
-            IdempotencyKey savedKey = idempotencyKeyRepository.save(key);
-            log.debug("Stored idempotency key in database with TTL {} hours: {}",
-                    idempotencyConfig.getTtlHours(), idempotencyKey);
-
-            // Also cache in Redis for faster retrieval (if enabled)
-            if (idempotencyConfig.isRedisEnabled()) {
-                cacheInRedis(idempotencyKey, responseBody, expiresAt);
-            }
-
+            EpointResponse result = objectMapper.readValue(cachedResponse, EpointResponse.class);
+            redisHitCounter.increment();
+            return Optional.of(result);
         } catch (JsonProcessingException e) {
-            log.error("Failed to serialize response for key: {}", idempotencyKey, e);
-        } catch (org.springframework.dao.DataIntegrityViolationException e) {
-            // Duplicate key race: another thread inserted the same idempotency key concurrently.
-            // Reconcile by loading the existing record — this ensures deterministic behavior.
-            log.warn("Duplicate idempotency key detected (concurrent insert race): {}. Reconciling with existing record.", idempotencyKey);
-            idempotencyKeyRepository.findByIdempotencyKey(idempotencyKey).ifPresent(existing -> {
-                // Re-cache in Redis from the winning record so subsequent lookups are fast
-                if (idempotencyConfig.isRedisEnabled()) {
-                    cacheInRedis(idempotencyKey, existing.getResponseBody(), existing.getExpiresAt());
-                }
-            });
-        } catch (Exception e) {
-            log.error("Error storing idempotency key: {}", idempotencyKey, e);
+            redisDeserializeFailCounter.increment();
+            log.error("Corrupt JSON in Redis for key: {}. Deleting and falling back to DB.", maskKey(idempotencyKey), e);
+            try {
+                redisTemplate.delete(redisKey);
+            } catch (Exception deleteEx) {
+                log.warn("Failed to delete corrupt Redis key: {}", maskKey(redisKey), deleteEx);
+            }
+            return Optional.empty();
         }
     }
 
-    /**
-     * Cache response in Redis with TTL
-     */
-    private void cacheInRedis(String idempotencyKey, String responseBody, Instant expiresAt) {
+    @Transactional(readOnly = true)
+    private Optional<EpointResponse> getCachedResponseFromDatabase(String idempotencyKey, Instant now) {
+        Optional<IdempotencyKey> optKey = idempotencyKeyRepository.findByIdempotencyKey(idempotencyKey);
+
+        if (optKey.isEmpty()) {
+            dbMissCounter.increment();
+            return Optional.empty();
+        }
+
+        IdempotencyKey key = optKey.get();
+
+        if (!key.getExpiresAt().isAfter(now)) {
+            dbMissCounter.increment();
+            return Optional.empty();
+        }
+
+        if (key.getResponseBody() == null || key.getResponseBody().isBlank()) {
+            dbDeserializeFailCounter.increment();
+            log.error("Corrupt idempotency record (null/blank responseBody) for key: {}, id: {}. Deleting row.",
+                    maskKey(idempotencyKey), key.getId());
+            idempotencyKeyRepository.deleteById(key.getId());
+            return Optional.empty();
+        }
+
         try {
-            long ttlSeconds = Math.max(1, expiresAt.getEpochSecond() - Instant.now().getEpochSecond());
+            EpointResponse response = objectMapper.readValue(key.getResponseBody(), EpointResponse.class);
+            dbHitCounter.increment();
+
+            if (idempotencyConfig.isRedisEnabled()) {
+                long remainingSeconds = key.getExpiresAt().getEpochSecond() - now.getEpochSecond();
+                if (remainingSeconds >= MIN_TTL_FOR_REDIS_CACHE) {
+                    cacheInRedis(idempotencyKey, key.getResponseBody(), key.getExpiresAt(), now);
+                }
+            }
+
+            return Optional.of(response);
+        } catch (JsonProcessingException e) {
+            dbDeserializeFailCounter.increment();
+            log.error("Corrupt JSON in DB for key: {}, id: {}. Deleting row.", maskKey(idempotencyKey), key.getId(), e);
+            idempotencyKeyRepository.deleteById(key.getId());
+            return Optional.empty();
+        }
+    }
+
+    @Transactional
+    public EpointResponse persistIdempotentResponse(String idempotencyKey, EpointResponse response, Payment payment) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return response;
+        }
+        if (response == null) {
+            log.warn("Attempted to store null response for key: {}. Skipping.", maskKey(idempotencyKey));
+            return null;
+        }
+
+        return storeTimer.record(() -> {
+            Instant now = Instant.now();
+
+            try {
+                String responseBody = objectMapper.writeValueAsString(response);
+                Instant expiresAt = now.plusSeconds(idempotencyConfig.getTtlSeconds());
+
+                IdempotencyKey entity = buildKeyEntity(idempotencyKey, response, payment, responseBody, now, expiresAt);
+                idempotencyKeyRepository.save(entity);
+                log.debug("Stored idempotency key with TTL {} hours: {}",
+                        idempotencyConfig.getTtlHours(), maskKey(idempotencyKey));
+
+                cachePersistedBody(idempotencyKey, responseBody, expiresAt, now);
+                enforceMaxEntries(now);
+
+                return response;
+
+            } catch (JsonProcessingException e) {
+                log.error("Failed to serialize response for key: {}", maskKey(idempotencyKey), e);
+                return response;
+            } catch (DataIntegrityViolationException e) {
+                return handleDuplicateKeyRace(idempotencyKey, response, now, e);
+            }
+        });
+    }
+
+    @Deprecated(forRemoval = true)
+    @Transactional
+    public EpointResponse storeResponse(String idempotencyKey, EpointResponse response, Payment payment) {
+        return persistIdempotentResponse(idempotencyKey, response, payment);
+    }
+
+    private void enforceMaxEntries(Instant now) {
+        try {
+            long activeKeys = idempotencyKeyRepository.countActiveKeys(now);
+            if (activeKeys > idempotencyConfig.getMaxEntries()) {
+                int evictCount = (int) Math.max(1, idempotencyConfig.getMaxEntries() / 10);
+                int evicted = idempotencyKeyRepository.evictOldestKeys(evictCount);
+                log.warn("Max entries exceeded ({}/{}). Evicted {} nearest-expiry rows.",
+                        activeKeys, idempotencyConfig.getMaxEntries(), evicted);
+            }
+        } catch (Exception e) {
+            log.error("Error enforcing max-entries limit", e);
+        }
+    }
+
+    private IdempotencyKey buildKeyEntity(String idempotencyKey, EpointResponse response,
+                                          Payment payment, String responseBody,
+                                          Instant now, Instant expiresAt) {
+        return IdempotencyKey.builder()
+                .idempotencyKey(idempotencyKey)
+                .paymentId(payment != null ? payment.getId() : null)
+                .responseStatus(response.status())
+                .responseTransactionId(response.transaction())
+                .responseOrderId(response.orderId())
+                .responseBody(responseBody)
+                .createdAt(now)
+                .expiresAt(expiresAt)
+                .build();
+    }
+
+    private EpointResponse handleDuplicateKeyRace(String idempotencyKey, EpointResponse response,
+                                                   Instant now, DataIntegrityViolationException e) {
+        if (isIdempotencyKeyConstraintViolation(e)) {
+            duplicateInsertRaceCounter.increment();
+            log.warn("Duplicate idempotency key (concurrent race): {}. Returning winning record.", maskKey(idempotencyKey));
+            return loadWinningResponse(idempotencyKey, response, now);
+        }
+        log.error("DataIntegrityViolationException for key {} is NOT idempotency-key constraint. Rethrowing.",
+                maskKey(idempotencyKey), e);
+        throw e;
+    }
+
+    private void cachePersistedBody(String idempotencyKey, String responseBody, Instant expiresAt, Instant now) {
+        if (idempotencyConfig.isRedisEnabled()) {
+            cacheInRedis(idempotencyKey, responseBody, expiresAt, now);
+        }
+    }
+
+    private EpointResponse loadWinningResponse(String idempotencyKey, EpointResponse fallback, Instant now) {
+        return idempotencyKeyRepository.findByIdempotencyKey(idempotencyKey)
+                .map(existing -> {
+                    if (idempotencyConfig.isRedisEnabled()) {
+                        long remainingSeconds = existing.getExpiresAt().getEpochSecond() - now.getEpochSecond();
+                        if (remainingSeconds >= MIN_TTL_FOR_REDIS_CACHE) {
+                            cacheInRedis(idempotencyKey, existing.getResponseBody(), existing.getExpiresAt(), now);
+                        }
+                    }
+                    try {
+                        return objectMapper.readValue(existing.getResponseBody(), EpointResponse.class);
+                    } catch (JsonProcessingException ex) {
+                        dbDeserializeFailCounter.increment();
+                        log.error("Failed to deserialize winning record for key: {}", maskKey(idempotencyKey), ex);
+                        return fallback;
+                    }
+                })
+                .orElse(fallback);
+    }
+
+    private boolean isIdempotencyKeyConstraintViolation(DataIntegrityViolationException e) {
+        Throwable root = e;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        String message = root.getMessage();
+        if (message == null) {
+            return true;
+        }
+        String lowerMessage = message.toLowerCase();
+        return lowerMessage.contains(IDEMPOTENCY_KEY_CONSTRAINT)
+                || lowerMessage.contains("idempotency_key")
+                || lowerMessage.contains("unique");
+    }
+
+    private void cacheInRedis(String idempotencyKey, String responseBody, Instant expiresAt, Instant now) {
+        try {
+            long ttlSeconds = Math.max(1, expiresAt.getEpochSecond() - now.getEpochSecond());
             long redisTtl = Math.min(ttlSeconds, idempotencyConfig.getRedisTtlSeconds());
 
             String redisKey = REDIS_KEY_PREFIX + idempotencyKey;
             redisTemplate.opsForValue().set(redisKey, responseBody, redisTtl, TimeUnit.SECONDS);
 
             if (idempotencyConfig.isDetailedLoggingEnabled()) {
-                log.debug("Cached idempotency key in Redis with TTL {} seconds: {}", redisTtl, idempotencyKey);
+                log.debug("Cached in Redis with TTL {}s: {}", redisTtl, maskKey(idempotencyKey));
             }
         } catch (Exception e) {
-            log.warn("Failed to cache idempotency key in Redis: {}, continuing with database only", idempotencyKey, e);
+            log.warn("Failed to cache in Redis: {}, continuing with DB only", maskKey(idempotencyKey), e);
         }
     }
 
-    /**
-     * Get idempotency key record from database (for admin/debug purposes)
-     */
+    private static String maskKey(String key) {
+        if (key == null) return "null";
+        if (key.length() <= 16) return key;
+        return key.substring(0, 12) + "***" + key.substring(key.length() - 4);
+    }
+
     @Transactional(readOnly = true)
     public Optional<IdempotencyKey> getIdempotencyKeyRecord(String idempotencyKey) {
         return idempotencyKeyRepository.findByIdempotencyKey(idempotencyKey);
     }
 
-    /**
-     * Clean up expired idempotency keys from database periodically.
-     * Redis keys will automatically expire due to TTL.
-     * Schedule configurable via application.yml: payment.idempotency.cleanup-cron
-     */
     @Scheduled(cron = "${payment.idempotency.cleanup-cron:0 0 * * * *}")
     @Transactional
     public void cleanupExpiredKeys() {
         try {
             Instant now = Instant.now();
-            int deleted = idempotencyKeyRepository.deleteExpiredKeys(now);
-
-            if (deleted > 0) {
-                if (idempotencyConfig.isCleanupLoggingEnabled()) {
-                    log.info("🧹 Cleanup: Removed {} expired idempotency keys from database", deleted);
-                }
-            }
-
-            // Log database stats
-            long activeKeys = idempotencyKeyRepository.countActiveKeys(now);
-            if (idempotencyConfig.isCleanupLoggingEnabled()) {
-                log.info("📊 Idempotency Stats: {} active keys, {} hours TTL",
-                        activeKeys, idempotencyConfig.getTtlHours());
-            }
-
-            // Warn if approaching max entries limit
-            if (activeKeys > idempotencyConfig.getMaxEntries()) {
-                log.warn("⚠️  WARNING: Active idempotency keys ({}) exceeds max entries ({}). " +
-                         "Consider reducing TTL or increasing max entries.",
-                        activeKeys, idempotencyConfig.getMaxEntries());
-            }
-
+            int deleted = deleteExpiredRows(now);
+            long activeKeys = logCleanupStats(now, deleted);
+            evictExcessRows(activeKeys, now);
         } catch (Exception e) {
             log.error("Error during idempotency key cleanup", e);
         }
     }
 
-    /**
-     * Clear Redis cache for a specific key (useful for debugging/testing)
-     */
+    private int deleteExpiredRows(Instant now) {
+        int deleted = idempotencyKeyRepository.deleteExpiredKeys(now);
+        lastCleanupRun.set(now);
+        lastCleanupDeletedCount.set(deleted);
+        if (deleted > 0 && idempotencyConfig.isCleanupLoggingEnabled()) {
+            log.info("[Cleanup] Removed {} expired idempotency keys", deleted);
+        }
+        return deleted;
+    }
+
+    private long logCleanupStats(Instant now, int deleted) {
+        long activeKeys = idempotencyKeyRepository.countActiveKeys(now);
+        if (idempotencyConfig.isCleanupLoggingEnabled()) {
+            log.info("[Idempotency] {} active keys, {} hours TTL",
+                    activeKeys, idempotencyConfig.getTtlHours());
+        }
+        return activeKeys;
+    }
+
+    private void evictExcessRows(long activeKeys, Instant now) {
+        if (activeKeys > idempotencyConfig.getMaxEntries()) {
+            int evictCount = (int) (activeKeys - idempotencyConfig.getMaxEntries());
+            int evicted = idempotencyKeyRepository.evictOldestKeys(evictCount);
+            log.warn("[Cleanup] Evicted {} excess rows (was {}/{})",
+                    evicted, activeKeys, idempotencyConfig.getMaxEntries());
+        }
+    }
+
     public void clearRedisCache(String idempotencyKey) {
+        if (!idempotencyConfig.isRedisEnabled()) {
+            return;
+        }
         try {
             String redisKey = REDIS_KEY_PREFIX + idempotencyKey;
             Boolean deleted = redisTemplate.delete(redisKey);
             if (deleted != null && deleted) {
-                log.debug("Cleared Redis cache for idempotency key: {}", idempotencyKey);
+                log.debug("Cleared Redis cache for key: {}", maskKey(idempotencyKey));
             }
         } catch (Exception e) {
-            log.warn("Failed to clear Redis cache for key: {}", idempotencyKey, e);
+            log.warn("Failed to clear Redis cache for key: {}", maskKey(idempotencyKey), e);
         }
     }
 
-    /**
-     * Clear all Redis cache keys (useful for maintenance/testing).
-     * Uses SCAN instead of KEYS to avoid blocking Redis in production.
-     */
     public void clearAllRedisCache() {
+        if (!idempotencyConfig.isRedisEnabled()) {
+            return;
+        }
         try {
-            long deletedCount = 0;
             var scanOptions = org.springframework.data.redis.core.ScanOptions.scanOptions()
                     .match(REDIS_KEY_PREFIX + "*")
                     .count(100)
                     .build();
 
+            List<String> batch = new ArrayList<>(100);
+            long deletedCount = 0;
+
             try (var cursor = redisTemplate.scan(scanOptions)) {
                 while (cursor.hasNext()) {
-                    String key = cursor.next();
-                    Boolean deleted = redisTemplate.delete(key);
-                    if (deleted != null && deleted) {
-                        deletedCount++;
+                    batch.add(cursor.next());
+                    if (batch.size() >= 100) {
+                        Long count = redisTemplate.delete(batch);
+                        deletedCount += (count != null ? count : 0);
+                        batch.clear();
                     }
                 }
             }
+            if (!batch.isEmpty()) {
+                Long count = redisTemplate.delete(batch);
+                deletedCount += (count != null ? count : 0);
+            }
 
             if (deletedCount > 0) {
-                log.info("Cleared {} Redis idempotency cache entries via SCAN", deletedCount);
+                log.info("Cleared {} Redis idempotency cache entries", deletedCount);
             }
         } catch (Exception e) {
             log.warn("Failed to clear all Redis cache", e);
         }
     }
 
-    /**
-     * Get statistics about idempotency keys
-     */
     @Transactional(readOnly = true)
     public IdempotencyStats getStats() {
         Instant now = Instant.now();
         long activeKeys = idempotencyKeyRepository.countActiveKeys(now);
+        long expiredKeys = idempotencyKeyRepository.countExpiredKeys(now);
+
+        Duration oldestActiveAge = idempotencyKeyRepository.findOldestActiveCreatedAt(now)
+                .map(oldest -> Duration.between(oldest, now))
+                .orElse(Duration.ZERO);
 
         return IdempotencyStats.builder()
                 .activeKeys(activeKeys)
+                .expiredKeys(expiredKeys)
                 .ttlHours(idempotencyConfig.getTtlHours())
                 .maxEntries(idempotencyConfig.getMaxEntries())
                 .redisEnabled(idempotencyConfig.isRedisEnabled())
                 .utilizationPercent((activeKeys * 100) / Math.max(1, idempotencyConfig.getMaxEntries()))
+                .oldestActiveKeyAgeSeconds(oldestActiveAge.getSeconds())
+                .redisHitCount((long) redisHitCounter.count())
+                .redisMissCount((long) redisMissCounter.count())
+                .dbHitCount((long) dbHitCounter.count())
+                .dbMissCount((long) dbMissCounter.count())
+                .redisDeserializeFailCount((long) redisDeserializeFailCounter.count())
+                .dbDeserializeFailCount((long) dbDeserializeFailCounter.count())
+                .duplicateInsertRaceCount((long) duplicateInsertRaceCounter.count())
+                .lastCleanupRun(lastCleanupRun.get())
+                .lastCleanupDeletedCount(lastCleanupDeletedCount.get())
                 .build();
     }
 
-    /**
-     * Statistics DTO
-     */
     @lombok.Data
     @lombok.Builder
     public static class IdempotencyStats {
         private long activeKeys;
+        private long expiredKeys;
         private long ttlHours;
         private long maxEntries;
         private boolean redisEnabled;
         private long utilizationPercent;
+        private long oldestActiveKeyAgeSeconds;
+        private long redisHitCount;
+        private long redisMissCount;
+        private long dbHitCount;
+        private long dbMissCount;
+        private long redisDeserializeFailCount;
+        private long dbDeserializeFailCount;
+        private long duplicateInsertRaceCount;
+        private Instant lastCleanupRun;
+        private long lastCleanupDeletedCount;
     }
 }
-

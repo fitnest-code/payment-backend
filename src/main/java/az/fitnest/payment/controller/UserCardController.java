@@ -119,4 +119,3 @@ public class UserCardController {
         return ResponseEntity.noContent().build();
     }
 }
-

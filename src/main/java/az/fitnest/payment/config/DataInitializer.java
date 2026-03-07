@@ -75,7 +75,6 @@ public class DataInitializer {
     }
 
     private void initUserCards() {
-        // Seed cards only if user 1 has no cards yet (not a global table check)
         if (userCardRepository.findAllByUserId(1L).isEmpty()) {
             log.info("No cards found for user 1. Seeding default cards...");
             UserCard card1 = UserCard.builder()

@@ -12,7 +12,8 @@ import java.time.Instant;
 @Entity
 @Table(name = "idempotency_keys", indexes = {
         @Index(name = "idx_idempotency_key", columnList = "idempotency_key", unique = true),
-        @Index(name = "idx_created_at", columnList = "created_at")
+        @Index(name = "idx_created_at", columnList = "created_at"),
+        @Index(name = "idx_expires_at", columnList = "expires_at")
 })
 @Getter
 @Setter
@@ -57,9 +58,7 @@ public class IdempotencyKey {
             createdAt = Instant.now();
         }
         if (expiresAt == null) {
-            // Default expiration: 24 hours
             expiresAt = createdAt.plusSeconds(86400);
         }
     }
 }
-

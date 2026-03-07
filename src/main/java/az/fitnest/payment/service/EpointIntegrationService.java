@@ -32,35 +32,28 @@ public class EpointIntegrationService {
     @Transactional
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
         String idempotencyKey = generateIdempotencyKey("payment", request.orderId(), userId);
-        // Check for cached response
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
         if (cachedResponse.isPresent()) {
             log.info("Returning cached response for idempotency key: {}", idempotencyKey);
             return cachedResponse.get();
         }
 
-        // Check if payment with this orderId already exists
         Optional<Payment> existingPayment = paymentRepository.findByOrderId(request.orderId());
         if (existingPayment.isPresent()) {
             log.warn("Payment with orderId {} already exists", request.orderId());
             Payment payment = existingPayment.get();
             EpointResponse response = buildResponseFromPayment(payment);
-            idempotencyService.storeResponse(idempotencyKey, response, payment);
-            return response;
+            return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
         }
 
-        // Proceed with new payment
         EpointResponse response = epointService.createPayment(request);
         Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
-        idempotencyService.storeResponse(idempotencyKey, response, payment);
-        return response;
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
     }
 
     @Transactional
     public EpointResponse cardRegistration(Long userId, EpointCardRegistrationRequest request) {
-        // Card registration doesn't have orderId, so use userId + timestamp for idempotency
         String idempotencyKey = generateCardRegistrationKey(userId);
-        // Check for cached response
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
         if (cachedResponse.isPresent()) {
             log.info("Returning cached card registration response for idempotency key: {}", idempotencyKey);
@@ -69,8 +62,6 @@ public class EpointIntegrationService {
 
         EpointResponse response = epointService.cardRegistration(request);
 
-        // Save a tracking Payment record so the callback can correlate back to the user.
-        // Card-registration has no orderId, so the transaction ID is the only link.
         if ("success".equalsIgnoreCase(response.status()) && response.transaction() != null) {
             Payment tracking = new Payment();
             tracking.setProvider("EPOINT");
@@ -81,71 +72,59 @@ public class EpointIntegrationService {
             tracking.setRedirectUrl(response.redirectUrl());
             paymentRepository.save(tracking);
             log.info("Created card-registration tracking record. Transaction: {}, UserId: {}", response.transaction(), userId);
-            idempotencyService.storeResponse(idempotencyKey, response, tracking);
+            return idempotencyService.persistIdempotentResponse(idempotencyKey, response, tracking);
         } else {
-            idempotencyService.storeResponse(idempotencyKey, response, null);
+            return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
         }
-
-        return response;
     }
 
     @Transactional
     public EpointResponse executePay(EpointExecutePayRequest request, Long userId) {
         String idempotencyKey = generateIdempotencyKey("execute-pay", request.orderId(), userId);
-        // Check for cached response
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
         if (cachedResponse.isPresent()) {
             log.info("Returning cached execute-pay response for idempotency key: {}", idempotencyKey);
             return cachedResponse.get();
         }
 
-        // Check if payment with this orderId already exists
         Optional<Payment> existingPayment = paymentRepository.findByOrderId(request.orderId());
         if (existingPayment.isPresent()) {
             log.warn("Payment with orderId {} already exists", request.orderId());
             Payment payment = existingPayment.get();
             EpointResponse response = buildResponseFromPayment(payment);
-            idempotencyService.storeResponse(idempotencyKey, response, payment);
-            return response;
+            return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
         }
 
         EpointResponse response = epointService.executePay(request);
         Payment payment = saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, null);
-        idempotencyService.storeResponse(idempotencyKey, response, payment);
-        return response;
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
     }
 
     @Transactional
     public EpointResponse cardRegistrationWithPay(Long userId, EpointPaymentRequest request) {
         String idempotencyKey = generateIdempotencyKey("card-reg-pay", request.orderId(), userId);
-        // Check for cached response
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
         if (cachedResponse.isPresent()) {
             log.info("Returning cached card-registration-with-pay response for idempotency key: {}", idempotencyKey);
             return cachedResponse.get();
         }
 
-        // Check if payment with this orderId already exists
         Optional<Payment> existingPayment = paymentRepository.findByOrderId(request.orderId());
         if (existingPayment.isPresent()) {
             log.warn("Payment with orderId {} already exists", request.orderId());
             Payment payment = existingPayment.get();
             EpointResponse response = buildResponseFromPayment(payment);
-            idempotencyService.storeResponse(idempotencyKey, response, payment);
-            return response;
+            return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
         }
 
         EpointResponse response = epointService.cardRegistrationWithPay(request);
         Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
-        // Do NOT save card here - wait for callback success to activate the card
-        idempotencyService.storeResponse(idempotencyKey, response, payment);
-        return response;
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
     }
 
     @Transactional
     public EpointResponse refundRequest(EpointExecutePayRequest request) {
         EpointResponse response = epointService.refundRequest(request);
-        // Update local payment record with refund result
         if (response.transaction() != null) {
             paymentRepository.findByTransactionId(response.transaction()).ifPresent(payment -> {
                 updatePaymentFromEpointResponse(payment, response);
@@ -155,20 +134,9 @@ public class EpointIntegrationService {
         return response;
     }
 
-    /**
-     * Reverse a transaction (full or partial reversal).
-     * If the amount is less than the original transaction amount, a partial reversal is performed.
-     * If the amount equals the original transaction amount, the transaction is fully reversed.
-     *
-     * @param transactionId the provider transaction ID to reverse
-     * @param amount        the amount to reverse (can be less than or equal to original amount)
-     * @param currency      the currency code (e.g., "AZN")
-     * @return the provider response indicating reversal result
-     */
     @Transactional
     public EpointResponse reverse(String transactionId, Double amount, String currency) {
         EpointResponse response = epointService.reverse(transactionId, amount, currency);
-        // Update local payment record with reversal result
         paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
             if ("success".equalsIgnoreCase(response.status())) {
                 payment.setStatus("REVERSED");
@@ -210,7 +178,6 @@ public class EpointIntegrationService {
     @Transactional
     public EpointResponse preAuthComplete(EpointPreAuthCompleteRequest request) {
         EpointResponse response = epointService.preAuthComplete(request);
-        // Update the pre-authorized payment record with capture result
         if (request.transaction() != null) {
             paymentRepository.findByTransactionId(request.transaction()).ifPresent(payment -> {
                 updatePaymentFromEpointResponse(payment, response);
@@ -263,18 +230,8 @@ public class EpointIntegrationService {
         return epointService.sendInvoiceEmail(id, email);
     }
 
-    /**
-     * Process Epoint callback with signature verification and idempotency.
-     * Uses optimistic locking to prevent race conditions from concurrent callbacks.
-     *
-     * @param base64Data Base64-encoded callback data from Epoint
-     * @param signature HMAC signature of the data
-     * @throws IllegalArgumentException if parameters are missing
-     * @throws SecurityException if signature verification fails
-     */
     @Transactional
     public void processCallback(String base64Data, String signature) {
-        // Validate parameters
         if (base64Data == null || base64Data.isBlank()) {
             throw new IllegalArgumentException("Missing data parameter");
         }
@@ -282,7 +239,6 @@ public class EpointIntegrationService {
             throw new IllegalArgumentException("Missing signature parameter");
         }
 
-        // Verify signature (CRITICAL FOR SECURITY)
         if (!signer.verify(base64Data, signature, epointProperties.getPrivateKey())) {
             throw new SecurityException("Invalid callback signature");
         }
@@ -291,7 +247,6 @@ public class EpointIntegrationService {
         log.info("Processing Epoint callback for orderId: {}, transaction: {}", callbackData.orderId(), callbackData.transaction());
 
         try {
-            // Look up existing payment: try orderId first, then transactionId (for card-registration which has no orderId)
             Optional<Payment> optionalPayment = Optional.empty();
             if (callbackData.orderId() != null && !callbackData.orderId().isBlank()) {
                 optionalPayment = paymentRepository.findByOrderId(callbackData.orderId());
@@ -303,7 +258,6 @@ public class EpointIntegrationService {
             if (optionalPayment.isPresent()) {
                 Payment payment = optionalPayment.get();
 
-                // Check if callback was already processed (idempotency)
                 if (Boolean.TRUE.equals(payment.getCallbackProcessed())) {
                     log.warn("Callback already processed for orderId: {}, transaction: {}. Skipping duplicate.",
                             callbackData.orderId(), callbackData.transaction());
@@ -313,11 +267,8 @@ public class EpointIntegrationService {
                 updatePaymentFromEpointResponse(payment, callbackData);
                 payment.setCallbackProcessed(true);
 
-                // Save with optimistic locking - will throw OptimisticLockingFailureException if concurrent update
                 paymentRepository.save(payment);
 
-                // CRITICAL: Attach card to user on successful callback
-                // This is the authoritative point where card is confirmed valid
                 if ("success".equalsIgnoreCase(callbackData.status()) && callbackData.cardId() != null) {
                     Long userId = payment.getUserId();
                     if (userId != null) {
@@ -331,7 +282,6 @@ public class EpointIntegrationService {
                 log.info("Payment updated from callback. OrderId: {}, Status: {}", callbackData.orderId(), callbackData.status());
             } else {
                 log.warn("No payment found for orderId: {} in callback. Creating new record.", callbackData.orderId());
-                // Create a new payment record if not initiated from our backend
                 Payment payment = new Payment();
                 payment.setProvider("EPOINT");
                 payment.setOrderId(callbackData.orderId());
@@ -343,15 +293,11 @@ public class EpointIntegrationService {
                 paymentRepository.save(payment);
             }
         } catch (org.springframework.orm.ObjectOptimisticLockingFailureException e) {
-            // Another thread already processed this callback (race condition)
             log.warn("Concurrent callback detected for orderId: {}. Another thread already processed it. Ignoring.",
                     callbackData.orderId());
-            // This is expected behavior - don't throw exception, just log and return
         } catch (jakarta.persistence.OptimisticLockException e) {
-            // JPA-level optimistic lock exception
             log.warn("Concurrent callback detected for orderId: {} (JPA). Another thread already processed it. Ignoring.",
                     callbackData.orderId());
-            // This is expected behavior - don't throw exception, just log and return
         }
     }
 
@@ -369,7 +315,6 @@ public class EpointIntegrationService {
     public EpointResponse getStatus(String transactionId) {
         EpointResponse response = epointService.getStatus(transactionId);
 
-        // Sync local payment record with the latest status from Epoint
         paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
             updatePaymentFromEpointResponse(payment, response);
             paymentRepository.save(payment);
@@ -391,11 +336,6 @@ public class EpointIntegrationService {
         payment.setOperationCode(response.operationCode());
     }
 
-    /**
-     * Save payment for REDIRECT flows (request, card-registration-with-pay, split-request, pre-auth-request, etc.).
-     * Sets status to PENDING_USER_ACTION because the initial Epoint "success" only means
-     * the redirect was created — the final result comes via callback.
-     */
     private Payment saveRedirectPayment(EpointResponse response, String orderId, Double amount, String currency, Long userId, String description) {
         if ("success".equalsIgnoreCase(response.status())) {
             Payment payment = new Payment();
@@ -422,11 +362,6 @@ public class EpointIntegrationService {
         return saveRedirectPayment(response, orderId, amount, currency, null, null);
     }
 
-    /**
-     * Save payment for DIRECT API calls (execute-pay, split-execute-pay, wallet/payment, etc.).
-     * Epoint processes payment immediately and returns the final result — no redirect, no callback.
-     * Status is saved as-is from Epoint (uppercased).
-     */
     private Payment saveDirectPayment(EpointResponse response, String orderId, Double amount, String currency, Long userId, String description) {
         Payment payment = new Payment();
         payment.setProvider("EPOINT");
@@ -445,7 +380,7 @@ public class EpointIntegrationService {
         payment.setOperationCode(response.operationCode());
         payment.setCode(response.code());
         payment.setMessage(response.message());
-        payment.setCallbackProcessed(true); // Direct calls don't have callbacks
+        payment.setCallbackProcessed(true);
         return paymentRepository.save(payment);
     }
 
@@ -468,76 +403,40 @@ public class EpointIntegrationService {
                 .build();
     }
 
-    /**
-     * Map internal payment status to external API status.
-     *
-     * ARCHITECTURE FIX: Ensures consistent API contract for idempotent requests.
-     *
-     * Internal state "PENDING_USER_ACTION" indicates payment is awaiting user completion,
-     * but externally we return "success" to match the original Epoint response semantics.
-     *
-     * This prevents API inconsistency where:
-     * - First call returns: status="success" (from Epoint)
-     * - Retry returns: status="PENDING_USER_ACTION" (from database)
-     *
-     * @param internalStatus The internal database status
-     * @return The external API status that clients expect
-     */
     private String mapInternalStatusToExternalStatus(String internalStatus) {
         if (internalStatus == null) {
             return null;
         }
 
-        // Map internal states to external semantics
         switch (internalStatus.toUpperCase()) {
             case "PENDING_USER_ACTION":
-                // PENDING_USER_ACTION means request was accepted by provider and redirect created
-                // Externally, this is "success" (matches original Epoint response)
                 return "success";
 
             case "SUCCESS":
-                // Final success after callback - return as-is
                 return "success";
 
             case "FAILED":
             case "ERROR":
             case "SERVER_ERROR":
-                // Error states - return as-is
                 return internalStatus.toLowerCase();
 
             case "RETURNED":
             case "REFUNDED":
-                // Transaction reversal states - return as-is
                 return internalStatus.toLowerCase();
 
             default:
-                // Unknown states - return lowercased
                 return internalStatus.toLowerCase();
         }
     }
 
-
-    /**
-     * Upsert (insert or update) a card from callback data.
-     * This is the authoritative point where a card is confirmed valid by Epoint.
-     *
-     * SECURITY FIX: Uses findByUserIdAndCardId() instead of findByCardId() to ensure
-     * card_id uniqueness is scoped to the user, preventing cross-user card access.
-     *
-     * - If card_id doesn't exist for this user: create new UserCard
-     * - If card_id exists for this user: update card details (mask, name) in case they changed
-     * - Set isDefault=true if this is user's first card
-     */
     private void upsertCardFromCallback(Long userId, EpointResponse callbackData) {
         if (callbackData.cardId() == null || callbackData.cardId().isBlank()) {
             return;
         }
 
-        // SECURITY: Use user-scoped lookup to prevent cross-user card access
         Optional<UserCard> existingCard = userCardRepository.findByUserIdAndCardId(userId, callbackData.cardId());
 
         if (existingCard.isPresent()) {
-            // Update existing card with latest data from callback
             UserCard card = existingCard.get();
             card.setCardMask(callbackData.cardMask());
             card.setCardName(callbackData.cardName());
@@ -547,7 +446,6 @@ public class EpointIntegrationService {
             userCardRepository.save(card);
             log.info("Updated existing card {} for user {}", callbackData.cardId(), userId);
         } else {
-            // Create new card
             boolean isFirstCard = userCardRepository.findAllByUserId(userId).isEmpty();
             UserCard userCard = UserCard.builder()
                     .userId(userId)
@@ -555,40 +453,19 @@ public class EpointIntegrationService {
                     .cardMask(callbackData.cardMask())
                     .cardName(callbackData.cardName())
                     .brand(CardBrandDetector.detectBrand(callbackData.cardMask()))
-                    .isDefault(isFirstCard) // First card is default
+                    .isDefault(isFirstCard)
                     .build();
             userCardRepository.save(userCard);
             log.info("Created new card {} for user {}", callbackData.cardId(), userId);
         }
     }
 
-    /**
-     * Generate idempotency key based on operation type, orderId, and userId.
-     * Ensures the same request will always generate the same key.
-     * Format: {operation}:{orderId}:{userId}
-     */
     private String generateIdempotencyKey(String operation, String orderId, Long userId) {
         return String.format("%s:%s:%s", operation, orderId, userId != null ? userId : "guest");
     }
 
-    /**
-     * Generate idempotency key for card registration (no orderId).
-     * Uses timestamp-based window to allow multiple card registrations per user.
-     *
-     * FIXED: Previously used only userId, which caused stale cached responses
-     * when a user tried to register multiple cards. Now uses 5-minute time windows
-     * to allow different card registrations while still providing idempotency
-     * for retries within the window.
-     *
-     * Format: card-registration:{userId}:{timestampWindow}
-     *
-     * @param userId The user ID
-     * @return Idempotency key with time-based component
-     */
     private String generateCardRegistrationKey(Long userId) {
-        // Use 5-minute window for idempotency (300 seconds)
-        // This allows retry protection while enabling multiple card registrations
-        long timestampWindow = Instant.now().getEpochSecond() / 300; // 5-minute buckets
+        long timestampWindow = Instant.now().getEpochSecond() / 300;
         return String.format("card-registration:%s:%d",
             userId != null ? userId : "guest",
             timestampWindow);

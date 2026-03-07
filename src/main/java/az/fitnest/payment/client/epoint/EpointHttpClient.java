@@ -48,14 +48,6 @@ public class EpointHttpClient {
         }
     }
 
-    /**
-     * Send a direct JSON POST request without data+signature envelope.
-     * Use this for endpoints that don't follow the standard signing pattern.
-     *
-     * @param endpoint The API endpoint path (e.g., "/wallet/status")
-     * @param payload The request payload object (will be serialized to JSON)
-     * @return EpointResponse from the API
-     */
     @Retryable(
             value = {Exception.class},
             maxAttempts = 3,

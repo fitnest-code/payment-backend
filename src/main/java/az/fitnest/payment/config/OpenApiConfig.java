@@ -37,7 +37,6 @@ public class OpenApiConfig {
                                 .description("Enter your JWT token")))
                 .addSecurityItem(new SecurityRequirement().addList("bearerAuth"));
 
-        // Add server URL for Istio routing if configured
         if (serverUrl != null && !serverUrl.isEmpty()) {
             openAPI.servers(List.of(new Server().url(serverUrl).description("API Server")));
         }

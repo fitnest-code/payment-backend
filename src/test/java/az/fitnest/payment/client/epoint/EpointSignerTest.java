@@ -21,10 +21,10 @@ class EpointSignerTest {
     void testSignAndVerify() {
         String data = "some_base64_data";
         String privateKey = "my_private_key";
-        
+
         String signature = signer.sign(data, privateKey);
         assertNotNull(signature);
-        
+
         assertTrue(signer.verify(data, signature, privateKey));
     }
 
@@ -33,7 +33,7 @@ class EpointSignerTest {
         Map<String, String> payload = Map.of("key", "value");
         String encoded = signer.encodeData(payload);
         assertNotNull(encoded);
-        
+
         Map<String, String> decoded = signer.decodeData(encoded, Map.class);
         assertEquals("value", decoded.get("key"));
     }

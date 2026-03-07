@@ -1,4 +1,4 @@
-package az.fitnest.payment.controller;
+ package az.fitnest.payment.controller;
 
 import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.service.UserPaymentService;
@@ -140,4 +140,3 @@ public class PaymentAdminController {
         return ResponseEntity.ok(userPaymentService.getUserPayments(userId));
     }
 }
-

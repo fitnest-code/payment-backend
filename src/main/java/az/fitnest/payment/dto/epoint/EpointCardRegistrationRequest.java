@@ -10,7 +10,6 @@ public record EpointCardRegistrationRequest(
 
     String language,
 
-    // Optional fields
     Integer refund,
 
     String description,
@@ -24,4 +23,3 @@ public record EpointCardRegistrationRequest(
     @JsonProperty("error_redirect_url")
     String errorRedirectUrl
 ) {}
-

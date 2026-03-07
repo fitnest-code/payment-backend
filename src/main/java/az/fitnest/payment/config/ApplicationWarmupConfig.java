@@ -12,10 +12,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 
-/**
- * Application warmup configuration that pre-warms various resources at startup.
- * Eliminates cold-start latency.
- */
 @Configuration
 public class ApplicationWarmupConfig {
 

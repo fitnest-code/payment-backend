@@ -24,11 +24,6 @@ public class UserPaymentService {
     private final UserCardRepository userCardRepository;
     private final PaymentRepository paymentRepository;
 
-    // ─── Card operations ───────────────────────────────────────────────
-
-    /**
-     * Get all saved cards for a user
-     */
     public List<UserCardResponse> getUserCards(Long userId) {
         log.info("Fetching all cards for user: {}", userId);
         return userCardRepository.findAllByUserId(userId)
@@ -37,9 +32,6 @@ public class UserPaymentService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get default card for a user
-     */
     public UserCardResponse getDefaultCard(Long userId) {
         log.info("Fetching default card for user: {}", userId);
         return userCardRepository.findByUserIdAndIsDefaultTrue(userId)
@@ -47,9 +39,6 @@ public class UserPaymentService {
                 .orElse(null);
     }
 
-    /**
-     * Set a card as default
-     */
     @Transactional
     public UserCardResponse setDefaultCard(Long userId, Long cardId) {
         log.info("Setting card {} as default for user: {}", cardId, userId);
@@ -61,7 +50,6 @@ public class UserPaymentService {
             throw new ForbiddenException("You do not have permission to access this card");
         }
 
-        // Remove default from other cards
         userCardRepository.findAllByUserId(userId).forEach(c -> {
             if (c.isDefault()) {
                 c.setDefault(false);
@@ -69,16 +57,12 @@ public class UserPaymentService {
             }
         });
 
-        // Set this card as default
         card.setDefault(true);
         UserCard savedCard = userCardRepository.save(card);
 
         return mapToCardResponse(savedCard);
     }
 
-    /**
-     * Delete a saved card
-     */
     @Transactional
     public void deleteCard(Long userId, Long cardId) {
         log.info("Deleting card {} for user: {}", cardId, userId);
@@ -93,7 +77,6 @@ public class UserPaymentService {
         boolean wasDefault = card.isDefault();
         userCardRepository.delete(card);
 
-        // If deleted card was default, set another card as default
         if (wasDefault) {
             List<UserCard> remainingCards = userCardRepository.findAllByUserId(userId);
             if (!remainingCards.isEmpty()) {
@@ -104,11 +87,6 @@ public class UserPaymentService {
         }
     }
 
-    // ─── Payment operations (user-scoped) ──────────────────────────────
-
-    /**
-     * Get all payments for the authenticated user
-     */
     public List<PaymentResponse> getUserPayments(Long userId) {
         log.info("Fetching all payments for user: {}", userId);
         return paymentRepository.findAllByUserId(userId)
@@ -117,9 +95,6 @@ public class UserPaymentService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get payment by ID — verifies it belongs to the given user
-     */
     public PaymentResponse getPaymentById(Long paymentId, Long userId) {
         log.info("Fetching payment with id: {} for user: {}", paymentId, userId);
         Payment payment = paymentRepository.findById(paymentId)
@@ -128,9 +103,6 @@ public class UserPaymentService {
         return mapToPaymentResponse(payment);
     }
 
-    /**
-     * Get payment by order ID — verifies it belongs to the given user
-     */
     public PaymentResponse getPaymentByOrderId(String orderId, Long userId) {
         log.info("Fetching payment with order id: {} for user: {}", orderId, userId);
         Payment payment = paymentRepository.findByOrderId(orderId)
@@ -139,9 +111,6 @@ public class UserPaymentService {
         return mapToPaymentResponse(payment);
     }
 
-    /**
-     * Get payment by transaction ID — verifies it belongs to the given user
-     */
     public PaymentResponse getPaymentByTransactionId(String transactionId, Long userId) {
         log.info("Fetching payment with transaction id: {} for user: {}", transactionId, userId);
         Payment payment = paymentRepository.findByTransactionId(transactionId)
@@ -150,11 +119,6 @@ public class UserPaymentService {
         return mapToPaymentResponse(payment);
     }
 
-    // ─── Payment operations (admin — no ownership check) ───────────────
-
-    /**
-     * Get all payments (admin only — authorization enforced at controller)
-     */
     public List<PaymentResponse> getAllPayments() {
         log.info("Admin: fetching all payments");
         return paymentRepository.findAll()
@@ -163,9 +127,6 @@ public class UserPaymentService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get any payment by ID (admin only — authorization enforced at controller)
-     */
     public PaymentResponse getPaymentByIdAdmin(Long paymentId) {
         log.info("Admin: fetching payment with id: {}", paymentId);
         return paymentRepository.findById(paymentId)
@@ -173,9 +134,6 @@ public class UserPaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with id: " + paymentId));
     }
 
-    /**
-     * Get any payment by order ID (admin only — authorization enforced at controller)
-     */
     public PaymentResponse getPaymentByOrderIdAdmin(String orderId) {
         log.info("Admin: fetching payment with order id: {}", orderId);
         return paymentRepository.findByOrderId(orderId)
@@ -183,17 +141,12 @@ public class UserPaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
     }
 
-    /**
-     * Get any payment by transaction ID (admin only — authorization enforced at controller)
-     */
     public PaymentResponse getPaymentByTransactionIdAdmin(String transactionId) {
         log.info("Admin: fetching payment with transaction id: {}", transactionId);
         return paymentRepository.findByTransactionId(transactionId)
                 .map(this::mapToPaymentResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction id: " + transactionId));
     }
-
-    // ─── Helpers ───────────────────────────────────────────────────────
 
     private void verifyOwnership(Payment payment, Long userId) {
         if (!userId.equals(payment.getUserId())) {

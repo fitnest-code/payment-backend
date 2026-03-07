@@ -49,14 +49,10 @@ public class EpointService {
         return httpClient.postSigned("/refund-request", request);
     }
 
-    /**
-     * Reverse a transaction (full or partial).
-     * When amount is less than the original transaction amount, a partial reversal is performed.
-     */
     public EpointResponse reverse(String transactionId, Double amount, String currency) {
         EpointReverseRequest request = EpointReverseRequest.builder()
                 .publicKey(properties.getPublicKey())
-                .language("en") // Defaulting to english, could be parameterized
+                .language("en")
                 .transaction(transactionId)
                 .amount(amount)
                 .currency(currency)
@@ -274,23 +270,10 @@ public class EpointService {
         return httpClient.postSigned("/pre-auth-complete", request);
     }
 
-    /**
-     * Get wallet status from Epoint.
-     *
-     * IMPORTANT: This endpoint currently uses the standard data+signature envelope format.
-     * According to the PDF documentation, this endpoint may require a different format
-     * (direct public_key parameter without envelope). If you encounter format errors,
-     * try using httpClient.postDirect() instead of httpClient.postSigned().
-     *
-     * See: WALLET_STATUS_ENDPOINT_ANALYSIS.md for details.
-     *
-     * @return EpointResponse containing wallet status information
-     */
     public EpointResponse walletStatus() {
         EpointRequestPayload request = EpointRequestPayload.builder()
                 .publicKey(properties.getPublicKey())
                 .build();
-        // TODO: Verify with Epoint PDF documentation if this should use postDirect() instead
         return httpClient.postSigned("/wallet/status", request);
     }
 

@@ -16,9 +16,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-/**
- * Admin endpoints for managing idempotency keys.
- */
 @RestController
 @RequestMapping("/api/v1/admin/idempotency")
 @RequiredArgsConstructor
@@ -29,9 +26,6 @@ public class IdempotencyManagementController {
 
     private final IdempotencyService idempotencyService;
 
-    /**
-     * Get idempotency system statistics
-     */
     @Operation(
             summary = "Idempotency statistikasını əldə edin",
             description = "Aktiv açarların sayı, TTL və digər məlumatları göstərir"
@@ -53,9 +47,6 @@ public class IdempotencyManagementController {
         return ResponseEntity.ok(idempotencyService.getStats());
     }
 
-    /**
-     * Get details of a specific idempotency key
-     */
     @Operation(
             summary = "Idempotency açarının detallarını əldə edin",
             description = "Müəyyən bir açar haqqında məlumat göstərir (status, response body, etc.)"
@@ -79,9 +70,6 @@ public class IdempotencyManagementController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    /**
-     * Clear Redis cache for a specific key (debugging)
-     */
     @Operation(
             summary = "Spesifik açarın Redis cache-ini sil",
             description = "Test və debug məqsədləri üçün. Verilənlər bazasında saxlanılır."
@@ -102,9 +90,6 @@ public class IdempotencyManagementController {
         ));
     }
 
-    /**
-     * Clear all Redis cache (maintenance operation)
-     */
     @Operation(
             summary = "Bütün Redis cache-i sil",
             description = "Sistem sahibi tərəfindən (ADMIN roluna sahib) istifadə olunur. " +
@@ -125,9 +110,6 @@ public class IdempotencyManagementController {
         ));
     }
 
-    /**
-     * Get health check for idempotency system
-     */
     @Operation(
             summary = "Idempotency sisteminin sağlamlığını yoxlayın",
             description = "Redis və verilənlər bazasının bağlantı statusunu göstərir"
@@ -161,4 +143,3 @@ public class IdempotencyManagementController {
         }
     }
 }
-

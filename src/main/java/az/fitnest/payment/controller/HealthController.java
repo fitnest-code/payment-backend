@@ -11,13 +11,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.Instant;
 import java.util.Map;
 
-/**
- * Health check controller for payment service.
- * Provides endpoints for external providers (like Epoint) to check service availability.
- * <p>
- * Note: This is separate from Spring Boot Actuator's /actuator/health which is used
- * for internal Kubernetes health probes.
- */
 @RestController
 @RequestMapping("/api")
 @Slf4j
@@ -38,4 +31,3 @@ public class HealthController {
         ));
     }
 }
-

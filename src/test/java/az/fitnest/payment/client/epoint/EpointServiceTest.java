@@ -39,16 +39,16 @@ class EpointServiceTest {
                 .orderId("123")
                 .amount(10.0)
                 .build();
-        
+
         EpointResponse mockResponse = EpointResponse.builder()
                 .status("success")
                 .transaction("trans_123")
                 .build();
 
         when(httpClient.postSigned(eq("/request"), any())).thenReturn(mockResponse);
-        
+
         EpointResponse response = epointService.createPayment(request);
-        
+
         assertEquals("success", response.status());
         assertEquals("trans_123", response.transaction());
         verify(httpClient).postSigned(eq("/request"), any());
@@ -61,9 +61,9 @@ class EpointServiceTest {
                 .build();
 
         when(httpClient.postSigned(eq("/get-status"), any())).thenReturn(mockResponse);
-        
+
         EpointResponse response = epointService.getStatus("trans_123");
-        
+
         assertEquals("success", response.status());
         verify(httpClient).postSigned(eq("/get-status"), any());
     }
