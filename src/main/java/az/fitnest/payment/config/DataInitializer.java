@@ -5,12 +5,14 @@ import az.fitnest.payment.model.entity.UserCard;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @RequiredArgsConstructor
+@Slf4j
 public class DataInitializer {
 
     private final PaymentRepository paymentRepository;
@@ -19,8 +21,10 @@ public class DataInitializer {
     @Bean
     public CommandLineRunner initPaymentData() {
         return args -> {
+            log.info("Running DataInitializer...");
             initPayments();
             initUserCards();
+            log.info("DataInitializer completed.");
         };
     }
 
@@ -71,7 +75,9 @@ public class DataInitializer {
     }
 
     private void initUserCards() {
-        if (userCardRepository.count() == 0) {
+        // Seed cards only if user 1 has no cards yet (not a global table check)
+        if (userCardRepository.findAllByUserId(1L).isEmpty()) {
+            log.info("No cards found for user 1. Seeding default cards...");
             UserCard card1 = UserCard.builder()
                     .userId(1L)
                     .cardId("card_001")
@@ -101,6 +107,9 @@ public class DataInitializer {
                     .isDefault(false)
                     .build();
             userCardRepository.save(card3);
+            log.info("Seeded 3 default cards for user 1.");
+        } else {
+            log.info("User 1 already has cards. Skipping card seeding.");
         }
     }
 }
