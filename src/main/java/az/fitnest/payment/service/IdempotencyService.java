@@ -28,7 +28,6 @@ public class IdempotencyService {
     private final ObjectMapper objectMapper;
     private final IdempotencyConfig idempotencyConfig;
 
-    @Qualifier("stringRedisTemplate")
     private final RedisTemplate<String, String> redisTemplate;
 
     private static final String REDIS_KEY_PREFIX = "idempotency:";
