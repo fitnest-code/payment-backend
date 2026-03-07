@@ -51,7 +51,7 @@ public class EpointIntegrationService {
 
         // Proceed with new payment
         EpointResponse response = epointService.createPayment(request);
-        Payment payment = savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
         idempotencyService.storeResponse(idempotencyKey, response, payment);
         return response;
     }
@@ -68,9 +68,24 @@ public class EpointIntegrationService {
         }
 
         EpointResponse response = epointService.cardRegistration(request);
-        // Do NOT save card here - wait for callback success
-        // Only store the response for idempotency, not the card
-        idempotencyService.storeResponse(idempotencyKey, response, null);
+
+        // Save a tracking Payment record so the callback can correlate back to the user.
+        // Card-registration has no orderId, so the transaction ID is the only link.
+        if ("success".equalsIgnoreCase(response.status()) && response.transaction() != null) {
+            Payment tracking = new Payment();
+            tracking.setProvider("EPOINT");
+            tracking.setTransactionId(response.transaction());
+            tracking.setStatus("PENDING_USER_ACTION");
+            tracking.setUserId(userId);
+            tracking.setDescription("card-registration");
+            tracking.setRedirectUrl(response.redirectUrl());
+            paymentRepository.save(tracking);
+            log.info("Created card-registration tracking record. Transaction: {}, UserId: {}", response.transaction(), userId);
+            idempotencyService.storeResponse(idempotencyKey, response, tracking);
+        } else {
+            idempotencyService.storeResponse(idempotencyKey, response, null);
+        }
+
         return response;
     }
 
@@ -95,7 +110,7 @@ public class EpointIntegrationService {
         }
 
         EpointResponse response = epointService.executePay(request);
-        Payment payment = savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency(), userId, null);
+        Payment payment = saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, null);
         idempotencyService.storeResponse(idempotencyKey, response, payment);
         return response;
     }
@@ -121,7 +136,7 @@ public class EpointIntegrationService {
         }
 
         EpointResponse response = epointService.cardRegistrationWithPay(request);
-        Payment payment = savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
         // Do NOT save card here - wait for callback success to activate the card
         idempotencyService.storeResponse(idempotencyKey, response, payment);
         return response;
@@ -129,7 +144,15 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse refundRequest(EpointExecutePayRequest request) {
-        return epointService.refundRequest(request);
+        EpointResponse response = epointService.refundRequest(request);
+        // Update local payment record with refund result
+        if (response.transaction() != null) {
+            paymentRepository.findByTransactionId(response.transaction()).ifPresent(payment -> {
+                updatePaymentFromEpointResponse(payment, response);
+                paymentRepository.save(payment);
+            });
+        }
+        return response;
     }
 
     /**
@@ -144,40 +167,58 @@ public class EpointIntegrationService {
      */
     @Transactional
     public EpointResponse reverse(String transactionId, Double amount, String currency) {
-        return epointService.reverse(transactionId, amount, currency);
+        EpointResponse response = epointService.reverse(transactionId, amount, currency);
+        // Update local payment record with reversal result
+        paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
+            if ("success".equalsIgnoreCase(response.status())) {
+                payment.setStatus("REVERSED");
+            }
+            payment.setMessage(response.message());
+            paymentRepository.save(payment);
+        });
+        return response;
     }
 
     @Transactional
-    public EpointResponse splitRequest(EpointSplitPaymentRequest request) {
+    public EpointResponse splitRequest(EpointSplitPaymentRequest request, Long userId) {
         EpointResponse response = epointService.splitRequest(request);
-        savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency());
+        saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
         return response;
     }
 
     @Transactional
-    public EpointResponse splitExecutePay(EpointSplitExecutePayRequest request) {
+    public EpointResponse splitExecutePay(EpointSplitExecutePayRequest request, Long userId) {
         EpointResponse response = epointService.splitExecutePay(request);
-        savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency());
+        saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, null);
         return response;
     }
 
     @Transactional
-    public EpointResponse splitCardRegistrationWithPay(EpointSplitPaymentRequest request) {
+    public EpointResponse splitCardRegistrationWithPay(EpointSplitPaymentRequest request, Long userId) {
         EpointResponse response = epointService.splitCardRegistrationWithPay(request);
-        savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency());
+        saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
         return response;
     }
 
     @Transactional
-    public EpointResponse preAuthRequest(EpointPaymentRequest request) {
+    public EpointResponse preAuthRequest(EpointPaymentRequest request, Long userId) {
         EpointResponse response = epointService.preAuthRequest(request);
-        savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency());
+        saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
         return response;
     }
 
     @Transactional
     public EpointResponse preAuthComplete(EpointPreAuthCompleteRequest request) {
-        return epointService.preAuthComplete(request);
+        EpointResponse response = epointService.preAuthComplete(request);
+        // Update the pre-authorized payment record with capture result
+        if (request.transaction() != null) {
+            paymentRepository.findByTransactionId(request.transaction()).ifPresent(payment -> {
+                updatePaymentFromEpointResponse(payment, response);
+                payment.setCallbackProcessed(true);
+                paymentRepository.save(payment);
+            });
+        }
+        return response;
     }
 
     @Transactional
@@ -192,7 +233,7 @@ public class EpointIntegrationService {
     @Transactional
     public EpointResponse walletPayment(EpointWalletPaymentRequest request) {
         EpointResponse response = epointService.walletPayment(request);
-        savePaymentIfSuccess(response, request.orderId(), request.amount(), request.currency());
+        saveDirectPayment(response, request.orderId(), request.amount(), request.currency());
         return response;
     }
 
@@ -250,7 +291,14 @@ public class EpointIntegrationService {
         log.info("Processing Epoint callback for orderId: {}, transaction: {}", callbackData.orderId(), callbackData.transaction());
 
         try {
-            Optional<Payment> optionalPayment = paymentRepository.findByOrderId(callbackData.orderId());
+            // Look up existing payment: try orderId first, then transactionId (for card-registration which has no orderId)
+            Optional<Payment> optionalPayment = Optional.empty();
+            if (callbackData.orderId() != null && !callbackData.orderId().isBlank()) {
+                optionalPayment = paymentRepository.findByOrderId(callbackData.orderId());
+            }
+            if (optionalPayment.isEmpty() && callbackData.transaction() != null && !callbackData.transaction().isBlank()) {
+                optionalPayment = paymentRepository.findByTransactionId(callbackData.transaction());
+            }
 
             if (optionalPayment.isPresent()) {
                 Payment payment = optionalPayment.get();
@@ -317,8 +365,17 @@ public class EpointIntegrationService {
         });
     }
 
+    @Transactional
     public EpointResponse getStatus(String transactionId) {
-        return epointService.getStatus(transactionId);
+        EpointResponse response = epointService.getStatus(transactionId);
+
+        // Sync local payment record with the latest status from Epoint
+        paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
+            updatePaymentFromEpointResponse(payment, response);
+            paymentRepository.save(payment);
+        });
+
+        return response;
     }
 
     private void updatePaymentFromEpointResponse(Payment payment, EpointResponse response) {
@@ -329,10 +386,17 @@ public class EpointIntegrationService {
         payment.setCardMask(response.cardMask());
         payment.setCardName(response.cardName());
         payment.setMessage(response.message());
-        // Map Epoint status success to our internal code if needed
+        payment.setCode(response.code());
+        payment.setBankResponse(response.bankResponse());
+        payment.setOperationCode(response.operationCode());
     }
 
-    private Payment savePaymentIfSuccess(EpointResponse response, String orderId, Double amount, String currency, Long userId, String description) {
+    /**
+     * Save payment for REDIRECT flows (request, card-registration-with-pay, split-request, pre-auth-request, etc.).
+     * Sets status to PENDING_USER_ACTION because the initial Epoint "success" only means
+     * the redirect was created — the final result comes via callback.
+     */
+    private Payment saveRedirectPayment(EpointResponse response, String orderId, Double amount, String currency, Long userId, String description) {
         if ("success".equalsIgnoreCase(response.status())) {
             Payment payment = new Payment();
             payment.setProvider("EPOINT");
@@ -340,8 +404,6 @@ public class EpointIntegrationService {
             payment.setTransactionId(response.transaction());
             payment.setAmount(amount);
             payment.setCurrency(currency);
-            // Status is PENDING_USER_ACTION because initial response means request accepted/redirect created,
-            // not final payment success. Final result comes via callback.
             payment.setStatus("PENDING_USER_ACTION");
             payment.setUserId(userId);
             payment.setDescription(description);
@@ -356,8 +418,39 @@ public class EpointIntegrationService {
         return null;
     }
 
-    private void savePaymentIfSuccess(EpointResponse response, String orderId, Double amount, String currency) {
-        savePaymentIfSuccess(response, orderId, amount, currency, null, null);
+    private Payment saveRedirectPayment(EpointResponse response, String orderId, Double amount, String currency) {
+        return saveRedirectPayment(response, orderId, amount, currency, null, null);
+    }
+
+    /**
+     * Save payment for DIRECT API calls (execute-pay, split-execute-pay, wallet/payment, etc.).
+     * Epoint processes payment immediately and returns the final result — no redirect, no callback.
+     * Status is saved as-is from Epoint (uppercased).
+     */
+    private Payment saveDirectPayment(EpointResponse response, String orderId, Double amount, String currency, Long userId, String description) {
+        Payment payment = new Payment();
+        payment.setProvider("EPOINT");
+        payment.setOrderId(orderId);
+        payment.setTransactionId(response.transaction());
+        payment.setAmount(amount);
+        payment.setCurrency(currency);
+        payment.setStatus(response.status() != null ? response.status().toUpperCase() : "UNKNOWN");
+        payment.setUserId(userId);
+        payment.setDescription(description);
+        payment.setCardMask(response.cardMask());
+        payment.setCardName(response.cardName());
+        payment.setRrn(response.rrn());
+        payment.setBankTransaction(response.bankTransaction());
+        payment.setBankResponse(response.bankResponse());
+        payment.setOperationCode(response.operationCode());
+        payment.setCode(response.code());
+        payment.setMessage(response.message());
+        payment.setCallbackProcessed(true); // Direct calls don't have callbacks
+        return paymentRepository.save(payment);
+    }
+
+    private Payment saveDirectPayment(EpointResponse response, String orderId, Double amount, String currency) {
+        return saveDirectPayment(response, orderId, amount, currency, null, null);
     }
 
     private EpointResponse buildResponseFromPayment(Payment payment) {

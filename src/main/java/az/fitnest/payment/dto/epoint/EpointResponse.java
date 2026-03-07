@@ -24,6 +24,8 @@ public record EpointResponse(
     @JsonProperty("card_mask")
     String cardMask,
     Double amount,
+    @JsonProperty("split_amount")
+    Double splitAmount,
     @JsonProperty("card_id")
     String cardId,
     @JsonProperty("widget_url")

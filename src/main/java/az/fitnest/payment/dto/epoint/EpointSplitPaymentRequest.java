@@ -13,6 +13,8 @@ public record EpointSplitPaymentRequest(
     Double amount,
     String currency,
     String description,
+    @JsonProperty("result_url")
+    String resultUrl,
     @JsonProperty("success_redirect_url")
     String successRedirectUrl,
     @JsonProperty("error_redirect_url")

@@ -28,6 +28,9 @@ class EpointServiceTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         when(properties.getPublicKey()).thenReturn("test_pub");
+        when(properties.getResultUrl()).thenReturn("https://test.example.com/epoint/result");
+        when(properties.getSuccessRedirectUrl()).thenReturn("https://test.example.com/payment/success");
+        when(properties.getErrorRedirectUrl()).thenReturn("https://test.example.com/payment/error");
     }
 
     @Test

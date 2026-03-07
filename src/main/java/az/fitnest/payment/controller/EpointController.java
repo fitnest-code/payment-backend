@@ -116,28 +116,40 @@ public class EpointController {
 
     @Operation(summary = "Bölünmüş ödəniş sorğusu", description = "Bölünmüş (split) ödəniş yaradır.")
     @PostMapping("/split-request")
-    public ResponseEntity<EpointResponse> splitRequest(@RequestBody EpointSplitPaymentRequest request) {
-        return ResponseEntity.ok(integrationService.splitRequest(request));
+    public ResponseEntity<EpointResponse> splitRequest(
+            @RequestBody EpointSplitPaymentRequest request,
+            Authentication authentication) {
+        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        return ResponseEntity.ok(integrationService.splitRequest(request, userId));
     }
 
     @Operation(summary = "Bölünmüş ödənişi icra edin", description = "Bölünmüş ödənişi tamamlayır.")
     @PostMapping("/split-execute-pay")
-    public ResponseEntity<EpointResponse> splitExecutePay(@RequestBody EpointSplitExecutePayRequest request) {
-        return ResponseEntity.ok(integrationService.splitExecutePay(request));
+    public ResponseEntity<EpointResponse> splitExecutePay(
+            @RequestBody EpointSplitExecutePayRequest request,
+            Authentication authentication) {
+        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        return ResponseEntity.ok(integrationService.splitExecutePay(request, userId));
     }
 
     @Operation(summary = "Bölünmüş ödənişlə kartın qeydiyyatı", description = "Bölünmüş ödəniş zamanı kartı qeydiyyatdan keçirir.")
     @PostMapping("/split-card-registration-with-pay")
-    public ResponseEntity<EpointResponse> splitCardRegistrationWithPay(@RequestBody EpointSplitPaymentRequest request) {
-        return ResponseEntity.ok(integrationService.splitCardRegistrationWithPay(request));
+    public ResponseEntity<EpointResponse> splitCardRegistrationWithPay(
+            @RequestBody EpointSplitPaymentRequest request,
+            Authentication authentication) {
+        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        return ResponseEntity.ok(integrationService.splitCardRegistrationWithPay(request, userId));
     }
 
     // ==================== Pre-Authorization ====================
 
     @Operation(summary = "İlkin avtorizasiya sorğusu", description = "Vəsaitin bloklanması üçün ilkin avtorizasiya yaradır.")
     @PostMapping("/pre-auth-request")
-    public ResponseEntity<EpointResponse> preAuthRequest(@RequestBody EpointPaymentRequest request) {
-        return ResponseEntity.ok(integrationService.preAuthRequest(request));
+    public ResponseEntity<EpointResponse> preAuthRequest(
+            @RequestBody EpointPaymentRequest request,
+            Authentication authentication) {
+        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        return ResponseEntity.ok(integrationService.preAuthRequest(request, userId));
     }
 
     @Operation(summary = "İlkin avtorizasiyanı tamamlayın", description = "Bloklanmış vəsaitin silinməsini tamamlayır.")
