@@ -1,7 +1,9 @@
 package az.fitnest.payment.config;
 
 import az.fitnest.payment.model.entity.Payment;
+import az.fitnest.payment.model.entity.UserCard;
 import az.fitnest.payment.repository.PaymentRepository;
+import az.fitnest.payment.repository.UserCardRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
@@ -12,11 +14,13 @@ import org.springframework.context.annotation.Configuration;
 public class DataInitializer {
 
     private final PaymentRepository paymentRepository;
+    private final UserCardRepository userCardRepository;
 
     @Bean
     public CommandLineRunner initPaymentData() {
         return args -> {
             initPayments();
+            initUserCards();
         };
     }
 
@@ -63,6 +67,40 @@ public class DataInitializer {
             payment3.setMessage("Insufficient funds");
 
             paymentRepository.save(payment3);
+        }
+    }
+
+    private void initUserCards() {
+        if (userCardRepository.count() == 0) {
+            UserCard card1 = UserCard.builder()
+                    .userId(1L)
+                    .cardId("card_001")
+                    .cardMask("424242****4242")
+                    .cardName("Visa Gold")
+                    .brand("VISA")
+                    .isDefault(true)
+                    .build();
+            userCardRepository.save(card1);
+
+            UserCard card2 = UserCard.builder()
+                    .userId(1L)
+                    .cardId("card_002")
+                    .cardMask("555555****4444")
+                    .cardName("Mastercard Platinum")
+                    .brand("MASTERCARD")
+                    .isDefault(false)
+                    .build();
+            userCardRepository.save(card2);
+
+            UserCard card3 = UserCard.builder()
+                    .userId(1L)
+                    .cardId("card_003")
+                    .cardMask("411111****1111")
+                    .cardName("Visa Classic")
+                    .brand("VISA")
+                    .isDefault(false)
+                    .build();
+            userCardRepository.save(card3);
         }
     }
 }
