@@ -53,14 +53,14 @@ class EpointControllerTest {
 
     @Test
     void testHandleCallbackInvalidSignature() throws Exception {
-        when(properties.getPrivateKey()).thenReturn("test_key");
-        when(signer.verify(anyString(), anyString(), anyString())).thenReturn(false);
+        doThrow(new SecurityException("Invalid signature"))
+                .when(integrationService).processCallback("base64data", "invalidsignature");
 
         mockMvc.perform(post("/epoint/result")
                         .param("data", "base64data")
                         .param("signature", "invalidsignature"))
                 .andExpect(status().isUnauthorized());
 
-        verify(integrationService, never()).processCallback(anyString(), anyString());
+        verify(integrationService, times(1)).processCallback("base64data", "invalidsignature");
     }
 }
