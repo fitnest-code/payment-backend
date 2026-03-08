@@ -98,7 +98,7 @@ public class UserCardController {
             @Valid @RequestBody SetDefaultCardRequest request,
             Authentication authentication) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.ok(userPaymentService.setDefaultCard(userId, request.getCardId()));
+        return ResponseEntity.ok(userPaymentService.setDefaultCard(userId, request.cardId()));
     }
 
     @Operation(

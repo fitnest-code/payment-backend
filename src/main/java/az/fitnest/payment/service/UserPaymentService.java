@@ -157,41 +157,37 @@ public class UserPaymentService {
     }
 
     private UserCardResponse mapToCardResponse(UserCard card) {
-        return UserCardResponse.builder()
-                .id(card.getId())
-                .cardId(card.getCardId())
-                .cardMask(card.getCardMask())
-                .cardName(card.getCardName())
-                .brand(card.getBrand())
-                .isDefault(card.isDefault())
-                .createdAt(card.getCreatedDate() != null ?
-                    card.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
-                .updatedAt(card.getLastModifiedDate() != null ?
-                    card.getLastModifiedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
-                .build();
+        return new UserCardResponse(
+            card.getId(),
+            card.getCardId(),
+            card.getCardMask(),
+            card.getCardName(),
+            card.getBrand(),
+            card.isDefault(),
+            card.getCreatedDate() != null ? card.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
+            card.getLastModifiedDate() != null ? card.getLastModifiedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null
+        );
     }
 
     private PaymentResponse mapToPaymentResponse(Payment payment) {
-        return PaymentResponse.builder()
-                .paymentId(payment.getId())
-                .provider(payment.getProvider())
-                .status(payment.getStatus())
-                .orderId(payment.getOrderId())
-                .transactionId(payment.getTransactionId())
-                .amount(payment.getAmount())
-                .currency(payment.getCurrency())
-                .cardMask(payment.getCardMask())
-                .cardName(payment.getCardName())
-                .message(payment.getMessage())
-                .userId(payment.getUserId())
-                .description(payment.getDescription())
-                .code(payment.getCode())
-                .bankResponse(payment.getBankResponse())
-                .operationCode(payment.getOperationCode())
-                .createdAt(payment.getCreatedDate() != null ?
-                    payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
-                .updatedAt(payment.getLastModifiedDate() != null ?
-                    payment.getLastModifiedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
-                .build();
+        return new PaymentResponse(
+            payment.getId(),
+            payment.getProvider(),
+            payment.getStatus(),
+            payment.getOrderId(),
+            payment.getTransactionId(),
+            payment.getAmount(),
+            payment.getCurrency(),
+            payment.getCardMask(),
+            payment.getCardName(),
+            payment.getMessage(),
+            payment.getUserId(),
+            payment.getDescription(),
+            payment.getCode(),
+            payment.getBankResponse(),
+            payment.getOperationCode(),
+            payment.getCreatedDate() != null ? payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
+            payment.getLastModifiedDate() != null ? payment.getLastModifiedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null
+        );
     }
 }

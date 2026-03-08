@@ -17,10 +17,10 @@ public class EpointService {
     }
 
     public EpointResponse getStatus(String transactionId) {
-        EpointStatusRequest request = EpointStatusRequest.builder()
-                .publicKey(properties.getPublicKey())
-                .transaction(transactionId)
-                .build();
+        EpointStatusRequest request = new EpointStatusRequest(
+            properties.getPublicKey(),
+            transactionId
+        );
         return httpClient.postSigned("/get-status", request);
     }
 
