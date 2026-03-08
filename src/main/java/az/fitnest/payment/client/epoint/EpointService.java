@@ -24,7 +24,6 @@ public class EpointService {
         return httpClient.postSigned("/get-status", request);
     }
 
-
     public EpointResponse cardRegistration(EpointCardRegistrationRequest request) {
         request = fillPublicKey(request);
         return httpClient.postSigned("/card-registration", request);
@@ -280,7 +279,6 @@ public class EpointService {
     }
 
     public EpointResponse walletStatusDirect(EpointRequestPayload request) {
-        // Send direct POST, not signed envelope, for wallet status
         return httpClient.postDirect("/wallet/status", request);
     }
 

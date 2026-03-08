@@ -1,5 +1,8 @@
 package az.fitnest.payment.dto.epoint;
 
+import lombok.Builder;
+
+@Builder
 public record EpointSplitExecutePayRequest(
     String publicKey,
     String language,

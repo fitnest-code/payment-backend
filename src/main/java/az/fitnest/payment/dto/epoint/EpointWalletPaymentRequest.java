@@ -1,5 +1,8 @@
 package az.fitnest.payment.dto.epoint;
 
+import lombok.Builder;
+
+@Builder
 public record EpointWalletPaymentRequest(
     String publicKey,
     String walletId,
@@ -8,4 +11,8 @@ public record EpointWalletPaymentRequest(
     String orderId,
     String description,
     String language
-) {}
+) {
+    public EpointWalletPaymentRequest setPublicKey(String publicKey) {
+        return new EpointWalletPaymentRequest(publicKey, walletId, amount, currency, orderId, description, language);
+    }
+}

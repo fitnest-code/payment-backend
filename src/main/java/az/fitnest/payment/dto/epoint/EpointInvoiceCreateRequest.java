@@ -1,7 +1,9 @@
 package az.fitnest.payment.dto.epoint;
 
 import java.util.List;
+import lombok.Builder;
 
+@Builder
 public record EpointInvoiceCreateRequest(
     String publicKey,
     Double sum,

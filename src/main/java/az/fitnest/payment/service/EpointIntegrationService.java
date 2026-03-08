@@ -67,7 +67,6 @@ public class EpointIntegrationService {
 
         EpointResponse response = epointService.cardRegistration(request);
 
-        // Epoint spec: initial response may not have transaction, but has card_id
         if ("success".equalsIgnoreCase(response.status()) && response.cardId() != null) {
             Payment tracking = new Payment();
             tracking.setProvider("EPOINT");
@@ -86,11 +85,6 @@ public class EpointIntegrationService {
         }
     }
 
-    /**
-     * Executes a payment using a saved card. This is a backend-only operation.
-     * Frontend must never call Epoint directly for this, as signing uses the private key.
-     * Returns final payment status immediately.
-     */
     @Transactional
     public EpointResponse executePay(EpointExecutePayRequest request, Long userId) {
         String idempotencyKey = generateIdempotencyKey("execute-pay", request.orderId(), userId);
@@ -241,7 +235,6 @@ public class EpointIntegrationService {
         EpointResponse callbackData = signer.decodeData(base64Data, EpointResponse.class);
         log.info("Processing Epoint callback for orderId: {}, transaction: {}", callbackData.orderId(), callbackData.transaction());
 
-        // Validate callback payload fields
         if ((callbackData.orderId() == null || callbackData.orderId().isBlank()) &&
             (callbackData.transaction() == null || callbackData.transaction().isBlank())) {
             throw new IllegalArgumentException("error.missing_field");
@@ -253,7 +246,6 @@ public class EpointIntegrationService {
             throw new IllegalArgumentException("error.out_of_range");
         }
 
-        // Save raw callback audit data
         CallbackLog logEntry = CallbackLog.builder()
             .orderId(callbackData.orderId())
             .transactionId(callbackData.transaction())
@@ -338,6 +330,43 @@ public class EpointIntegrationService {
         });
 
         return response;
+    }
+
+    @Transactional
+    public EpointResponse preAuthComplete(EpointPreAuthCompleteRequest request) {
+        return epointService.preAuthComplete(request);
+    }
+    @Transactional
+    public EpointResponse createWidgetUrl(EpointWidgetRequest request) {
+        return epointService.createWidgetUrl(request);
+    }
+    @Transactional
+    public EpointResponse walletStatus() {
+        return epointService.walletStatus();
+    }
+    @Transactional
+    public EpointResponse createInvoice(EpointInvoiceCreateRequest request) {
+        return epointService.createInvoice(request);
+    }
+    @Transactional
+    public EpointResponse updateInvoice(EpointInvoiceUpdateRequest request) {
+        return epointService.updateInvoice(request);
+    }
+    @Transactional
+    public EpointResponse viewInvoice(Long id) {
+        return epointService.viewInvoice(id);
+    }
+    @Transactional
+    public EpointResponse listInvoices(String type, String order) {
+        return epointService.listInvoices(type, order);
+    }
+    @Transactional
+    public EpointResponse sendInvoiceSms(Long id, String phone) {
+        return epointService.sendInvoiceSms(id, phone);
+    }
+    @Transactional
+    public EpointResponse sendInvoiceEmail(Long id, String email) {
+        return epointService.sendInvoiceEmail(id, email);
     }
 
     private void updatePaymentFromEpointResponse(Payment payment, EpointResponse response) {

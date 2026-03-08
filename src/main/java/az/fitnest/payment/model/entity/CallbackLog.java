@@ -35,4 +35,3 @@ public class CallbackLog {
     @Column(name = "received_at")
     private Instant receivedAt;
 }
-

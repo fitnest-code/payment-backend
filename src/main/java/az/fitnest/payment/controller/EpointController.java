@@ -148,7 +148,7 @@ public class EpointController {
 
     @Operation(summary = "Vidcet URL-i yaradın", description = "Ödəniş vidceti üçün keçid yaradır.")
     @PostMapping("/widget-url")
-    public ResponseEntity<EpointResponse> createWidgetUrl(@RequestBody EpointPaymentRequest request) {
+    public ResponseEntity<EpointResponse> createWidgetUrl(@RequestBody EpointWidgetRequest request) {
         return ResponseEntity.ok(integrationService.createWidgetUrl(request));
     }
 

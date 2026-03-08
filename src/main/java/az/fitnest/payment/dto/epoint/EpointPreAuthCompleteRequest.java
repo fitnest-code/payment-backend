@@ -9,4 +9,8 @@ public record EpointPreAuthCompleteRequest(
     String publicKey,
     Double amount,
     String transaction
-) {}
+) {
+    public EpointPreAuthCompleteRequest setPublicKey(String publicKey) {
+        return new EpointPreAuthCompleteRequest(publicKey, amount, transaction);
+    }
+}

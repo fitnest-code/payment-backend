@@ -81,4 +81,11 @@ public class Payment extends BaseAuditableEntity {
     @Version
     @Column(name = "version")
     private Long version;
+
+    @Column(name = "card_id")
+    private String cardId;
+
+    public void setCardId(String cardId) {
+        this.cardId = cardId;
+    }
 }

@@ -1,5 +1,8 @@
 package az.fitnest.payment.dto.epoint;
 
+import lombok.Builder;
+
+@Builder
 public record EpointCardRegistrationRequest(
     String publicKey,
     String language,
