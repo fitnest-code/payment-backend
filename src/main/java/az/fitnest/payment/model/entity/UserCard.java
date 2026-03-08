@@ -7,7 +7,8 @@ import lombok.*;
 @Table(name = "user_cards", indexes = {
         @Index(name = "idx_user_cards_user_id", columnList = "user_id"),
         @Index(name = "idx_user_cards_card_id", columnList = "card_id")
-})
+},
+       uniqueConstraints = {@UniqueConstraint(columnNames = {"user_id", "card_id"})})
 @Getter
 @Setter
 @NoArgsConstructor

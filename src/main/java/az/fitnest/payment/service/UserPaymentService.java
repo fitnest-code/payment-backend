@@ -47,7 +47,7 @@ public class UserPaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Card not found with id: " + cardId));
 
         if (!card.getUserId().equals(userId)) {
-            throw new ForbiddenException("You do not have permission to access this card");
+            throw new ForbiddenException("error.forbidden");
         }
 
         userCardRepository.findAllByUserId(userId).forEach(c -> {
@@ -71,7 +71,7 @@ public class UserPaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Card not found with id: " + cardId));
 
         if (!card.getUserId().equals(userId)) {
-            throw new ForbiddenException("You do not have permission to access this card");
+            throw new ForbiddenException("error.forbidden");
         }
 
         boolean wasDefault = card.isDefault();
@@ -152,7 +152,7 @@ public class UserPaymentService {
         if (!userId.equals(payment.getUserId())) {
             log.warn("User {} attempted to access payment {} owned by user {}",
                     userId, payment.getId(), payment.getUserId());
-            throw new ForbiddenException("You do not have permission to access this payment");
+            throw new ForbiddenException("error.forbidden");
         }
     }
 

@@ -91,7 +91,7 @@ public class EpointController {
 
     @Operation(summary = "Geri qaytarma sorğusu", description = "Ödənişin geri qaytarılmasını tələb edir.")
     @PostMapping("/refund-request")
-    public ResponseEntity<EpointResponse> refundRequest(@RequestBody EpointExecutePayRequest request) {
+    public ResponseEntity<EpointResponse> refundRequest(@RequestBody EpointRefundRequest request) {
         return ResponseEntity.ok(integrationService.refundRequest(request));
     }
 
@@ -160,8 +160,9 @@ public class EpointController {
 
     @Operation(summary = "Pul kisəsi ilə ödəniş", description = "Epoint pul kisəsindən istifadə edərək ödəniş edir.")
     @PostMapping("/wallet/payment")
-    public ResponseEntity<EpointResponse> walletPayment(@RequestBody EpointWalletPaymentRequest request) {
-        return ResponseEntity.ok(integrationService.walletPayment(request));
+    public ResponseEntity<EpointResponse> walletPayment(@RequestBody EpointWalletPaymentRequest request, Authentication authentication) {
+        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        return ResponseEntity.ok(integrationService.walletPayment(request, userId));
     }
 
     @Operation(summary = "Hesab-faktura yaradın", description = "Yeni ödəniş hesabı yaradır.")

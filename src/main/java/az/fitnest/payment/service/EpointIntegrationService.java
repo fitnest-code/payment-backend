@@ -6,9 +6,12 @@ import az.fitnest.payment.client.epoint.EpointProperties;
 import az.fitnest.payment.dto.epoint.*;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.entity.UserCard;
+import az.fitnest.payment.model.entity.CallbackLog;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
+import az.fitnest.payment.repository.CallbackLogRepository;
 import az.fitnest.payment.util.CardBrandDetector;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,7 +30,9 @@ public class EpointIntegrationService {
     private final EpointProperties epointProperties;
     private final PaymentRepository paymentRepository;
     private final UserCardRepository userCardRepository;
+    private final CallbackLogRepository callbackLogRepository;
     private final IdempotencyService idempotencyService;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
@@ -62,22 +67,30 @@ public class EpointIntegrationService {
 
         EpointResponse response = epointService.cardRegistration(request);
 
-        if ("success".equalsIgnoreCase(response.status()) && response.transaction() != null) {
+        // Epoint spec: initial response may not have transaction, but has card_id
+        if ("success".equalsIgnoreCase(response.status()) && response.cardId() != null) {
             Payment tracking = new Payment();
             tracking.setProvider("EPOINT");
-            tracking.setTransactionId(response.transaction());
             tracking.setStatus("PENDING_USER_ACTION");
             tracking.setUserId(userId);
             tracking.setDescription("card-registration");
             tracking.setRedirectUrl(response.redirectUrl());
+            tracking.setCardMask(response.cardMask());
+            tracking.setCardName(response.cardName());
+            tracking.setCardId(response.cardId());
             paymentRepository.save(tracking);
-            log.info("Created card-registration tracking record. Transaction: {}, UserId: {}", response.transaction(), userId);
+            log.info("Created card-registration tracking record. Card ID: {}, UserId: {}", response.cardId(), userId);
             return idempotencyService.persistIdempotentResponse(idempotencyKey, response, tracking);
         } else {
             return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
         }
     }
 
+    /**
+     * Executes a payment using a saved card. This is a backend-only operation.
+     * Frontend must never call Epoint directly for this, as signing uses the private key.
+     * Returns final payment status immediately.
+     */
     @Transactional
     public EpointResponse executePay(EpointExecutePayRequest request, Long userId) {
         String idempotencyKey = generateIdempotencyKey("execute-pay", request.orderId(), userId);
@@ -123,7 +136,7 @@ public class EpointIntegrationService {
     }
 
     @Transactional
-    public EpointResponse refundRequest(EpointExecutePayRequest request) {
+    public EpointResponse refundRequest(EpointRefundRequest request) {
         EpointResponse response = epointService.refundRequest(request);
         if (response.transaction() != null) {
             paymentRepository.findByTransactionId(response.transaction()).ifPresent(payment -> {
@@ -149,102 +162,106 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse splitRequest(EpointSplitPaymentRequest request, Long userId) {
+        String idempotencyKey = generateIdempotencyKey("split-request", request.orderId(), userId);
+        Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
+        if (cachedResponse.isPresent()) {
+            log.info("Returning cached split-request response for idempotency key: {}", idempotencyKey);
+            return cachedResponse.get();
+        }
         EpointResponse response = epointService.splitRequest(request);
         saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
-        return response;
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
     @Transactional
     public EpointResponse splitExecutePay(EpointSplitExecutePayRequest request, Long userId) {
+        String idempotencyKey = generateIdempotencyKey("split-execute-pay", request.orderId(), userId);
+        Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
+        if (cachedResponse.isPresent()) {
+            log.info("Returning cached split-execute-pay response for idempotency key: {}", idempotencyKey);
+            return cachedResponse.get();
+        }
         EpointResponse response = epointService.splitExecutePay(request);
         saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, null);
-        return response;
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
     @Transactional
     public EpointResponse splitCardRegistrationWithPay(EpointSplitPaymentRequest request, Long userId) {
+        String idempotencyKey = generateIdempotencyKey("split-card-reg-pay", request.orderId(), userId);
+        Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
+        if (cachedResponse.isPresent()) {
+            log.info("Returning cached split-card-registration-with-pay response for idempotency key: {}", idempotencyKey);
+            return cachedResponse.get();
+        }
         EpointResponse response = epointService.splitCardRegistrationWithPay(request);
         saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
-        return response;
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
     @Transactional
     public EpointResponse preAuthRequest(EpointPaymentRequest request, Long userId) {
+        String idempotencyKey = generateIdempotencyKey("pre-auth-request", request.orderId(), userId);
+        Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
+        if (cachedResponse.isPresent()) {
+            log.info("Returning cached pre-auth-request response for idempotency key: {}", idempotencyKey);
+            return cachedResponse.get();
+        }
         EpointResponse response = epointService.preAuthRequest(request);
         saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
-        return response;
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
     @Transactional
-    public EpointResponse preAuthComplete(EpointPreAuthCompleteRequest request) {
-        EpointResponse response = epointService.preAuthComplete(request);
-        if (request.transaction() != null) {
-            paymentRepository.findByTransactionId(request.transaction()).ifPresent(payment -> {
-                updatePaymentFromEpointResponse(payment, response);
-                payment.setCallbackProcessed(true);
-                paymentRepository.save(payment);
-            });
+    public EpointResponse walletPayment(EpointWalletPaymentRequest request, Long userId) {
+        String idempotencyKey = generateIdempotencyKey("wallet-payment", request.orderId(), userId);
+        Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
+        if (cachedResponse.isPresent()) {
+            log.info("Returning cached wallet-payment response for idempotency key: {}", idempotencyKey);
+            return cachedResponse.get();
         }
-        return response;
-    }
-
-    @Transactional
-    public EpointResponse createWidgetUrl(EpointPaymentRequest request) {
-        return epointService.createWidgetUrl(request);
-    }
-
-    public EpointResponse walletStatus() {
-        return epointService.walletStatus();
-    }
-
-    @Transactional
-    public EpointResponse walletPayment(EpointWalletPaymentRequest request) {
         EpointResponse response = epointService.walletPayment(request);
-        saveDirectPayment(response, request.orderId(), request.amount(), request.currency());
-        return response;
-    }
-
-    @Transactional
-    public EpointResponse createInvoice(EpointInvoiceCreateRequest request) {
-        return epointService.createInvoice(request);
-    }
-
-    @Transactional
-    public EpointResponse updateInvoice(EpointInvoiceUpdateRequest request) {
-        return epointService.updateInvoice(request);
-    }
-
-    public EpointResponse viewInvoice(Long id) {
-        return epointService.viewInvoice(id);
-    }
-
-    public EpointResponse listInvoices(String type, String order) {
-        return epointService.listInvoices(type, order);
-    }
-
-    public EpointResponse sendInvoiceSms(Long id, String phone) {
-        return epointService.sendInvoiceSms(id, phone);
-    }
-
-    public EpointResponse sendInvoiceEmail(Long id, String email) {
-        return epointService.sendInvoiceEmail(id, email);
+        saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
     @Transactional
     public void processCallback(String base64Data, String signature) {
         if (base64Data == null || base64Data.isBlank()) {
-            throw new IllegalArgumentException("Missing data parameter");
+            throw new IllegalArgumentException("error.missing_field");
         }
         if (signature == null || signature.isBlank()) {
-            throw new IllegalArgumentException("Missing signature parameter");
+            throw new IllegalArgumentException("error.missing_field");
         }
 
         if (!signer.verify(base64Data, signature, epointProperties.getPrivateKey())) {
-            throw new SecurityException("Invalid callback signature");
+            throw new SecurityException("error.payment_crypto_error");
         }
 
         EpointResponse callbackData = signer.decodeData(base64Data, EpointResponse.class);
         log.info("Processing Epoint callback for orderId: {}, transaction: {}", callbackData.orderId(), callbackData.transaction());
+
+        // Validate callback payload fields
+        if ((callbackData.orderId() == null || callbackData.orderId().isBlank()) &&
+            (callbackData.transaction() == null || callbackData.transaction().isBlank())) {
+            throw new IllegalArgumentException("error.missing_field");
+        }
+        if (callbackData.status() == null || callbackData.status().isBlank()) {
+            throw new IllegalArgumentException("error.invalid_field");
+        }
+        if (callbackData.amount() != null && callbackData.amount() < 0) {
+            throw new IllegalArgumentException("error.out_of_range");
+        }
+
+        // Save raw callback audit data
+        CallbackLog logEntry = CallbackLog.builder()
+            .orderId(callbackData.orderId())
+            .transactionId(callbackData.transaction())
+            .rawJson(base64Data)
+            .signature(signature)
+            .receivedAt(Instant.now())
+            .build();
+        callbackLogRepository.save(logEntry);
 
         try {
             Optional<Payment> optionalPayment = Optional.empty();

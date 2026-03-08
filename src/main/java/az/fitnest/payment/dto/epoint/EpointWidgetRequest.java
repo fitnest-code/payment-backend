@@ -1,11 +1,9 @@
 package az.fitnest.payment.dto.epoint;
 
-public record EpointWalletPaymentRequest(
+public record EpointWidgetRequest(
     String publicKey,
-    String walletId,
     Double amount,
     String currency,
     String orderId,
-    String description,
-    String language
+    String description
 ) {}

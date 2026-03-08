@@ -38,10 +38,9 @@ public class EpointSigner {
 
     public boolean verify(String data, String signature, String privateKey) {
         String expectedSignature = sign(data, privateKey);
-        return MessageDigest.isEqual(
-                expectedSignature.getBytes(StandardCharsets.UTF_8),
-                signature.getBytes(StandardCharsets.UTF_8)
-        );
+        byte[] expectedBytes = Base64.getDecoder().decode(expectedSignature);
+        byte[] actualBytes = Base64.getDecoder().decode(signature);
+        return MessageDigest.isEqual(expectedBytes, actualBytes);
     }
 
     public <T> T decodeData(String base64Data, Class<T> clazz) {

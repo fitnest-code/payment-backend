@@ -24,10 +24,6 @@ public class EpointService {
         return httpClient.postSigned("/get-status", request);
     }
 
-    public EpointResponse cardRegistration(EpointPaymentRequest request) {
-        request = fillPublicKey(request);
-        return httpClient.postSigned("/card-registration", request);
-    }
 
     public EpointResponse cardRegistration(EpointCardRegistrationRequest request) {
         request = fillPublicKey(request);
@@ -49,6 +45,13 @@ public class EpointService {
         return httpClient.postSigned("/refund-request", request);
     }
 
+    public EpointResponse refundRequest(EpointRefundRequest request) {
+        if (request.getPublicKey() == null) {
+            request.setPublicKey(properties.getPublicKey());
+        }
+        return httpClient.postSigned("/refund-request", request);
+    }
+
     public EpointResponse reverse(String transactionId, Double amount, String currency) {
         EpointReverseRequest request = EpointReverseRequest.builder()
                 .publicKey(properties.getPublicKey())
@@ -65,8 +68,10 @@ public class EpointService {
         return httpClient.postSigned("/split-request", request);
     }
 
-    public EpointResponse createWidgetUrl(EpointPaymentRequest request) {
-        request = fillPublicKey(request);
+    public EpointResponse createWidgetUrl(EpointWidgetRequest request) {
+        if (request.getPublicKey() == null) {
+            request.setPublicKey(properties.getPublicKey());
+        }
         return httpClient.postSigned("/token/widget", request);
     }
 
@@ -114,9 +119,6 @@ public class EpointService {
                     .amount(request.amount())
                     .currency(request.currency())
                     .description(request.description())
-                    .resultUrl(request.resultUrl() != null ? request.resultUrl() : properties.getResultUrl())
-                    .successRedirectUrl(request.successRedirectUrl() != null ? request.successRedirectUrl() : properties.getSuccessRedirectUrl())
-                    .errorRedirectUrl(request.errorRedirectUrl() != null ? request.errorRedirectUrl() : properties.getErrorRedirectUrl())
                     .cardId(request.cardId())
                     .isInstallment(request.isInstallment())
                     .build();
@@ -275,6 +277,11 @@ public class EpointService {
                 .publicKey(properties.getPublicKey())
                 .build();
         return httpClient.postSigned("/wallet/status", request);
+    }
+
+    public EpointResponse walletStatusDirect(EpointRequestPayload request) {
+        // Send direct POST, not signed envelope, for wallet status
+        return httpClient.postDirect("/wallet/status", request);
     }
 
     public EpointResponse walletPayment(EpointWalletPaymentRequest request) {

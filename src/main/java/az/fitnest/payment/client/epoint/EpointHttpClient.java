@@ -41,11 +41,7 @@ public class EpointHttpClient {
 
         String url = properties.getBaseUrl() + endpoint;
 
-        try {
-            return restTemplate.postForObject(url, request, EpointResponse.class);
-        } catch (Exception e) {
-            throw e;
-        }
+        return restTemplate.postForObject(url, request, EpointResponse.class);
     }
 
     @Retryable(
@@ -62,10 +58,6 @@ public class EpointHttpClient {
 
         String url = properties.getBaseUrl() + endpoint;
 
-        try {
-            return restTemplate.postForObject(url, request, EpointResponse.class);
-        } catch (Exception e) {
-            throw e;
-        }
+        return restTemplate.postForObject(url, request, EpointResponse.class);
     }
 }
