@@ -22,6 +22,8 @@ spring:
     name: payment-service
   main:
     lazy-initialization: ${SPRING_MAIN_LAZY_INITIALIZATION:false}
+  messages:
+    encoding: UTF-8
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgresql-payment:5432/fitnest_payment}
     username: ${SPRING_DATASOURCE_USERNAME:fitnest_payment}
