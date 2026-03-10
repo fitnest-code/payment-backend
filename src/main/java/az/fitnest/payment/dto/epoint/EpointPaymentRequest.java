@@ -28,5 +28,5 @@ public record EpointPaymentRequest(
     Integer isInstallment,
     Integer refund,
     @JsonProperty("other_attr")
-    java.util.List<Object> otherAttr
+    java.util.List<String> otherAttr
 ) {}
