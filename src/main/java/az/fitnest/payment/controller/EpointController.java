@@ -28,7 +28,7 @@ public class EpointController {
     private final EpointIntegrationService integrationService;
 
     @Operation(summary = "Geri çağırışı emal edin", description = "Epoint-dən ödəniş nəticələrini qəbul edir.")
-    @PostMapping("/result")
+    @PostMapping(value = {"/result", "/callback"})
     public ResponseEntity<String> handleCallback(
             @RequestParam("data") String data,
             @RequestParam("signature") String signature) {
@@ -49,7 +49,7 @@ public class EpointController {
     }
 
     @Operation(summary = "Ödənişi başladın", description = "Yeni bir ödəniş sorğusu yaradır.")
-    @PostMapping("/request")
+    @PostMapping("/payment/init")
     public ResponseEntity<EpointResponse> initiatePayment(
             @RequestBody EpointPaymentRequest request,
             Authentication authentication) {
@@ -58,13 +58,13 @@ public class EpointController {
     }
 
     @Operation(summary = "Tranzaksiya statusunu yoxlayın", description = "Tranzaksiyanın statusunu sorğulayır.")
-    @PostMapping("/get-status")
-    public ResponseEntity<EpointResponse> getStatus(@RequestParam String transactionId) {
-        return ResponseEntity.ok(integrationService.getStatus(transactionId));
+    @GetMapping("/payment/status/{orderId}")
+    public ResponseEntity<EpointResponse> getStatus(@PathVariable String orderId) {
+        return ResponseEntity.ok(integrationService.getStatus(orderId));
     }
 
     @Operation(summary = "Kartın qeydiyyatı", description = "Yeni bir kartı sistemdə qeydiyyatdan keçirir.")
-    @PostMapping("/card-registration")
+    @PostMapping("/card/save-init")
     public ResponseEntity<EpointResponse> cardRegistration(
             Authentication authentication,
             @RequestBody EpointCardRegistrationRequest request) {
@@ -72,7 +72,8 @@ public class EpointController {
         return ResponseEntity.ok(integrationService.cardRegistration(userId, request));
     }
 
-    @PostMapping("/execute-pay")
+    @Operation(summary = "Yadda saxlanmış kartla ödəniş", description = "Yadda saxlanmış kartla ödəniş edir.")
+    @PostMapping("/payment/with-card")
     public ResponseEntity<EpointResponse> executePay(
             @RequestBody EpointExecutePayRequest request,
             Authentication authentication) {
@@ -81,7 +82,7 @@ public class EpointController {
     }
 
     @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir.")
-    @PostMapping("/card-registration-with-pay")
+    @PostMapping("/payment/save-and-pay")
     public ResponseEntity<EpointResponse> cardRegistrationWithPay(
             Authentication authentication,
             @RequestBody EpointPaymentRequest request) {
@@ -90,7 +91,7 @@ public class EpointController {
     }
 
     @Operation(summary = "Geri qaytarma sorğusu", description = "Ödənişin geri qaytarılmasını tələb edir.")
-    @PostMapping("/refund-request")
+    @PostMapping("/refund")
     public ResponseEntity<EpointResponse> refundRequest(@RequestBody EpointRefundRequest request) {
         return ResponseEntity.ok(integrationService.refundRequest(request));
     }
@@ -105,7 +106,7 @@ public class EpointController {
     }
 
     @Operation(summary = "Bölünmüş ödəniş sorğusu", description = "Bölünmüş (split) ödəniş yaradır.")
-    @PostMapping("/split-request")
+    @PostMapping("/payment/split-init")
     public ResponseEntity<EpointResponse> splitRequest(
             @RequestBody EpointSplitPaymentRequest request,
             Authentication authentication) {
@@ -114,7 +115,7 @@ public class EpointController {
     }
 
     @Operation(summary = "Bölünmüş ödənişi icra edin", description = "Bölünmüş ödənişi tamamlayır.")
-    @PostMapping("/split-execute-pay")
+    @PostMapping("/payment/split-with-card")
     public ResponseEntity<EpointResponse> splitExecutePay(
             @RequestBody EpointSplitExecutePayRequest request,
             Authentication authentication) {
@@ -123,7 +124,7 @@ public class EpointController {
     }
 
     @Operation(summary = "Bölünmüş ödənişlə kartın qeydiyyatı", description = "Bölünmüş ödəniş zamanı kartı qeydiyyatdan keçirir.")
-    @PostMapping("/split-card-registration-with-pay")
+    @PostMapping("/payment/split-save-and-pay")
     public ResponseEntity<EpointResponse> splitCardRegistrationWithPay(
             @RequestBody EpointSplitPaymentRequest request,
             Authentication authentication) {
@@ -153,51 +154,51 @@ public class EpointController {
     }
 
     @Operation(summary = "Pul kisəsi statusu", description = "Epoint pul kisəsinin statusunu yoxlayır.")
-    @PostMapping("/wallet/status")
+    @GetMapping("/wallet/status")
     public ResponseEntity<EpointResponse> walletStatus() {
         return ResponseEntity.ok(integrationService.walletStatus());
     }
 
     @Operation(summary = "Pul kisəsi ilə ödəniş", description = "Epoint pul kisəsindən istifadə edərək ödəniş edir.")
-    @PostMapping("/wallet/payment")
+    @PostMapping("/wallet/pay")
     public ResponseEntity<EpointResponse> walletPayment(@RequestBody EpointWalletPaymentRequest request, Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
         return ResponseEntity.ok(integrationService.walletPayment(request, userId));
     }
 
     @Operation(summary = "Hesab-faktura yaradın", description = "Yeni ödəniş hesabı yaradır.")
-    @PostMapping("/invoices/create")
+    @PostMapping("/invoice/create")
     public ResponseEntity<EpointResponse> createInvoice(@RequestBody EpointInvoiceCreateRequest request) {
         return ResponseEntity.ok(integrationService.createInvoice(request));
     }
 
     @Operation(summary = "Hesab-fakturayı yeniləyin", description = "Mövcud hesabı yeniləyir.")
-    @PostMapping("/invoices/update")
+    @PostMapping("/invoice/update")
     public ResponseEntity<EpointResponse> updateInvoice(@RequestBody EpointInvoiceUpdateRequest request) {
         return ResponseEntity.ok(integrationService.updateInvoice(request));
     }
 
     @Operation(summary = "Hesab-fakturaya baxın", description = "Hesab haqqında məlumatı əldə edir.")
-    @PostMapping("/invoices/view")
-    public ResponseEntity<EpointResponse> viewInvoice(@RequestParam Long id) {
+    @GetMapping("/invoice/view/{id}")
+    public ResponseEntity<EpointResponse> viewInvoice(@PathVariable Long id) {
         return ResponseEntity.ok(integrationService.viewInvoice(id));
     }
 
     @Operation(summary = "Hesab-fakturaların siyahısı", description = "Bütün hesab-fakturaları sadalayır.")
-    @PostMapping("/invoices/list")
+    @GetMapping("/invoice/list")
     public ResponseEntity<EpointResponse> listInvoices(@RequestParam(required = false) String type,
                                                        @RequestParam(required = false) String order) {
         return ResponseEntity.ok(integrationService.listInvoices(type, order));
     }
 
     @Operation(summary = "SMS vasitəsilə hesabı göndərin", description = "Hesab-faktura linkini SMS ilə göndərir.")
-    @PostMapping("/invoices/{id}/send-sms")
+    @PostMapping("/invoice/send-sms/{id}")
     public ResponseEntity<EpointResponse> sendInvoiceSms(@PathVariable Long id, @RequestParam String phone) {
         return ResponseEntity.ok(integrationService.sendInvoiceSms(id, phone));
     }
 
     @Operation(summary = "E-poçt vasitəsilə hesabı göndərin", description = "Hesab-faktura linkini e-poçt ilə göndərir.")
-    @PostMapping("/invoices/{id}/send-email")
+    @PostMapping("/invoice/send-email/{id}")
     public ResponseEntity<EpointResponse> sendInvoiceEmail(@PathVariable Long id, @RequestParam String email) {
         return ResponseEntity.ok(integrationService.sendInvoiceEmail(id, email));
     }

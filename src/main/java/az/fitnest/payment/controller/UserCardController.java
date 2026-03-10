@@ -45,7 +45,7 @@ public class UserCardController {
             ),
             @ApiResponse(responseCode = "401", description = "Autentifikasiya tələb olunur")
     })
-    @GetMapping
+    @GetMapping(value = {"", "/card/list"})
     public ResponseEntity<List<UserCardResponse>> getUserCards(Authentication authentication) {
         Long userId = (Long) authentication.getPrincipal();
         return ResponseEntity.ok(userPaymentService.getUserCards(userId));

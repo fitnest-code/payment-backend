@@ -311,17 +311,11 @@ public class EpointIntegrationService {
     }
 
     @Transactional
-    public void syncStatus(String transactionId) {
-        EpointResponse response = epointService.getStatus(transactionId);
+    public EpointResponse getStatus(String id) {
+        String transactionId = paymentRepository.findByOrderId(id)
+                .map(Payment::getTransactionId)
+                .orElse(id);
 
-        paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
-            updatePaymentFromEpointResponse(payment, response);
-            paymentRepository.save(payment);
-        });
-    }
-
-    @Transactional
-    public EpointResponse getStatus(String transactionId) {
         EpointResponse response = epointService.getStatus(transactionId);
 
         paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
