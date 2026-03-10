@@ -43,7 +43,7 @@ class PaymentControllerTest {
         when(properties.getPrivateKey()).thenReturn("test_key");
         when(signer.verify(anyString(), anyString(), anyString())).thenReturn(true);
 
-        mockMvc.perform(post("/epoint/result")
+        mockMvc.perform(post("/payment/result")
                         .param("data", "base64data")
                         .param("signature", "vaildsignature"))
                 .andExpect(status().isOk());
@@ -56,7 +56,7 @@ class PaymentControllerTest {
         doThrow(new SecurityException("Invalid signature"))
                 .when(integrationService).processCallback("base64data", "invalidsignature");
 
-        mockMvc.perform(post("/epoint/result")
+        mockMvc.perform(post("/payment/result")
                         .param("data", "base64data")
                         .param("signature", "invalidsignature"))
                 .andExpect(status().isUnauthorized());

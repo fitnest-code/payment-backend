@@ -333,16 +333,6 @@ public class EpointService {
     }
 
     public EpointResponse heartbeat() {
-        // Implement GET request for heartbeat endpoint
-        okhttp3.Request request = new okhttp3.Request.Builder()
-            .url(properties.getBaseUrl() + "/heartbeat")
-            .get()
-            .build();
-        try (okhttp3.Response response = httpClient.newCall(request).execute()) {
-            String body = response.body() != null ? response.body().string() : null;
-            return EpointResponse.builder().status("ok").message(body).build();
-        } catch (Exception e) {
-            return EpointResponse.builder().status("error").message(e.getMessage()).build();
-        }
+        return httpClient.get("/heartbeat");
     }
 }
