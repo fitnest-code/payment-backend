@@ -213,3 +213,7 @@ springdoc:
   default-produces-media-type: application/json
   writer-with-default-pretty-printer: false
 
+
+grpc:
+  server:
+    port: 9091

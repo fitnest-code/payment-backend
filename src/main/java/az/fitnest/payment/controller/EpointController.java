@@ -115,7 +115,7 @@ public class EpointController {
     }
 
     @Operation(summary = "Bölünmüş ödənişi icra edin", description = "Bölünmüş ödənişi tamamlayır.")
-    @PostMapping("/payment/split-with-card")
+    @PostMapping("/split/with-card")
     public ResponseEntity<EpointResponse> splitExecutePay(
             @RequestBody EpointSplitExecutePayRequest request,
             Authentication authentication) {
