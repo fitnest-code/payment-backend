@@ -16,7 +16,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-class EpointControllerTest {
+class PaymentControllerTest {
 
     private MockMvc mockMvc;
 
@@ -30,12 +30,12 @@ class EpointControllerTest {
     private EpointProperties properties;
 
     @InjectMocks
-    private EpointController epointController;
+    private PaymentController paymentController;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        mockMvc = MockMvcBuilders.standaloneSetup(epointController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(paymentController).build();
     }
 
     @Test

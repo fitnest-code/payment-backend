@@ -329,4 +329,8 @@ public class EpointService {
         request = fillPublicKey(request);
         return httpClient.postSigned("/invoices/send-email", request);
     }
+
+    public EpointResponse heartbeat() {
+        return httpClient.get("/heartbeat");
+    }
 }

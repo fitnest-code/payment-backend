@@ -19,11 +19,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
-@RequestMapping("/epoint")
+@RequestMapping("/payment")
 @RequiredArgsConstructor
 @Slf4j
-@Tag(name = "Epoint Ödənişləri", description = "Epoint.az ödəniş inteqrasiyası üçün ucluqlar")
-public class EpointController {
+@Tag(name = "Ödənişlər", description = "Ödəniş inteqrasiyası üçün ucluqlar")
+public class PaymentController {
 
     private final EpointIntegrationService integrationService;
 
@@ -201,5 +201,11 @@ public class EpointController {
     @PostMapping("/invoice/send-email/{id}")
     public ResponseEntity<EpointResponse> sendInvoiceEmail(@PathVariable Long id, @RequestParam String email) {
         return ResponseEntity.ok(integrationService.sendInvoiceEmail(id, email));
+    }
+
+    @Operation(summary = "Heartbeat API", description = "Check Epoint service availability.")
+    @GetMapping("/heartbeat")
+    public ResponseEntity<EpointResponse> heartbeat() {
+        return ResponseEntity.ok(integrationService.heartbeat());
     }
 }

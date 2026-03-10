@@ -362,6 +362,10 @@ public class EpointIntegrationService {
     public EpointResponse sendInvoiceEmail(Long id, String email) {
         return epointService.sendInvoiceEmail(id, email);
     }
+    @Transactional
+    public EpointResponse heartbeat() {
+        return epointService.heartbeat();
+    }
 
     private void updatePaymentFromEpointResponse(Payment payment, EpointResponse response) {
         payment.setStatus(response.status() != null ? response.status().toUpperCase() : payment.getStatus());
