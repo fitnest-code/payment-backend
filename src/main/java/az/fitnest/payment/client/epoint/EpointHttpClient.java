@@ -60,4 +60,18 @@ public class EpointHttpClient {
 
         return restTemplate.postForObject(url, request, EpointResponse.class);
     }
+
+    @Retryable(
+            value = {Exception.class},
+            maxAttempts = 3,
+            backoff = @Backoff(delay = 1000, multiplier = 2),
+            exclude = {IllegalArgumentException.class}
+    )
+    public EpointResponse get(String endpoint) {
+        String url = properties.getBaseUrl() + endpoint;
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(java.util.Collections.singletonList(MediaType.APPLICATION_JSON));
+        HttpEntity<Void> request = new HttpEntity<>(headers);
+        return restTemplate.getForObject(url, EpointResponse.class);
+    }
 }
