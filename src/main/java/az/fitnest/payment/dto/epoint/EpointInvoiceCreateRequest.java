@@ -1,10 +1,12 @@
 package az.fitnest.payment.dto.epoint;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import lombok.Builder;
 
 @Builder
 public record EpointInvoiceCreateRequest(
+    @Schema(hidden = true)
     String publicKey,
     Double sum,
     String display,
