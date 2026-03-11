@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -486,6 +487,7 @@ public class EpointIntegrationService {
         }
 
         Optional<UserCard> existingCard = userCardRepository.findByUserIdAndCardId(userId, callbackData.cardId());
+        log.info("[Callback] Repository findByUserIdAndCardId: userId={}, cardId={}, found={}", userId, callbackData.cardId(), existingCard.isPresent());
 
         if (existingCard.isPresent()) {
             UserCard card = existingCard.get();
@@ -496,8 +498,12 @@ public class EpointIntegrationService {
             if (callbackData.cardMask() != null) {
                 card.setBrand(CardBrandDetector.detectBrand(callbackData.cardMask()));
             }
-            userCardRepository.save(card);
-            log.info("[Callback] Updated existing card {} for user {}", callbackData.cardId(), userId);
+            try {
+                userCardRepository.save(card);
+                log.info("[Callback] Updated existing card {} for user {}. Repository now has {} cards for user {}.", callbackData.cardId(), userId, userCardRepository.findAllByUserId(userId).size(), userId);
+            } catch (Exception e) {
+                log.error("[Callback] Exception saving updated card: {}", e.getMessage(), e);
+            }
         } else {
             boolean isFirstCard = userCardRepository.findAllByUserId(userId).isEmpty();
             log.info("[Callback] Creating new card for user: {}. cardId={}, cardMask={}, cardName={}, brand={}, isDefault={}",
@@ -510,8 +516,19 @@ public class EpointIntegrationService {
                     .brand(CardBrandDetector.detectBrand(callbackData.cardMask()))
                     .isDefault(isFirstCard)
                     .build();
-            userCardRepository.save(userCard);
-            log.info("[Callback] Created new card {} for user {}", callbackData.cardId(), userId);
+            try {
+                userCardRepository.save(userCard);
+                log.info("[Callback] Created new card {} for user {}. Repository now has {} cards for user {}.", callbackData.cardId(), userId, userCardRepository.findAllByUserId(userId).size(), userId);
+            } catch (Exception e) {
+                log.error("[Callback] Exception saving new card: {}", e.getMessage(), e);
+            }
+        }
+        // Log all cards for user after upsert
+        try {
+            List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
+            log.info("[Callback] All cards for user {} after upsert: count={}, cards={}", userId, allCards.size(), allCards);
+        } catch (Exception e) {
+            log.error("[Callback] Exception fetching all cards for user {}: {}", userId, e.getMessage(), e);
         }
     }
 
