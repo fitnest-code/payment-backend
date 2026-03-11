@@ -229,27 +229,28 @@ public class EpointIntegrationService {
             log.error("[Callback] Missing signature");
             throw new IllegalArgumentException("error.missing_field");
         }
-
-        if (!signer.verify(base64Data, signature, epointProperties.getPrivateKey())) {
-            log.error("[Callback] Signature verification failed for data: {}", base64Data);
+        boolean verified = signer.verify(base64Data, signature, epointProperties.getPrivateKey());
+        log.info("[Callback] Signature verified: {}", verified);
+        if (!verified) {
+            log.error("[Callback] Signature verification failed");
             throw new SecurityException("error.payment_crypto_error");
         }
-
         EpointResponse callbackData = signer.decodeData(base64Data, EpointResponse.class);
-        log.info("[Callback] Decoded callbackData: orderId={}, transaction={}, status={}, cardId={}, cardMask={}",
-            callbackData.orderId(), callbackData.transaction(), callbackData.status(), callbackData.cardId(), callbackData.cardMask());
-
+        log.info("[Callback] Decoded callbackData: {}", callbackData);
+        log.info("[Callback] Processing callback for orderId: {}, transaction: {}, status: {}, cardId: {}, cardMask: {}", callbackData.orderId(), callbackData.transaction(), callbackData.status(), callbackData.cardId(), callbackData.cardMask());
         if ((callbackData.orderId() == null || callbackData.orderId().isBlank()) &&
             (callbackData.transaction() == null || callbackData.transaction().isBlank())) {
+            log.error("[Callback] Missing orderId and transaction");
             throw new IllegalArgumentException("error.missing_field");
         }
         if (callbackData.status() == null || callbackData.status().isBlank()) {
+            log.error("[Callback] Missing status");
             throw new IllegalArgumentException("error.invalid_field");
         }
         if (callbackData.amount() != null && callbackData.amount() < 0) {
+            log.error("[Callback] Invalid amount: {}", callbackData.amount());
             throw new IllegalArgumentException("error.out_of_range");
         }
-
         CallbackLog logEntry = CallbackLog.builder()
             .orderId(callbackData.orderId())
             .transactionId(callbackData.transaction())
@@ -258,7 +259,6 @@ public class EpointIntegrationService {
             .receivedAt(Instant.now())
             .build();
         callbackLogRepository.save(logEntry);
-
         try {
             Optional<Payment> optionalPayment = Optional.empty();
             if (callbackData.orderId() != null && !callbackData.orderId().isBlank()) {
@@ -267,33 +267,29 @@ public class EpointIntegrationService {
             if (optionalPayment.isEmpty() && callbackData.transaction() != null && !callbackData.transaction().isBlank()) {
                 optionalPayment = paymentRepository.findByTransactionId(callbackData.transaction());
             }
-
             if (optionalPayment.isPresent()) {
                 Payment payment = optionalPayment.get();
-
                 if (Boolean.TRUE.equals(payment.getCallbackProcessed())) {
-                    log.warn("[Callback] Callback already processed for orderId: {}, transaction: {}. Skipping duplicate.",
-                        callbackData.orderId(), callbackData.transaction());
+                    log.warn("[Callback] Callback already processed for orderId: {}, transaction: {}. Skipping duplicate.", callbackData.orderId(), callbackData.transaction());
                     return;
                 }
-
                 updatePaymentFromEpointResponse(payment, callbackData);
                 payment.setCallbackProcessed(true);
-
                 paymentRepository.save(payment);
-
+                log.info("[Callback] Payment updated from callback. OrderId: {}, Status: {}", callbackData.orderId(), callbackData.status());
                 if ("success".equalsIgnoreCase(callbackData.status()) && callbackData.cardId() != null) {
                     Long userId = payment.getUserId();
+                    log.info("[Callback] Saving card for userId: {}, cardId: {}", userId, callbackData.cardId());
                     if (userId != null) {
-                        log.info("[Callback] Attaching card to user: {}. cardId={}, cardMask={}, cardName={}", userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName());
                         upsertCardFromCallback(userId, callbackData);
                         log.info("[Callback] Card attached to user {} from callback. Card ID: {}", userId, callbackData.cardId());
+                        // Log all cards for user
+                        List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
+                        log.info("[Callback] All cards for user {}: {}", userId, allCards);
                     } else {
                         log.warn("[Callback] Cannot attach card: payment has no userId. OrderId: {}", callbackData.orderId());
                     }
                 }
-
-                log.info("[Callback] Payment updated from callback. OrderId: {}, Status: {}", callbackData.orderId(), callbackData.status());
             } else {
                 log.warn("[Callback] No payment found for orderId: {} in callback. Creating new record.", callbackData.orderId());
                 Payment payment = new Payment();
@@ -307,11 +303,12 @@ public class EpointIntegrationService {
                 paymentRepository.save(payment);
             }
         } catch (org.springframework.orm.ObjectOptimisticLockingFailureException e) {
-            log.warn("[Callback] Concurrent callback detected for orderId: {}. Another thread already processed it. Ignoring.",
-                callbackData.orderId());
+            log.warn("[Callback] Concurrent callback detected for orderId: {}. Another thread already processed it. Ignoring.", callbackData.orderId());
         } catch (jakarta.persistence.OptimisticLockException e) {
-            log.warn("[Callback] Concurrent callback detected for orderId: {} (JPA). Another thread already processed it. Ignoring.",
-                callbackData.orderId());
+            log.warn("[Callback] Concurrent callback detected for orderId: {} (JPA). Another thread already processed it. Ignoring.", callbackData.orderId());
+        } catch (Exception e) {
+            log.error("[Callback] Exception during callback processing", e);
+            throw e;
         }
     }
 
@@ -479,35 +476,23 @@ public class EpointIntegrationService {
     }
 
     private void upsertCardFromCallback(Long userId, EpointResponse callbackData) {
-        log.info("[Callback] upsertCardFromCallback: userId={}, cardId={}, cardMask={}, cardName={}, brand={}",
-            userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName(), CardBrandDetector.detectBrand(callbackData.cardMask()));
+        log.info("[CardSave] upsertCardFromCallback: userId={}, cardId={}, cardMask={}, cardName={}", userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName());
         if (callbackData.cardId() == null || callbackData.cardId().isBlank()) {
-            log.warn("[Callback] No cardId in callback, skipping card upsert.");
+            log.warn("[CardSave] No cardId in callbackData, skipping card save.");
             return;
         }
-
         Optional<UserCard> existingCard = userCardRepository.findByUserIdAndCardId(userId, callbackData.cardId());
-        log.info("[Callback] Repository findByUserIdAndCardId: userId={}, cardId={}, found={}", userId, callbackData.cardId(), existingCard.isPresent());
-
         if (existingCard.isPresent()) {
             UserCard card = existingCard.get();
-            log.info("[Callback] Updating existing card: id={}, userId={}, cardId={}, cardMask={}, cardName={}, brand={}",
-                card.getId(), card.getUserId(), card.getCardId(), callbackData.cardMask(), callbackData.cardName(), CardBrandDetector.detectBrand(callbackData.cardMask()));
             card.setCardMask(callbackData.cardMask());
             card.setCardName(callbackData.cardName());
             if (callbackData.cardMask() != null) {
                 card.setBrand(CardBrandDetector.detectBrand(callbackData.cardMask()));
             }
-            try {
-                userCardRepository.save(card);
-                log.info("[Callback] Updated existing card {} for user {}. Repository now has {} cards for user {}.", callbackData.cardId(), userId, userCardRepository.findAllByUserId(userId).size(), userId);
-            } catch (Exception e) {
-                log.error("[Callback] Exception saving updated card: {}", e.getMessage(), e);
-            }
+            userCardRepository.save(card);
+            log.info("[CardSave] Updated existing card {} for user {}", callbackData.cardId(), userId);
         } else {
             boolean isFirstCard = userCardRepository.findAllByUserId(userId).isEmpty();
-            log.info("[Callback] Creating new card for user: {}. cardId={}, cardMask={}, cardName={}, brand={}, isDefault={}",
-                userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName(), CardBrandDetector.detectBrand(callbackData.cardMask()), isFirstCard);
             UserCard userCard = UserCard.builder()
                     .userId(userId)
                     .cardId(callbackData.cardId())
@@ -516,20 +501,12 @@ public class EpointIntegrationService {
                     .brand(CardBrandDetector.detectBrand(callbackData.cardMask()))
                     .isDefault(isFirstCard)
                     .build();
-            try {
-                userCardRepository.save(userCard);
-                log.info("[Callback] Created new card {} for user {}. Repository now has {} cards for user {}.", callbackData.cardId(), userId, userCardRepository.findAllByUserId(userId).size(), userId);
-            } catch (Exception e) {
-                log.error("[Callback] Exception saving new card: {}", e.getMessage(), e);
-            }
+            userCardRepository.save(userCard);
+            log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);
         }
         // Log all cards for user after upsert
-        try {
-            List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
-            log.info("[Callback] All cards for user {} after upsert: count={}, cards={}", userId, allCards.size(), allCards);
-        } catch (Exception e) {
-            log.error("[Callback] Exception fetching all cards for user {}: {}", userId, e.getMessage(), e);
-        }
+        List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
+        log.info("[CardSave] All cards for user {} after upsert: {}", userId, allCards);
     }
 
     private String generateIdempotencyKey(String operation, String orderId, Long userId) {
