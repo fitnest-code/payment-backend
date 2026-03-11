@@ -219,19 +219,24 @@ public class EpointIntegrationService {
 
     @Transactional
     public void processCallback(String base64Data, String signature) {
+        log.info("[Callback] Received callback: base64Data={}, signature={}", base64Data, signature);
         if (base64Data == null || base64Data.isBlank()) {
+            log.error("[Callback] Missing base64Data");
             throw new IllegalArgumentException("error.missing_field");
         }
         if (signature == null || signature.isBlank()) {
+            log.error("[Callback] Missing signature");
             throw new IllegalArgumentException("error.missing_field");
         }
 
         if (!signer.verify(base64Data, signature, epointProperties.getPrivateKey())) {
+            log.error("[Callback] Signature verification failed for data: {}", base64Data);
             throw new SecurityException("error.payment_crypto_error");
         }
 
         EpointResponse callbackData = signer.decodeData(base64Data, EpointResponse.class);
-        log.info("Processing Epoint callback for orderId: {}, transaction: {}", callbackData.orderId(), callbackData.transaction());
+        log.info("[Callback] Decoded callbackData: orderId={}, transaction={}, status={}, cardId={}, cardMask={}",
+            callbackData.orderId(), callbackData.transaction(), callbackData.status(), callbackData.cardId(), callbackData.cardMask());
 
         if ((callbackData.orderId() == null || callbackData.orderId().isBlank()) &&
             (callbackData.transaction() == null || callbackData.transaction().isBlank())) {
@@ -266,8 +271,8 @@ public class EpointIntegrationService {
                 Payment payment = optionalPayment.get();
 
                 if (Boolean.TRUE.equals(payment.getCallbackProcessed())) {
-                    log.warn("Callback already processed for orderId: {}, transaction: {}. Skipping duplicate.",
-                            callbackData.orderId(), callbackData.transaction());
+                    log.warn("[Callback] Callback already processed for orderId: {}, transaction: {}. Skipping duplicate.",
+                        callbackData.orderId(), callbackData.transaction());
                     return;
                 }
 
@@ -279,16 +284,17 @@ public class EpointIntegrationService {
                 if ("success".equalsIgnoreCase(callbackData.status()) && callbackData.cardId() != null) {
                     Long userId = payment.getUserId();
                     if (userId != null) {
+                        log.info("[Callback] Attaching card to user: {}. cardId={}, cardMask={}, cardName={}", userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName());
                         upsertCardFromCallback(userId, callbackData);
-                        log.info("Card attached to user {} from callback. Card ID: {}", userId, callbackData.cardId());
+                        log.info("[Callback] Card attached to user {} from callback. Card ID: {}", userId, callbackData.cardId());
                     } else {
-                        log.warn("Cannot attach card: payment has no userId. OrderId: {}", callbackData.orderId());
+                        log.warn("[Callback] Cannot attach card: payment has no userId. OrderId: {}", callbackData.orderId());
                     }
                 }
 
-                log.info("Payment updated from callback. OrderId: {}, Status: {}", callbackData.orderId(), callbackData.status());
+                log.info("[Callback] Payment updated from callback. OrderId: {}, Status: {}", callbackData.orderId(), callbackData.status());
             } else {
-                log.warn("No payment found for orderId: {} in callback. Creating new record.", callbackData.orderId());
+                log.warn("[Callback] No payment found for orderId: {} in callback. Creating new record.", callbackData.orderId());
                 Payment payment = new Payment();
                 payment.setProvider("EPOINT");
                 payment.setOrderId(callbackData.orderId());
@@ -300,11 +306,11 @@ public class EpointIntegrationService {
                 paymentRepository.save(payment);
             }
         } catch (org.springframework.orm.ObjectOptimisticLockingFailureException e) {
-            log.warn("Concurrent callback detected for orderId: {}. Another thread already processed it. Ignoring.",
-                    callbackData.orderId());
+            log.warn("[Callback] Concurrent callback detected for orderId: {}. Another thread already processed it. Ignoring.",
+                callbackData.orderId());
         } catch (jakarta.persistence.OptimisticLockException e) {
-            log.warn("Concurrent callback detected for orderId: {} (JPA). Another thread already processed it. Ignoring.",
-                    callbackData.orderId());
+            log.warn("[Callback] Concurrent callback detected for orderId: {} (JPA). Another thread already processed it. Ignoring.",
+                callbackData.orderId());
         }
     }
 
@@ -472,7 +478,10 @@ public class EpointIntegrationService {
     }
 
     private void upsertCardFromCallback(Long userId, EpointResponse callbackData) {
+        log.info("[Callback] upsertCardFromCallback: userId={}, cardId={}, cardMask={}, cardName={}, brand={}",
+            userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName(), CardBrandDetector.detectBrand(callbackData.cardMask()));
         if (callbackData.cardId() == null || callbackData.cardId().isBlank()) {
+            log.warn("[Callback] No cardId in callback, skipping card upsert.");
             return;
         }
 
@@ -480,15 +489,19 @@ public class EpointIntegrationService {
 
         if (existingCard.isPresent()) {
             UserCard card = existingCard.get();
+            log.info("[Callback] Updating existing card: id={}, userId={}, cardId={}, cardMask={}, cardName={}, brand={}",
+                card.getId(), card.getUserId(), card.getCardId(), callbackData.cardMask(), callbackData.cardName(), CardBrandDetector.detectBrand(callbackData.cardMask()));
             card.setCardMask(callbackData.cardMask());
             card.setCardName(callbackData.cardName());
             if (callbackData.cardMask() != null) {
                 card.setBrand(CardBrandDetector.detectBrand(callbackData.cardMask()));
             }
             userCardRepository.save(card);
-            log.info("Updated existing card {} for user {}", callbackData.cardId(), userId);
+            log.info("[Callback] Updated existing card {} for user {}", callbackData.cardId(), userId);
         } else {
             boolean isFirstCard = userCardRepository.findAllByUserId(userId).isEmpty();
+            log.info("[Callback] Creating new card for user: {}. cardId={}, cardMask={}, cardName={}, brand={}, isDefault={}",
+                userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName(), CardBrandDetector.detectBrand(callbackData.cardMask()), isFirstCard);
             UserCard userCard = UserCard.builder()
                     .userId(userId)
                     .cardId(callbackData.cardId())
@@ -498,7 +511,7 @@ public class EpointIntegrationService {
                     .isDefault(isFirstCard)
                     .build();
             userCardRepository.save(userCard);
-            log.info("Created new card {} for user {}", callbackData.cardId(), userId);
+            log.info("[Callback] Created new card {} for user {}", callbackData.cardId(), userId);
         }
     }
 

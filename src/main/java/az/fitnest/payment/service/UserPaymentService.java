@@ -25,9 +25,14 @@ public class UserPaymentService {
     private final PaymentRepository paymentRepository;
 
     public List<UserCardResponse> getUserCards(Long userId) {
-        log.info("Fetching all cards for user: {}", userId);
-        return userCardRepository.findAllByUserId(userId)
-                .stream()
+        log.info("[FetchCards] Fetching all cards for user: {}", userId);
+        List<UserCard> cards = userCardRepository.findAllByUserId(userId);
+        log.info("[FetchCards] Found {} cards for user {}", cards.size(), userId);
+        for (UserCard card : cards) {
+            log.info("[FetchCards] Card: id={}, cardId={}, cardMask={}, cardName={}, brand={}, isDefault={}, createdDate={}, lastModifiedDate={}",
+                card.getId(), card.getCardId(), card.getCardMask(), card.getCardName(), card.getBrand(), card.isDefault(), card.getCreatedDate(), card.getLastModifiedDate());
+        }
+        return cards.stream()
                 .map(this::mapToCardResponse)
                 .collect(Collectors.toList());
     }
