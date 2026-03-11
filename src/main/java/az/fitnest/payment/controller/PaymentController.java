@@ -28,7 +28,7 @@ public class PaymentController {
     private final EpointIntegrationService integrationService;
 
     @Operation(summary = "Geri çağırışı emal edin", description = "Epoint-dən ödəniş nəticələrini qəbul edir.")
-    @PostMapping(value = {"/result", "/callback"})
+    @PostMapping(value = {"/result", "/callback", "/epoint/callback"})
     public ResponseEntity<String> handleCallback(
             @RequestParam("data") String data,
             @RequestParam("signature") String signature) {
