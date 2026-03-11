@@ -71,7 +71,12 @@ public class PaymentController {
             @RequestBody EpointCardRegistrationRequest request) {
         Long userId = (Long) authentication.getPrincipal();
         log.info("Received card registration request: userId={}, publicKey={}, language={}, refund={}, description={}", userId, request.publicKey(), request.language(), request.refund(), request.description());
-        return ResponseEntity.ok(integrationService.cardRegistration(userId, request));
+        EpointResponse response = integrationService.cardRegistration(userId, request);
+        log.info("Card registration result: status={}, message={}, cardId={}, redirectUrl={}", response.status(), response.message(), response.cardId(), response.redirectUrl());
+        log.info("Success redirect URL: {}", integrationService.getSuccessRedirectUrl());
+        log.info("Error redirect URL: {}", integrationService.getErrorRedirectUrl());
+        log.info("Result callback URL: {}", integrationService.getResultCallbackUrl());
+        return ResponseEntity.ok(response);
     }
 
     @Operation(summary = "Yadda saxlanmış kartla ödəniş", description = "Yadda saxlanmış kartla ödəniş edir.")

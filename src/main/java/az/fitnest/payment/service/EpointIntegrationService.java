@@ -519,4 +519,19 @@ public class EpointIntegrationService {
             userId != null ? userId : "guest",
             timestampWindow);
     }
+
+    public String getSuccessRedirectUrl() {
+        // Return the configured success redirect URL
+        return epointProperties.getSuccessRedirectUrl();
+    }
+
+    public String getErrorRedirectUrl() {
+        // Return the configured error redirect URL
+        return epointProperties.getErrorRedirectUrl();
+    }
+
+    public String getResultCallbackUrl() {
+        // Return the configured result callback URL
+        return epointProperties.getResultUrl();
+    }
 }
