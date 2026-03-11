@@ -235,8 +235,8 @@ public class EpointIntegrationService {
         }
 
         EpointResponse callbackData = signer.decodeData(base64Data, EpointResponse.class);
-        log.info("[Callback] Decoded callbackData: orderId={}, transaction={}, status={}, cardId={}, cardMask={}",
-            callbackData.orderId(), callbackData.transaction(), callbackData.status(), callbackData.cardId(), callbackData.cardMask());
+        log.info("[Callback] Decoded callbackData: orderId={}, transaction={}, status={}, cardId={}, cardMask={}, userId={}",
+            callbackData.orderId(), callbackData.transaction(), callbackData.status(), callbackData.cardId(), callbackData.cardMask(), callbackData.userId());
 
         if ((callbackData.orderId() == null || callbackData.orderId().isBlank()) &&
             (callbackData.transaction() == null || callbackData.transaction().isBlank())) {

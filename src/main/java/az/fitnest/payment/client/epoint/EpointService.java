@@ -58,13 +58,18 @@ public class EpointService {
     }
 
     public EpointResponse reverse(String transactionId, Double amount, String currency) {
-        EpointReverseRequest request = EpointReverseRequest.builder()
-                .publicKey(properties.getPublicKey())
-                .language("en")
-                .transaction(transactionId)
-                .amount(amount)
-                .currency(currency)
-                .build();
+        EpointPaymentRequest request = EpointPaymentRequest.builder()
+            .publicKey(properties.getPublicKey())
+            .orderId(null)
+            .amount(amount)
+            .currency(currency)
+            .description(null)
+            .resultUrl(properties.getResultUrl())
+            .successRedirectUrl(properties.getSuccessRedirectUrl())
+            .errorRedirectUrl(properties.getErrorRedirectUrl())
+            .build();
+        // Add transactionId to the request as needed by Epoint API
+        // If EpointPaymentRequest does not have transactionId, use a custom DTO or add it
         return httpClient.postSigned("/reverse", request);
     }
 
