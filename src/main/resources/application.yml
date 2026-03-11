@@ -138,9 +138,9 @@ epoint:
   public-key: ${EPOINT_PUBLIC_KEY:}
   private-key: ${EPOINT_PRIVATE_KEY:}
   base-url: ${EPOINT_BASE_URL:https://epoint.az/api/1}
-  result-url: ${EPOINT_RESULT_URL:https://dev-api.fitnest.az/epoint/callback}
-  success-redirect-url: ${EPOINT_SUCCESS_REDIRECT_URL:https://your-domain.com/payment/success}
-  error-redirect-url: ${EPOINT_ERROR_REDIRECT_URL:https://your-domain.com/payment/error}
+  result-url: ${EPOINT_RESULT_URL:https://dev-api.fitnest.az/payment/callback}
+  success-redirect-url: ${EPOINT_SUCCESS_REDIRECT_URL:https://dev-api.fitnest.az/payment/success}
+  error-redirect-url: ${EPOINT_ERROR_REDIRECT_URL:https://dev-api.fitnest.az/payment/error}
 
 # Idempotency Key Configuration
 payment:
