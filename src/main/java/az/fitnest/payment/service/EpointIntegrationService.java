@@ -18,7 +18,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -513,13 +512,6 @@ public class EpointIntegrationService {
                     .build();
             userCardRepository.save(userCard);
             log.info("[Callback] Created new card {} for user {}", callbackData.cardId(), userId);
-            // Fetch and log all cards for this user after saving
-            List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
-            log.info("[Callback] All cards for user {} after upsert:", userId);
-            for (UserCard card : allCards) {
-                log.info("[Callback] Card: id={}, cardId={}, cardMask={}, cardName={}, brand={}, isDefault={}, createdDate={}, lastModifiedDate={}",
-                    card.getId(), card.getCardId(), card.getCardMask(), card.getCardName(), card.getBrand(), card.isDefault(), card.getCreatedDate(), card.getLastModifiedDate());
-            }
         }
     }
 
