@@ -1,4 +1,4 @@
- package az.fitnest.payment.controller;
+package az.fitnest.payment.controller;
 
 import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.service.UserPaymentService;
@@ -21,7 +21,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/admin/payments")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
 @Tag(name = "Ödənişlər (Admin)", description = "Ödəniş məlumatlarını idarə etmək üçün administrativ ucluqlar")
 @SecurityRequirement(name = "bearerAuth")
 public class PaymentAdminController {
