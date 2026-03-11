@@ -2,12 +2,14 @@ package az.fitnest.payment.client.epoint;
 
 import az.fitnest.payment.dto.epoint.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import okhttp3.Request;
 import okhttp3.Response;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class EpointService {
 
     private final EpointHttpClient httpClient;
