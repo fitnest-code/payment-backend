@@ -126,10 +126,20 @@ public class UserPaymentService {
 
     public List<PaymentResponse> getAllPayments() {
         log.info("Admin: fetching all payments");
-        return paymentRepository.findAll()
-                .stream()
-                .map(this::mapToPaymentResponse)
-                .collect(Collectors.toList());
+        try {
+            List<Payment> payments = paymentRepository.findAll();
+            log.info("Admin: found {} payments", payments.size());
+            for (Payment payment : payments) {
+                log.info("Admin: Payment: id={}, provider={}, status={}, orderId={}, transactionId={}, amount={}, currency={}, cardMask={}, cardName={}, userId={}, description={}, code={}, bankResponse={}, operationCode={}, createdDate={}, lastModifiedDate={}",
+                    payment.getId(), payment.getProvider(), payment.getStatus(), payment.getOrderId(), payment.getTransactionId(), payment.getAmount(), payment.getCurrency(), payment.getCardMask(), payment.getCardName(), payment.getUserId(), payment.getDescription(), payment.getCode(), payment.getBankResponse(), payment.getOperationCode(), payment.getCreatedDate(), payment.getLastModifiedDate());
+            }
+            return payments.stream()
+                    .map(this::mapToPaymentResponse)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.error("Admin: error fetching payments", e);
+            throw e;
+        }
     }
 
     public PaymentResponse getPaymentByIdAdmin(Long paymentId) {

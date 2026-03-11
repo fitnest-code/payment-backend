@@ -32,18 +32,19 @@ public class PaymentController {
     public ResponseEntity<String> handleCallback(
             @RequestParam("data") String data,
             @RequestParam("signature") String signature) {
-
+        log.info("[Callback] Received callback: data={}, signature={}", data, signature);
         try {
             integrationService.processCallback(data, signature);
+            log.info("[Callback] Successfully processed callback.");
             return ResponseEntity.ok("OK");
         } catch (IllegalArgumentException e) {
-            log.warn("Invalid callback request: {}", e.getMessage());
+            log.warn("[Callback] Invalid callback request: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid request");
         } catch (SecurityException e) {
-            log.warn("Callback signature verification failed");
+            log.warn("[Callback] Callback signature verification failed");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
         } catch (Exception e) {
-            log.error("Error processing callback", e);
+            log.error("[Callback] Error processing callback", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Internal server error");
         }
     }
