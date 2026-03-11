@@ -69,6 +69,7 @@ public class PaymentController {
             Authentication authentication,
             @RequestBody EpointCardRegistrationRequest request) {
         Long userId = (Long) authentication.getPrincipal();
+        log.info("Received card registration request: userId={}, publicKey={}, language={}, refund={}, description={}", userId, request.publicKey(), request.language(), request.refund(), request.description());
         return ResponseEntity.ok(integrationService.cardRegistration(userId, request));
     }
 

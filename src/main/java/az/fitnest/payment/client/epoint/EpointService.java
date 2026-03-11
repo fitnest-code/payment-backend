@@ -27,7 +27,9 @@ public class EpointService {
     }
 
     public EpointResponse cardRegistration(EpointCardRegistrationRequest request) {
+        log.info("EpointService.cardRegistration: request.publicKey={}, properties.publicKey={}, env.EPOINT_PUBLIC_KEY={}", request.publicKey(), properties.getPublicKey(), System.getenv("EPOINT_PUBLIC_KEY"));
         request = fillPublicKey(request);
+        log.info("EpointService.cardRegistration after fillPublicKey: request.publicKey={}", request.publicKey());
         return httpClient.postSigned("/card-registration", request);
     }
 

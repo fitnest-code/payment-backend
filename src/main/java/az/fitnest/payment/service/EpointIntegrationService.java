@@ -59,14 +59,14 @@ public class EpointIntegrationService {
     @Transactional
     public EpointResponse cardRegistration(Long userId, EpointCardRegistrationRequest request) {
         String idempotencyKey = generateCardRegistrationKey(userId);
+        log.info("cardRegistration: userId={}, idempotencyKey={}, request.publicKey={}, epointProperties.publicKey={}, env.EPOINT_PUBLIC_KEY={}", userId, idempotencyKey, request.publicKey(), epointProperties.getPublicKey(), System.getenv("EPOINT_PUBLIC_KEY"));
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
         if (cachedResponse.isPresent()) {
             log.info("Returning cached card registration response for idempotency key: {}", idempotencyKey);
             return cachedResponse.get();
         }
-
         EpointResponse response = epointService.cardRegistration(request);
-
+        log.info("Epoint cardRegistration response: status={}, message={}, cardId={}", response.status(), response.message(), response.cardId());
         if ("success".equalsIgnoreCase(response.status()) && response.cardId() != null) {
             Payment tracking = new Payment();
             tracking.setProvider("EPOINT");
@@ -79,10 +79,8 @@ public class EpointIntegrationService {
             tracking.setCardId(response.cardId());
             paymentRepository.save(tracking);
             log.info("Created card-registration tracking record. Card ID: {}, UserId: {}", response.cardId(), userId);
-            return idempotencyService.persistIdempotentResponse(idempotencyKey, response, tracking);
-        } else {
-            return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
         }
+        return response;
     }
 
     @Transactional
