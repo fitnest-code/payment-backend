@@ -68,8 +68,6 @@ public class EpointService {
             .successRedirectUrl(properties.getSuccessRedirectUrl())
             .errorRedirectUrl(properties.getErrorRedirectUrl())
             .build();
-        // Add transactionId to the request as needed by Epoint API
-        // If EpointPaymentRequest does not have transactionId, use a custom DTO or add it
         return httpClient.postSigned("/reverse", request);
     }
 

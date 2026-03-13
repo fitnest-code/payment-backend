@@ -33,7 +33,6 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                     .otherAttr(request.getOtherAttrList())
                     .build();
 
-            // userId is null for gRPC calls as it's service-to-service
             EpointResponse epointResponse = integrationService.initiatePayment(paymentRequest, null);
 
             CreatePaymentResponse response = CreatePaymentResponse.newBuilder()

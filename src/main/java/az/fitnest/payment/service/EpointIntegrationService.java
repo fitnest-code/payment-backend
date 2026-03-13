@@ -288,7 +288,6 @@ public class EpointIntegrationService {
                     if (userId != null) {
                         upsertCardFromCallback(userId, callbackData);
                         log.info("[Callback] Card attached to user {} from callback. Card ID: {}", userId, callbackData.cardId());
-                        // Log all cards for user
                         List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
                         log.info("[Callback] All cards for user {}: {}", userId, allCards);
                     } else {
@@ -509,7 +508,6 @@ public class EpointIntegrationService {
             userCardRepository.save(userCard);
             log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);
         }
-        // Log all cards for user after upsert
         List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
         log.info("[CardSave] All cards for user {} after upsert: {}", userId, allCards);
     }
@@ -526,17 +524,14 @@ public class EpointIntegrationService {
     }
 
     public String getSuccessRedirectUrl() {
-        // Return the configured success redirect URL
         return epointProperties.getSuccessRedirectUrl();
     }
 
     public String getErrorRedirectUrl() {
-        // Return the configured error redirect URL
         return epointProperties.getErrorRedirectUrl();
     }
 
     public String getResultCallbackUrl() {
-        // Return the configured result callback URL
         return epointProperties.getResultUrl();
     }
 }

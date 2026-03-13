@@ -1,5 +1,3 @@
-// Epoint Bank Response Codes Mapping
-// Use this utility to map Epoint response codes to user-friendly messages
 
 import java.util.HashMap;
 import java.util.Map;
@@ -53,10 +51,8 @@ public class EpointBankResponseCodes {
         codeToMessage.put("400", "Accepted (for cancellation)");
         codeToMessage.put("499", "Confirmed, no original message");
         codeToMessage.put("950", "Business agreement violation");
-        // Add more codes as needed
     }
     public static String getMessage(String code) {
         return codeToMessage.getOrDefault(code, "Unknown bank response code");
     }
 }
-
