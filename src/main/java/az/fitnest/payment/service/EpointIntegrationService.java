@@ -58,7 +58,12 @@ public class EpointIntegrationService {
     }
 
     @Transactional
-    public EpointResponse cardRegistration(Long userId, EpointCardRegistrationRequest request) {
+    public EpointResponse cardRegistration(Long userId) {
+        EpointCardRegistrationRequest request = EpointCardRegistrationRequest.builder()
+            .language("az")
+            .refund(0)
+            .description("card_save")
+            .build();
         String idempotencyKey = generateCardRegistrationKey(userId);
         log.info("cardRegistration: userId={}, idempotencyKey={}, request.publicKey={}, epointProperties.publicKey={}, env.EPOINT_PUBLIC_KEY={}", userId, idempotencyKey, request.publicKey(), epointProperties.getPublicKey(), System.getenv("EPOINT_PUBLIC_KEY"));
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);

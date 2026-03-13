@@ -66,12 +66,9 @@ public class PaymentController {
 
     @Operation(summary = "Kartın qeydiyyatı", description = "Yeni bir kartı sistemdə qeydiyyatdan keçirir.")
     @PostMapping("/card/save-init")
-    public ResponseEntity<EpointResponse> cardRegistration(
-            Authentication authentication,
-            @RequestBody EpointCardRegistrationRequest request) {
+    public ResponseEntity<EpointResponse> cardRegistration(Authentication authentication) {
         Long userId = (Long) authentication.getPrincipal();
-        log.info("Received card registration request: userId={}, publicKey={}, language={}, refund={}, description={}", userId, request.publicKey(), request.language(), request.refund(), request.description());
-        EpointResponse response = integrationService.cardRegistration(userId, request);
+        EpointResponse response = integrationService.cardRegistration(userId);
         log.info("Card registration result: status={}, message={}, cardId={}, redirectUrl={}", response.status(), response.message(), response.cardId(), response.redirectUrl());
         log.info("Success redirect URL: {}", integrationService.getSuccessRedirectUrl());
         log.info("Error redirect URL: {}", integrationService.getErrorRedirectUrl());
