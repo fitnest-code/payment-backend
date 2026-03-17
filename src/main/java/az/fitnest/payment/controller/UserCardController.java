@@ -31,27 +31,6 @@ public class UserCardController {
     private final UserPaymentService userPaymentService;
 
     @Operation(
-            summary = "Yadda saxlanmış kartları əldə edin",
-            description = "Autentifikasiya olunmuş istifadəçinin bütün yadda saxlanmış kartlarını qaytarır"
-    )
-    @ApiResponses(value = {
-            @ApiResponse(
-                    responseCode = "200",
-                    description = "Uğurlu cavab",
-                    content = @Content(
-                            mediaType = "application/json",
-                            array = @ArraySchema(schema = @Schema(implementation = UserCardResponse.class))
-                    )
-            ),
-            @ApiResponse(responseCode = "401", description = "Autentifikasiya tələb olunur")
-    })
-    @GetMapping(value = {"", "/card/list"})
-    public ResponseEntity<List<UserCardResponse>> getUserCards(Authentication authentication) {
-        Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.ok(userPaymentService.getUserCards(userId));
-    }
-
-    @Operation(
             summary = "Varsayılan kartı əldə edin",
             description = "İstifadəçinin varsayılan kartını qaytarır"
     )
