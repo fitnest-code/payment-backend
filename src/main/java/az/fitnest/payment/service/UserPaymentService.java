@@ -10,10 +10,13 @@ import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Service
@@ -23,6 +26,8 @@ public class UserPaymentService {
 
     private final UserCardRepository userCardRepository;
     private final PaymentRepository paymentRepository;
+    @Autowired
+    private MessageSource messageSource;
 
     public List<UserCardResponse> getUserCards(Long userId) {
         log.info("[FetchCards] Fetching all cards for user: {}", userId);
@@ -41,7 +46,8 @@ public class UserPaymentService {
         log.info("Fetching default card for user: {}", userId);
         return userCardRepository.findByUserIdAndIsDefaultTrue(userId)
                 .map(this::mapToCardResponse)
-                .orElse(null);
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        messageSource.getMessage("error.card.default.not.found", null, Locale.getDefault())));
     }
 
     @Transactional
@@ -49,10 +55,11 @@ public class UserPaymentService {
         log.info("Setting card {} as default for user: {}", cardId, userId);
 
         UserCard card = userCardRepository.findById(cardId)
-                .orElseThrow(() -> new ResourceNotFoundException("Card not found with id: " + cardId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        messageSource.getMessage("error.card.not.found", null, Locale.getDefault())));
 
         if (!card.getUserId().equals(userId)) {
-            throw new ForbiddenException("error.forbidden");
+            throw new ForbiddenException(messageSource.getMessage("error.forbidden", null, Locale.getDefault()));
         }
 
         userCardRepository.findAllByUserId(userId).forEach(c -> {
@@ -73,10 +80,11 @@ public class UserPaymentService {
         log.info("Deleting card {} for user: {}", cardId, userId);
 
         UserCard card = userCardRepository.findById(cardId)
-                .orElseThrow(() -> new ResourceNotFoundException("Card not found with id: " + cardId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        messageSource.getMessage("error.card.not.found", null, Locale.getDefault())));
 
         if (!card.getUserId().equals(userId)) {
-            throw new ForbiddenException("error.forbidden");
+            throw new ForbiddenException(messageSource.getMessage("error.forbidden", null, Locale.getDefault()));
         }
 
         boolean wasDefault = card.isDefault();

@@ -15,10 +15,12 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.List;
 
 @RestController
@@ -42,17 +44,12 @@ public class UserCardController {
                             mediaType = "application/json",
                             schema = @Schema(implementation = UserCardResponse.class)
                     )
-            ),
-            @ApiResponse(responseCode = "401", description = "Autentifikasiya tələb olunur")
+            )
     })
     @GetMapping("/default")
-    public ResponseEntity<UserCardResponse> getDefaultCard(Authentication authentication) {
-        Long userId = (Long) authentication.getPrincipal();
-        UserCardResponse defaultCard = userPaymentService.getDefaultCard(userId);
-        if (defaultCard == null) {
-            return ResponseEntity.noContent().build();
-        }
-        return ResponseEntity.ok(defaultCard);
+    public ResponseEntity<UserCardResponse> getDefaultCard(@AuthenticationPrincipal Principal user) {
+        Long userId = Long.parseLong(user.getName());
+        return ResponseEntity.ok(userPaymentService.getDefaultCard(userId));
     }
 
     @Operation(
@@ -68,15 +65,13 @@ public class UserCardController {
                             schema = @Schema(implementation = UserCardResponse.class)
                     )
             ),
-            @ApiResponse(responseCode = "400", description = "Yanlış sorğu"),
-            @ApiResponse(responseCode = "401", description = "Autentifikasiya tələb olunur"),
-            @ApiResponse(responseCode = "404", description = "Kart tapılmadı")
+            @ApiResponse(responseCode = "400", description = "Yanlış sorğu")
     })
     @PutMapping("/default")
     public ResponseEntity<UserCardResponse> setDefaultCard(
             @Valid @RequestBody SetDefaultCardRequest request,
-            Authentication authentication) {
-        Long userId = (Long) authentication.getPrincipal();
+            @AuthenticationPrincipal Principal user) {
+        Long userId = Long.parseLong(user.getName());
         return ResponseEntity.ok(userPaymentService.setDefaultCard(userId, request.cardId()));
     }
 
@@ -85,17 +80,15 @@ public class UserCardController {
             description = "Yadda saxlanmış kartı sistemdən silir"
     )
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "204", description = "Kart uğurla silindi"),
-            @ApiResponse(responseCode = "401", description = "Autentifikasiya tələb olunur"),
-            @ApiResponse(responseCode = "404", description = "Kart tapılmadı")
+            @ApiResponse(responseCode = "204", description = "Kart uğurla silindi")
     })
     @DeleteMapping("/{cardId}")
-    public ResponseEntity<Void> deleteCard(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteCard(
             @Parameter(description = "Silinəcək kartın ID-si") @PathVariable Long cardId,
-            Authentication authentication) {
-        Long userId = (Long) authentication.getPrincipal();
+            @AuthenticationPrincipal Principal user) {
+        Long userId = Long.parseLong(user.getName());
         userPaymentService.deleteCard(userId, cardId);
-        return ResponseEntity.noContent().build();
     }
 
     @Operation(
@@ -110,16 +103,12 @@ public class UserCardController {
                             mediaType = "application/json",
                             array = @ArraySchema(schema = @Schema(implementation = UserCardResponse.class))
                     )
-            ),
-            @ApiResponse(responseCode = "401", description = "Autentifikasiya tələb olunur")
+            )
     })
-    @GetMapping("")
-    public ResponseEntity<List<UserCardResponse>> getAllCards(Authentication authentication) {
-        Long userId = (Long) authentication.getPrincipal();
+    @GetMapping
+    public ResponseEntity<List<UserCardResponse>> getAllCards(@AuthenticationPrincipal Principal user) {
+        Long userId = Long.parseLong(user.getName());
         List<UserCardResponse> cards = userPaymentService.getUserCards(userId);
-        if (cards == null || cards.isEmpty()) {
-            return ResponseEntity.noContent().build();
-        }
         return ResponseEntity.ok(cards);
     }
 }
