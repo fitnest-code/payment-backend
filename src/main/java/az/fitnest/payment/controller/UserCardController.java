@@ -4,6 +4,7 @@ import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.dto.common.SetDefaultCardRequest;
 import az.fitnest.payment.dto.common.UserCardResponse;
 import az.fitnest.payment.service.UserPaymentService;
+import az.fitnest.payment.util.UserContext;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -48,7 +49,10 @@ public class UserCardController {
     })
     @GetMapping("/default")
     public ResponseEntity<UserCardResponse> getDefaultCard(@AuthenticationPrincipal Principal user) {
-        Long userId = Long.parseLong(user.getName());
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         return ResponseEntity.ok(userPaymentService.getDefaultCard(userId));
     }
 
@@ -71,7 +75,10 @@ public class UserCardController {
     public ResponseEntity<UserCardResponse> setDefaultCard(
             @Valid @RequestBody SetDefaultCardRequest request,
             @AuthenticationPrincipal Principal user) {
-        Long userId = Long.parseLong(user.getName());
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         return ResponseEntity.ok(userPaymentService.setDefaultCard(userId, request.cardId()));
     }
 
@@ -87,7 +94,10 @@ public class UserCardController {
     public void deleteCard(
             @Parameter(description = "Silinəcək kartın ID-si") @PathVariable Long cardId,
             @AuthenticationPrincipal Principal user) {
-        Long userId = Long.parseLong(user.getName());
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            throw new RuntimeException("Unauthorized: User ID not found");
+        }
         userPaymentService.deleteCard(userId, cardId);
     }
 
@@ -107,8 +117,15 @@ public class UserCardController {
     })
     @GetMapping
     public ResponseEntity<List<UserCardResponse>> getAllCards(@AuthenticationPrincipal Principal user) {
-        Long userId = Long.parseLong(user.getName());
-        List<UserCardResponse> cards = userPaymentService.getUserCards(userId);
-        return ResponseEntity.ok(cards);
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        try {
+            List<UserCardResponse> cards = userPaymentService.getUserCards(userId);
+            return ResponseEntity.ok(cards);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
     }
 }
