@@ -97,4 +97,29 @@ public class UserCardController {
         userPaymentService.deleteCard(userId, cardId);
         return ResponseEntity.noContent().build();
     }
+
+    @Operation(
+            summary = "Bütün yadda saxlanmış kartları əldə edin",
+            description = "İstifadəçinin yadda saxlanmış bütün kartlarını qaytarır"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Uğurlu cavab",
+                    content = @Content(
+                            mediaType = "application/json",
+                            array = @ArraySchema(schema = @Schema(implementation = UserCardResponse.class))
+                    )
+            ),
+            @ApiResponse(responseCode = "401", description = "Autentifikasiya tələb olunur")
+    })
+    @GetMapping("")
+    public ResponseEntity<List<UserCardResponse>> getAllCards(Authentication authentication) {
+        Long userId = (Long) authentication.getPrincipal();
+        List<UserCardResponse> cards = userPaymentService.getUserCards(userId);
+        if (cards == null || cards.isEmpty()) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(cards);
+    }
 }
