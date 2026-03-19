@@ -49,12 +49,22 @@ public class PaymentController {
         }
     }
 
-    @Operation(summary = "Ödənişi başladın", description = "Yeni bir ödəniş sorğusu yaradır.")
+    @Operation(summary = "Ödənişi başladın", description = "Yeni bir ödəniş sorğusu yaradır. Yalnız məbləğ və valyuta göndərilir, digər sahələr serverdə doldurulur.")
     @PostMapping("/payment/init")
     public ResponseEntity<EpointResponse> initiatePayment(
-            @RequestBody EpointPaymentRequest request,
+            @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        String orderId = java.util.UUID.randomUUID().toString();
+        EpointPaymentRequest request = EpointPaymentRequest.builder()
+                .currency(currencyRequest.currency() != null ? currencyRequest.currency() : "AZN")
+                .amount(currencyRequest.amount())
+                .language("az")
+                .orderId(orderId)
+                .description("Fitness package payment")
+                .isInstallment(0)
+                .refund(0)
+                .build();
         return ResponseEntity.ok(integrationService.initiatePayment(request, userId));
     }
 
@@ -85,12 +95,22 @@ public class PaymentController {
         return ResponseEntity.ok(integrationService.executePay(request, userId));
     }
 
-    @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir.")
+    @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir. Yalnız məbləğ və valyuta göndərilir, digər sahələr serverdə doldurulur.")
     @PostMapping("/payment/save-and-pay")
     public ResponseEntity<EpointResponse> cardRegistrationWithPay(
             Authentication authentication,
-            @RequestBody EpointPaymentRequest request) {
+            @RequestBody CurrencyRequest currencyRequest) {
         Long userId = (Long) authentication.getPrincipal();
+        String orderId = java.util.UUID.randomUUID().toString();
+        EpointPaymentRequest request = EpointPaymentRequest.builder()
+                .currency(currencyRequest.currency() != null ? currencyRequest.currency() : "AZN")
+                .amount(currencyRequest.amount())
+                .language("az")
+                .orderId(orderId)
+                .description("Fitness package payment")
+                .isInstallment(0)
+                .refund(0)
+                .build();
         return ResponseEntity.ok(integrationService.cardRegistrationWithPay(userId, request));
     }
 

@@ -48,12 +48,22 @@ public class EpointController {
         }
     }
 
-    @Operation(summary = "Ödənişi başladın", description = "Yeni bir ödəniş sorğusu yaradır.")
+    @Operation(summary = "Ödənişi başladın", description = "Yeni bir ödəniş sorğusu yaradır. Yalnız məbləğ və valyuta göndərilir, digər sahələr serverdə doldurulur.")
     @PostMapping("/request")
     public ResponseEntity<EpointResponse> initiatePayment(
-            @RequestBody EpointPaymentRequest request,
+            @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        String orderId = java.util.UUID.randomUUID().toString();
+        EpointPaymentRequest request = EpointPaymentRequest.builder()
+                .currency(currencyRequest.currency() != null ? currencyRequest.currency() : "AZN")
+                .amount(currencyRequest.amount())
+                .language("az")
+                .orderId(orderId)
+                .description("Fitness package payment")
+                .isInstallment(0)
+                .refund(0)
+                .build();
         return ResponseEntity.ok(integrationService.initiatePayment(request, userId));
     }
 
@@ -65,11 +75,9 @@ public class EpointController {
 
     @Operation(summary = "Kartın qeydiyyatı", description = "Yeni bir kartı sistemdə qeydiyyatdan keçirir.")
     @PostMapping("/card-registration")
-    public ResponseEntity<EpointResponse> cardRegistration(
-            Authentication authentication,
-            @RequestBody EpointCardRegistrationRequest request) {
+    public ResponseEntity<EpointResponse> cardRegistration(Authentication authentication) {
         Long userId = (Long) authentication.getPrincipal();
-        return ResponseEntity.ok(integrationService.cardRegistration(userId, request));
+        return ResponseEntity.ok(integrationService.cardRegistration(userId));
     }
 
     @PostMapping("/execute-pay")
