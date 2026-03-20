@@ -9,7 +9,8 @@ import az.fitnest.payment.model.entity.UserCard;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -21,8 +22,9 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class UserPaymentService {
+
+    private static final Logger log = LoggerFactory.getLogger(UserPaymentService.class);
 
     private final UserCardRepository userCardRepository;
     private final PaymentRepository paymentRepository;

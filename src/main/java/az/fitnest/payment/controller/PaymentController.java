@@ -21,9 +21,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @RestController
 @RequestMapping("/payment")
 @RequiredArgsConstructor
-@Slf4j
 @Tag(name = "Ödənişlər", description = "Ödəniş inteqrasiyası üçün ucluqlar")
 public class PaymentController {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PaymentController.class);
 
     private final EpointIntegrationService integrationService;
 
@@ -55,17 +55,7 @@ public class PaymentController {
             @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        String orderId = java.util.UUID.randomUUID().toString();
-        EpointPaymentRequest request = EpointPaymentRequest.builder()
-                .currency(currencyRequest.currency() != null ? currencyRequest.currency() : "AZN")
-                .amount(currencyRequest.amount())
-                .language("az")
-                .orderId(orderId)
-                .description("Fitness package payment")
-                .isInstallment(0)
-                .refund(0)
-                .build();
-        return ResponseEntity.ok(integrationService.initiatePayment(request, userId));
+        return ResponseEntity.ok(integrationService.initiatePayment(currencyRequest.amount(), currencyRequest.currency(), userId));
     }
 
     @Operation(summary = "Tranzaksiya statusunu yoxlayın", description = "Tranzaksiyanın statusunu sorğulayır.")
@@ -92,7 +82,7 @@ public class PaymentController {
             @RequestBody EpointExecutePayRequest request,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        return ResponseEntity.ok(integrationService.executePay(request, userId));
+        return ResponseEntity.ok(integrationService.executePay(request.amount(), request.currency(), request.cardId(), userId));
     }
 
     @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir. Yalnız məbləğ və valyuta göndərilir, digər sahələr serverdə doldurulur.")
@@ -101,17 +91,7 @@ public class PaymentController {
             Authentication authentication,
             @RequestBody CurrencyRequest currencyRequest) {
         Long userId = (Long) authentication.getPrincipal();
-        String orderId = java.util.UUID.randomUUID().toString();
-        EpointPaymentRequest request = EpointPaymentRequest.builder()
-                .currency(currencyRequest.currency() != null ? currencyRequest.currency() : "AZN")
-                .amount(currencyRequest.amount())
-                .language("az")
-                .orderId(orderId)
-                .description("Fitness package payment")
-                .isInstallment(0)
-                .refund(0)
-                .build();
-        return ResponseEntity.ok(integrationService.cardRegistrationWithPay(userId, request));
+        return ResponseEntity.ok(integrationService.cardRegistrationWithPay(currencyRequest.amount(), currencyRequest.currency(), userId));
     }
 
     @Operation(summary = "Geri qaytarma sorğusu", description = "Ödənişin geri qaytarılmasını tələb edir.")
@@ -123,10 +103,8 @@ public class PaymentController {
     @Operation(summary = "Tranzaksiyanı geri qaytarın", description = "Tranzaksiyanı tam və ya qismən geri qaytarır (reverse). " +
             "Əgər göndərilən məbləğ orijinal məbləğdən azdırsa, qismən geri qaytarma (partial reversal) həyata keçirilir.")
     @PostMapping("/reverse")
-    public ResponseEntity<EpointResponse> reverse(@RequestParam String transactionId,
-                                                  @RequestParam Double amount,
-                                                  @RequestParam String currency) {
-        return ResponseEntity.ok(integrationService.reverse(transactionId, amount, currency));
+    public ResponseEntity<EpointResponse> reverse(@RequestBody ReverseRequest request) {
+        return ResponseEntity.ok(integrationService.reverse(request.transactionId(), request.amount(), request.currency()));
     }
 
     @Operation(summary = "Bölünmüş ödəniş sorğusu", description = "Bölünmüş (split) ödəniş yaradır.")
@@ -135,7 +113,7 @@ public class PaymentController {
             @RequestBody EpointSplitPaymentRequest request,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        return ResponseEntity.ok(integrationService.splitRequest(request, userId));
+        return ResponseEntity.ok(integrationService.splitRequest(request.amount(), request.currency(), request.splitUser(), request.splitAmount(), userId));
     }
 
     @Operation(summary = "Bölünmüş ödənişi icra edin", description = "Bölünmüş ödənişi tamamlayır.")
@@ -144,7 +122,7 @@ public class PaymentController {
             @RequestBody EpointSplitExecutePayRequest request,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        return ResponseEntity.ok(integrationService.splitExecutePay(request, userId));
+        return ResponseEntity.ok(integrationService.splitExecutePay(request.amount(), request.currency(), request.cardId(), request.splitUser(), request.splitAmount(), userId));
     }
 
     @Operation(summary = "Bölünmüş ödənişlə kartın qeydiyyatı", description = "Bölünmüş ödəniş zamanı kartı qeydiyyatdan keçirir.")
@@ -153,7 +131,7 @@ public class PaymentController {
             @RequestBody EpointSplitPaymentRequest request,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        return ResponseEntity.ok(integrationService.splitCardRegistrationWithPay(request, userId));
+        return ResponseEntity.ok(integrationService.splitCardRegistrationWithPay(request.amount(), request.currency(), request.splitUser(), request.splitAmount(), userId));
     }
 
     @Operation(summary = "İlkin avtorizasiya sorğusu", description = "Vəsaitin bloklanması üçün ilkin avtorizasiya yaradır.")

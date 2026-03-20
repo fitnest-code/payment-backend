@@ -13,7 +13,8 @@ import az.fitnest.payment.repository.CallbackLogRepository;
 import az.fitnest.payment.util.CardBrandDetector;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,8 +24,22 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class EpointIntegrationService {
+
+    private static final Logger log = LoggerFactory.getLogger(EpointIntegrationService.class);
+    private static final List<String> ALLOWED_CURRENCIES = List.of("AZN", "USD", "EUR");
+
+    private void validatePaymentRequest(Double amount, String currency) {
+        if (amount == null || amount <= 0) {
+            throw new IllegalArgumentException("Amount must be positive and non-zero");
+        }
+        if (currency == null || currency.isBlank()) {
+            throw new IllegalArgumentException("Currency must be provided");
+        }
+        if (!ALLOWED_CURRENCIES.contains(currency.toUpperCase())) {
+            throw new IllegalArgumentException("Invalid currency: " + currency);
+        }
+    }
 
     private final EpointService epointService;
     private final EpointSigner signer;
@@ -37,6 +52,7 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
+                        validatePaymentRequest(request.amount(), request.currency());
         String idempotencyKey = generateIdempotencyKey("payment", request.orderId(), userId);
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
         if (cachedResponse.isPresent()) {
@@ -270,7 +286,7 @@ public class EpointIntegrationService {
                 optionalPayment = paymentRepository.findByOrderId(callbackData.orderId());
             }
             if (optionalPayment.isEmpty() && callbackData.transaction() != null && !callbackData.transaction().isBlank()) {
-                optionalPayment = paymentRepository.findByTransactionId(callbackData.transaction());
+                optionalPayment = paymentRepository.findByTransactionIdForUpdate(callbackData.transaction());
             }
             if (optionalPayment.isPresent()) {
                 Payment payment = optionalPayment.get();
@@ -278,7 +294,17 @@ public class EpointIntegrationService {
                     log.warn("[Callback] Callback already processed for orderId: {}, transaction: {}. Skipping duplicate.", callbackData.orderId(), callbackData.transaction());
                     return;
                 }
+                if (payment.getAmount() != null && callbackData.amount() != null && !payment.getAmount().equals(callbackData.amount())) {
+                    log.error("[Callback] Amount mismatch: payment={}, callback={}", payment.getAmount(), callbackData.amount());
+                    throw new SecurityException("Amount mismatch");
+                }
                 updatePaymentFromEpointResponse(payment, callbackData);
+                if ((payment.getCurrency() == null || payment.getCurrency().isBlank()) && callbackData.otherAttr() != null && callbackData.otherAttr().get("currency") != null) {
+                    String callbackCurrency = String.valueOf(callbackData.otherAttr().get("currency"));
+                    if (callbackCurrency != null && !callbackCurrency.isBlank()) {
+                        payment.setCurrency(callbackCurrency);
+                    }
+                }
                 payment.setCallbackProcessed(true);
                 paymentRepository.save(payment);
                 log.info("[Callback] Payment updated from callback. OrderId: {}, Status: {}", callbackData.orderId(), callbackData.status());
@@ -301,7 +327,13 @@ public class EpointIntegrationService {
                 payment.setOrderId(callbackData.orderId());
                 payment.setTransactionId(callbackData.transaction());
                 payment.setAmount(callbackData.amount());
-                payment.setCurrency("AZN");
+                String callbackCurrency = null;
+                if (callbackData.otherAttr() != null && callbackData.otherAttr().get("currency") != null) {
+                    callbackCurrency = String.valueOf(callbackData.otherAttr().get("currency"));
+                }
+                if (callbackCurrency != null && !callbackCurrency.isBlank()) {
+                    payment.setCurrency(callbackCurrency);
+                }
                 updatePaymentFromEpointResponse(payment, callbackData);
                 payment.setCallbackProcessed(true);
                 paymentRepository.save(payment);
@@ -460,7 +492,7 @@ public class EpointIntegrationService {
 
         switch (internalStatus.toUpperCase()) {
             case "PENDING_USER_ACTION":
-                return "success";
+                return "new";
 
             case "SUCCESS":
                 return "success";
@@ -533,5 +565,97 @@ public class EpointIntegrationService {
 
     public String getResultCallbackUrl() {
         return epointProperties.getResultUrl();
+    }
+
+    @Transactional
+    public EpointResponse initiatePayment(Double amount, String currency, Long userId) {
+        String orderId = java.util.UUID.randomUUID().toString();
+        EpointPaymentRequest request = EpointPaymentRequest.builder()
+                .currency(currency != null ? currency : "AZN")
+                .amount(amount)
+                .language("az")
+                .orderId(orderId)
+                .description("Fitness package payment")
+                .isInstallment(0)
+                .refund(0)
+                .build();
+        return initiatePayment(request, userId);
+    }
+
+    @Transactional
+    public EpointResponse executePay(Double amount, String currency, String cardId, Long userId) {
+                        validatePaymentRequest(amount, currency);
+        String orderId = java.util.UUID.randomUUID().toString();
+        EpointExecutePayRequest request = EpointExecutePayRequest.builder()
+                .language("az")
+                .orderId(orderId)
+                .amount(amount)
+                .currency(currency)
+                .cardId(cardId)
+                .isInstallment(0)
+                .build();
+        return executePay(request, userId);
+    }
+
+    @Transactional
+    public EpointResponse cardRegistrationWithPay(Double amount, String currency, Long userId) {
+                        validatePaymentRequest(amount, currency);
+        String orderId = java.util.UUID.randomUUID().toString();
+        EpointPaymentRequest request = EpointPaymentRequest.builder()
+                .currency(currency != null ? currency : "AZN")
+                .amount(amount)
+                .language("az")
+                .orderId(orderId)
+                .description("Fitness package payment")
+                .isInstallment(0)
+                .refund(0)
+                .build();
+        return cardRegistrationWithPay(userId, request);
+    }
+
+    @Transactional
+    public EpointResponse splitRequest(Double amount, String currency, String splitUser, Double splitAmount, Long userId) {
+                        validatePaymentRequest(amount, currency);
+        String orderId = java.util.UUID.randomUUID().toString();
+        EpointSplitPaymentRequest request = EpointSplitPaymentRequest.builder()
+                .language("az")
+                .orderId(orderId)
+                .amount(amount)
+                .currency(currency)
+                .splitUser(splitUser)
+                .splitAmount(splitAmount)
+                .build();
+        return splitRequest(request, userId);
+    }
+
+    @Transactional
+    public EpointResponse splitExecutePay(Double amount, String currency, String cardId, String splitUser, Double splitAmount, Long userId) {
+                        validatePaymentRequest(amount, currency);
+                        validatePaymentRequest(amount, currency);
+        String orderId = java.util.UUID.randomUUID().toString();
+        EpointSplitExecutePayRequest request = EpointSplitExecutePayRequest.builder()
+                .language("az")
+                .orderId(orderId)
+                .amount(amount)
+                .currency(currency)
+                .cardId(cardId)
+                .splitUser(splitUser)
+                .splitAmount(splitAmount)
+                .build();
+        return splitExecutePay(request, userId);
+    }
+
+    @Transactional
+    public EpointResponse splitCardRegistrationWithPay(Double amount, String currency, String splitUser, Double splitAmount, Long userId) {
+        String orderId = java.util.UUID.randomUUID().toString();
+        EpointSplitPaymentRequest request = EpointSplitPaymentRequest.builder()
+                .language("az")
+                .orderId(orderId)
+                .amount(amount)
+                .currency(currency)
+                .splitUser(splitUser)
+                .splitAmount(splitAmount)
+                .build();
+        return splitCardRegistrationWithPay(request, userId);
     }
 }

@@ -79,6 +79,7 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     implementation 'com.squareup.okhttp3:okhttp:4.9.3'
+    implementation 'io.github.resilience4j:resilience4j-all:2.2.0'
 }
 
 test {

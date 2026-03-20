@@ -5,15 +5,17 @@ import az.fitnest.payment.dto.epoint.EpointResponse;
 import az.fitnest.payment.service.EpointIntegrationService;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import net.devh.boot.grpc.server.service.GrpcService;
 
 import java.util.Collections;
 
 @GrpcService
 @RequiredArgsConstructor
-@Slf4j
 public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBase {
+
+    private static final Logger log = LoggerFactory.getLogger(PaymentGrpcService.class);
 
     private final EpointIntegrationService integrationService;
 

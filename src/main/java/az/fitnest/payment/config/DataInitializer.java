@@ -5,15 +5,17 @@ import az.fitnest.payment.model.entity.UserCard;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @RequiredArgsConstructor
-@Slf4j
 public class DataInitializer {
+
+    private static final Logger log = LoggerFactory.getLogger(DataInitializer.class);
 
     private final PaymentRepository paymentRepository;
     private final UserCardRepository userCardRepository;
