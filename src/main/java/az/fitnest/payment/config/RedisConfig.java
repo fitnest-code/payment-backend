@@ -24,7 +24,7 @@ public class RedisConfig {
     }
 
     @Bean
-    public RestTemplate restTemplate() {
+    public RestTemplate redisRestTemplate() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(5000);
         factory.setReadTimeout(10000);
