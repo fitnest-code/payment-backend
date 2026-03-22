@@ -1,7 +1,7 @@
 package az.fitnest.payment.client.epoint;
 
 import az.fitnest.payment.dto.epoint.EpointResponse;
-import lombok.RequiredArgsConstructor;
+// import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -24,8 +24,7 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
-@Component
-@RequiredArgsConstructor
+// @RequiredArgsConstructor
 public class EpointHttpClient {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(EpointHttpClient.class);
@@ -57,6 +56,15 @@ public class EpointHttpClient {
         timeLimiter = TimeLimiter.of(TimeLimiterConfig.custom()
                 .timeoutDuration(Duration.ofSeconds(5))
                 .build());
+    }
+
+    public EpointHttpClient(RestTemplate restTemplate, EpointSigner signer, EpointProperties properties, Retry retry, CircuitBreaker circuitBreaker, TimeLimiter timeLimiter) {
+        this.restTemplate = restTemplate;
+        this.signer = signer;
+        this.properties = properties;
+        this.retry = retry;
+        this.circuitBreaker = circuitBreaker;
+        this.timeLimiter = timeLimiter;
     }
 
     public EpointResponse postSigned(String endpoint, Object payload) {
