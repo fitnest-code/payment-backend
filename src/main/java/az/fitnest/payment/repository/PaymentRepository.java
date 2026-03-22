@@ -3,6 +3,8 @@ package az.fitnest.payment.repository;
 import az.fitnest.payment.model.entity.Payment;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import jakarta.persistence.LockModeType;
@@ -16,7 +18,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findByTransactionId(String transactionId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    Optional<Payment> findByTransactionIdForUpdate(String transactionId);
+    @Query("SELECT p FROM Payment p WHERE p.transactionId = :transactionId")
+    Optional<Payment> findByTransactionIdForUpdate(@Param("transactionId") String transactionId);
 
     List<Payment> findAllByUserId(Long userId);
 }
