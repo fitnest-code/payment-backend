@@ -79,7 +79,7 @@ public class PaymentController {
     @Operation(summary = "Yadda saxlanmış kartla ödəniş", description = "Yadda saxlanmış kartla ödəniş edir.")
     @PostMapping("/payment/with-card")
     public ResponseEntity<EpointResponse> executePay(
-            @RequestBody EpointExecutePayRequest request,
+            @RequestBody PayWithCardRequest request,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
         return ResponseEntity.ok(integrationService.executePay(request.amount(), request.currency(), request.cardId(), userId));
