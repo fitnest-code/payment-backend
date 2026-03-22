@@ -32,10 +32,10 @@ public class PaymentController {
     public ResponseEntity<String> handleCallback(
             @RequestParam("data") String data,
             @RequestParam("signature") String signature) {
-        log.info("[Callback] Received callback: data={}, signature={}", data, signature);
+        log.info("[Callback] (ENTRY) Received callback: data={}, signature={}", data, signature);
         try {
             integrationService.processCallback(data, signature);
-            log.info("[Callback] Successfully processed callback.");
+            log.info("[Callback] (EXIT) Successfully processed callback.");
             return ResponseEntity.ok("OK");
         } catch (IllegalArgumentException e) {
             log.warn("[Callback] Invalid callback request: {}", e.getMessage());

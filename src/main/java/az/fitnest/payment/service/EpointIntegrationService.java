@@ -241,7 +241,7 @@ public class EpointIntegrationService {
 
     @Transactional
     public void processCallback(String base64Data, String signature) {
-        log.info("[Callback] Received callback: base64Data={}, signature={}", base64Data, signature);
+        log.info("[Callback] (ENTRY) processCallback called with base64Data={}, signature={}", base64Data, signature);
         if (base64Data == null || base64Data.isBlank()) {
             log.error("[Callback] Missing base64Data");
             throw new IllegalArgumentException("error.missing_field");
@@ -512,7 +512,7 @@ public class EpointIntegrationService {
     }
 
     private void upsertCardFromCallback(Long userId, EpointResponse callbackData) {
-        log.info("[CardSave] upsertCardFromCallback: userId={}, cardId={}, cardMask={}, cardName={}", userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName());
+        log.info("[CardSave] (ENTRY) upsertCardFromCallback: userId={}, cardId={}, cardMask={}, cardName={}, callbackData={}", userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName(), callbackData);
         if (callbackData.cardId() == null || callbackData.cardId().isBlank()) {
             log.warn("[CardSave] No cardId in callbackData, skipping card save.");
             return;
@@ -541,7 +541,7 @@ public class EpointIntegrationService {
             log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);
         }
         List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
-        log.info("[CardSave] All cards for user {} after upsert: {}", userId, allCards);
+        log.info("[CardSave] (EXIT) All cards for user {} after upsert: {}", userId, allCards);
     }
 
     private String generateIdempotencyKey(String operation, String orderId, Long userId) {
