@@ -32,6 +32,7 @@ public class PaymentController {
     public ResponseEntity<String> handleCallback(
             @RequestParam("data") String data,
             @RequestParam("signature") String signature) {
+        log.info("[Callback] (TRIGGERED) Callback endpoint was triggered with data length: {} and signature length: {}", data != null ? data.length() : 0, signature != null ? signature.length() : 0);
         log.info("[Callback] (ENTRY) Received callback: data={}, signature={}", data, signature);
         try {
             integrationService.processCallback(data, signature);
