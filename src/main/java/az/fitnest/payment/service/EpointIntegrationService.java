@@ -477,11 +477,18 @@ public class EpointIntegrationService {
                 .orderId(payment.getOrderId())
                 .redirectUrl(payment.getRedirectUrl())
                 .bankTransaction(payment.getBankTransaction())
+                .bankResponse(payment.getBankResponse())
+                .operationCode(payment.getOperationCode())
                 .rrn(payment.getRrn())
                 .cardName(payment.getCardName())
                 .cardMask(payment.getCardMask())
                 .amount(payment.getAmount())
+                .splitAmount(null)
+                .cardId(payment.getCardId())
+                .widgetUrl(null)
                 .message(payment.getMessage())
+                .code(payment.getCode())
+                .otherAttr(null)
                 .build();
     }
 
