@@ -40,6 +40,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/internal/**").authenticated()
                         .requestMatchers("/epoint/result").permitAll()
+                        .requestMatchers("/payment/callback").permitAll()
+                        .requestMatchers("/payment/epoint/callback").permitAll()
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/swagger-ui.html").permitAll()
