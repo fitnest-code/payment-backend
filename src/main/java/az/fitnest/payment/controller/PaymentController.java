@@ -70,7 +70,19 @@ public class PaymentController {
     public ResponseEntity<EpointResponse> cardRegistration(Authentication authentication) {
         Long userId = (Long) authentication.getPrincipal();
         EpointResponse response = integrationService.cardRegistration(userId);
-        log.info("Card registration result: status={}, message={}, cardId={}, redirectUrl={}", response.status(), response.message(), response.cardId(), response.redirectUrl());
+        log.info("Card registration result: status={}, code={}, message={}, cardId={}, cardMask={}, cardName={}, bankTransaction={}, bankResponse={}, operationCode={}, rrn={}, redirectUrl={}",
+            response.status(),
+            response.code(),
+            response.message(),
+            response.cardId(),
+            response.cardMask(),
+            response.cardName(),
+            response.bankTransaction(),
+            response.bankResponse(),
+            response.operationCode(),
+            response.rrn(),
+            response.redirectUrl()
+        );
         log.info("Success redirect URL: {}", integrationService.getSuccessRedirectUrl());
         log.info("Error redirect URL: {}", integrationService.getErrorRedirectUrl());
         log.info("Result callback URL: {}", integrationService.getResultCallbackUrl());
