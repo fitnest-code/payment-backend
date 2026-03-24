@@ -2,6 +2,7 @@ package az.fitnest.payment.service;
 
 import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.dto.common.UserCardResponse;
+import az.fitnest.payment.dto.common.PaginatedResponse;
 import az.fitnest.payment.exception.ForbiddenException;
 import az.fitnest.payment.exception.ResourceNotFoundException;
 import az.fitnest.payment.model.entity.Payment;
@@ -179,7 +180,7 @@ public class UserPaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction id: " + transactionId));
     }
 
-    public Page<PaymentResponse> getUserPaymentHistory(Long userId, Pageable pageable, Integer fromMonth) {
+    public PaginatedResponse<PaymentResponse> getUserPaymentHistory(Long userId, Pageable pageable, Integer fromMonth) {
         List<Payment> allPayments = paymentRepository.findAllByUserId(userId);
         java.time.LocalDate startDate;
         java.time.LocalDate endDate = java.time.LocalDate.now();
@@ -200,7 +201,8 @@ public class UserPaymentService {
         int endIdx = Math.min((startIdx + pageable.getPageSize()), filtered.size());
         List<PaymentResponse> responses = filtered.stream().map(this::mapToPaymentResponse).toList();
         List<PaymentResponse> pageContent = responses.subList(Math.min(startIdx, responses.size()), Math.min(endIdx, responses.size()));
-        return new PageImpl<>(pageContent, pageable, responses.size());
+        Page<PaymentResponse> page = new PageImpl<>(pageContent, pageable, responses.size());
+        return PaginatedResponse.of(page);
     }
 
     private void verifyOwnership(Payment payment, Long userId) {
