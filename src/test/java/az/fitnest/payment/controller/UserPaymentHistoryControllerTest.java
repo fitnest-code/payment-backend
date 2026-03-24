@@ -42,10 +42,10 @@ class UserPaymentHistoryControllerTest {
         Long userId = 123L;
         PageRequest pageable = PageRequest.of(0, 20);
         Page<PaymentResponse> mockPayments = new PageImpl<>(Collections.singletonList(mock(PaymentResponse.class)), pageable, 1);
-        when(userPaymentService.getUserPaymentHistory(eq(userId), any(PageRequest.class), isNull(), isNull(), isNull())).thenReturn(mockPayments);
+        when(userPaymentService.getUserPaymentHistory(eq(userId), any(PageRequest.class), isNull(), isNull())).thenReturn(mockPayments);
         Authentication auth = new UsernamePasswordAuthenticationToken(userId, null);
         SecurityContextHolder.getContext().setAuthentication(auth);
-        ResponseEntity<Page<PaymentResponse>> response = controller.getUserPaymentHistory(auth, 1, 20, null, null, null);
+        ResponseEntity<Page<PaymentResponse>> response = controller.getUserPaymentHistory(auth, 1, 20, null, null);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(mockPayments, response.getBody());
     }
@@ -53,7 +53,7 @@ class UserPaymentHistoryControllerTest {
     @Test
     void getUserPaymentHistory_returnsUnauthorizedIfNoUser() {
         SecurityContextHolder.clearContext();
-        ResponseEntity<Page<PaymentResponse>> response = controller.getUserPaymentHistory(null, 1, 20, null, null, null);
+        ResponseEntity<Page<PaymentResponse>> response = controller.getUserPaymentHistory(null, 1, 20, null, null);
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
     }
 }

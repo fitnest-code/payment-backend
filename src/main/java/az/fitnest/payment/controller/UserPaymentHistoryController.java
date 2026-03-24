@@ -21,7 +21,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.security.Principal;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/me/payments")
@@ -43,16 +42,15 @@ public class UserPaymentHistoryController {
             @AuthenticationPrincipal Principal user,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String range,
-            @RequestParam(required = false) Integer month,
-            @RequestParam(required = false) Integer year
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate
     ) {
         Long userId = UserContext.getCurrentUserId();
         if (userId == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         Pageable pageable = PageRequest.of(Math.max(page - 1, 0), size);
-        Page<PaymentResponse> payments = userPaymentService.getUserPaymentHistory(userId, pageable, range, month, year);
+        Page<PaymentResponse> payments = userPaymentService.getUserPaymentHistory(userId, pageable, startDate, endDate);
         return ResponseEntity.ok(payments);
     }
 

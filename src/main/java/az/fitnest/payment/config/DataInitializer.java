@@ -74,6 +74,75 @@ public class DataInitializer {
 
             paymentRepository.save(payment3);
         }
+        if (paymentRepository.findAllByUserId(1L).isEmpty()) {
+            log.info("Seeding payment history for user 1...");
+            Payment p1 = new Payment();
+            p1.setProvider("STRIPE");
+            p1.setPaymentIntentClientSecret("pi_user1_001");
+            p1.setStatus("SUCCEEDED");
+            p1.setOrderId("U1_ORD001");
+            p1.setTransactionId("u1_txn_001");
+            p1.setAmount(49.99);
+            p1.setCurrency("AZN");
+            p1.setCardMask("424242****4242");
+            p1.setCardName("Visa Gold");
+            p1.setUserId(1L);
+            p1.setMessage("Payment successful");
+            p1.setDescription("Monthly subscription");
+            p1.setCreatedDate(java.time.LocalDateTime.now().minusDays(10));
+            paymentRepository.save(p1);
+
+            Payment p2 = new Payment();
+            p2.setProvider("STRIPE");
+            p2.setPaymentIntentClientSecret("pi_user1_002");
+            p2.setStatus("FAILED");
+            p2.setOrderId("U1_ORD002");
+            p2.setTransactionId("u1_txn_002");
+            p2.setAmount(19.99);
+            p2.setCurrency("AZN");
+            p2.setCardMask("555555****4444");
+            p2.setCardName("Mastercard Platinum");
+            p2.setUserId(1L);
+            p2.setMessage("Insufficient funds");
+            p2.setDescription("One-time purchase");
+            p2.setCode("INSUFFICIENT_BALANCE");
+            p2.setCreatedDate(java.time.LocalDateTime.now().minusMonths(2));
+            paymentRepository.save(p2);
+
+            Payment p3 = new Payment();
+            p3.setProvider("STRIPE");
+            p3.setPaymentIntentClientSecret("pi_user1_003");
+            p3.setStatus("REFUNDED");
+            p3.setOrderId("U1_ORD003");
+            p3.setTransactionId("u1_txn_003");
+            p3.setAmount(49.99);
+            p3.setCurrency("AZN");
+            p3.setCardMask("424242****4242");
+            p3.setCardName("Visa Gold");
+            p3.setUserId(1L);
+            p3.setMessage("Refund processed");
+            p3.setDescription("Refund for subscription");
+            p3.setCreatedDate(java.time.LocalDateTime.now().minusDays(5));
+            paymentRepository.save(p3);
+
+            Payment p4 = new Payment();
+            p4.setProvider("STRIPE");
+            p4.setPaymentIntentClientSecret("pi_user1_004");
+            p4.setStatus("SUCCEEDED");
+            p4.setOrderId("U1_ORD004");
+            p4.setTransactionId("u1_txn_004");
+            p4.setAmount(9.99);
+            p4.setCurrency("USD");
+            p4.setCardMask("411111****1111");
+            p4.setCardName("Visa Classic");
+            p4.setUserId(1L);
+            p4.setMessage("Payment successful");
+            p4.setDescription("E-book purchase");
+            p4.setCreatedDate(java.time.LocalDateTime.now().minusMonths(3).plusDays(2));
+            paymentRepository.save(p4);
+
+            log.info("Seeded payment history for user 1.");
+        }
     }
 
     private void initUserCards() {

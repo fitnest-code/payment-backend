@@ -179,41 +179,37 @@ public class UserPaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction id: " + transactionId));
     }
 
-    public Page<PaymentResponse> getUserPaymentHistory(Long userId, Pageable pageable, String range, Integer month, Integer year) {
+    public Page<PaymentResponse> getUserPaymentHistory(Long userId, Pageable pageable, String startDate, String endDate) {
         List<Payment> allPayments = paymentRepository.findAllByUserId(userId);
         List<Payment> filtered = allPayments;
-        if (range != null) {
-            LocalDate now = LocalDate.now();
-            final LocalDate fromDate;
-            switch (range) {
-                case "LAST_1_MONTH":
-                    fromDate = now.minusMonths(1);
-                    break;
-                case "LAST_3_MONTHS":
-                    fromDate = now.minusMonths(3);
-                    break;
-                default:
-                    fromDate = null;
-                    break;
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("d/MM/yyyy");
+        java.time.LocalDate start = null;
+        java.time.LocalDate end = null;
+        try {
+            if (startDate != null && !startDate.isBlank()) {
+                start = java.time.LocalDate.parse(startDate, formatter);
             }
-            if (fromDate != null) {
-                filtered = filtered.stream()
-                        .filter(p -> p.getCreatedDate() != null && p.getCreatedDate().toLocalDate().isAfter(fromDate))
-                        .toList();
+            if (endDate != null && !endDate.isBlank()) {
+                end = java.time.LocalDate.parse(endDate, formatter);
             }
-        } else if (month != null && year != null) {
-            filtered = filtered.stream()
-                    .filter(p -> {
-                        if (p.getCreatedDate() == null) return false;
-                        LocalDate date = p.getCreatedDate().toLocalDate();
-                        return date.getMonthValue() == month && date.getYear() == year;
-                    })
-                    .toList();
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid date format. Use day/MM/yyyy");
         }
-        int start = (int) pageable.getOffset();
-        int end = Math.min((start + pageable.getPageSize()), filtered.size());
+        if (start != null || end != null) {
+            final java.time.LocalDate finalStart = start;
+            final java.time.LocalDate finalEnd = end;
+            filtered = filtered.stream().filter(p -> {
+                if (p.getCreatedDate() == null) return false;
+                java.time.LocalDate date = p.getCreatedDate().toLocalDate();
+                boolean afterStart = finalStart == null || !date.isBefore(finalStart);
+                boolean beforeEnd = finalEnd == null || !date.isAfter(finalEnd);
+                return afterStart && beforeEnd;
+            }).toList();
+        }
+        int startIdx = (int) pageable.getOffset();
+        int endIdx = Math.min((startIdx + pageable.getPageSize()), filtered.size());
         List<PaymentResponse> responses = filtered.stream().map(this::mapToPaymentResponse).toList();
-        List<PaymentResponse> pageContent = responses.subList(Math.min(start, responses.size()), Math.min(end, responses.size()));
+        List<PaymentResponse> pageContent = responses.subList(Math.min(startIdx, responses.size()), Math.min(endIdx, responses.size()));
         return new PageImpl<>(pageContent, pageable, responses.size());
     }
 
