@@ -7,16 +7,21 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+
 import java.security.Principal;
 import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class UserPaymentHistoryControllerTest {
@@ -35,11 +40,12 @@ class UserPaymentHistoryControllerTest {
     @Test
     void getUserPaymentHistory_returnsPaymentsForAuthenticatedUser() {
         Long userId = 123L;
-        List<PaymentResponse> mockPayments = Collections.singletonList(mock(PaymentResponse.class));
-        when(userPaymentService.getUserPayments(userId)).thenReturn(mockPayments);
+        PageRequest pageable = PageRequest.of(0, 20);
+        Page<PaymentResponse> mockPayments = new PageImpl<>(Collections.singletonList(mock(PaymentResponse.class)), pageable, 1);
+        when(userPaymentService.getUserPaymentHistory(eq(userId), any(PageRequest.class), isNull(), isNull(), isNull())).thenReturn(mockPayments);
         Authentication auth = new UsernamePasswordAuthenticationToken(userId, null);
         SecurityContextHolder.getContext().setAuthentication(auth);
-        ResponseEntity<List<PaymentResponse>> response = controller.getUserPaymentHistory(auth);
+        ResponseEntity<Page<PaymentResponse>> response = controller.getUserPaymentHistory(auth, 1, 20, null, null, null);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(mockPayments, response.getBody());
     }
@@ -47,8 +53,7 @@ class UserPaymentHistoryControllerTest {
     @Test
     void getUserPaymentHistory_returnsUnauthorizedIfNoUser() {
         SecurityContextHolder.clearContext();
-        ResponseEntity<List<PaymentResponse>> response = controller.getUserPaymentHistory(null);
+        ResponseEntity<Page<PaymentResponse>> response = controller.getUserPaymentHistory(null, 1, 20, null, null, null);
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
     }
 }
-

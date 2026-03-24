@@ -15,10 +15,16 @@ import org.springframework.context.MessageSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageImpl;
 
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 
 @Service
 @RequiredArgsConstructor
@@ -171,6 +177,44 @@ public class UserPaymentService {
         return paymentRepository.findByTransactionId(transactionId)
                 .map(this::mapToPaymentResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction id: " + transactionId));
+    }
+
+    public Page<PaymentResponse> getUserPaymentHistory(Long userId, Pageable pageable, String range, Integer month, Integer year) {
+        List<Payment> allPayments = paymentRepository.findAllByUserId(userId);
+        List<Payment> filtered = allPayments;
+        if (range != null) {
+            LocalDate now = LocalDate.now();
+            final LocalDate fromDate;
+            switch (range) {
+                case "LAST_1_MONTH":
+                    fromDate = now.minusMonths(1);
+                    break;
+                case "LAST_3_MONTHS":
+                    fromDate = now.minusMonths(3);
+                    break;
+                default:
+                    fromDate = null;
+                    break;
+            }
+            if (fromDate != null) {
+                filtered = filtered.stream()
+                        .filter(p -> p.getCreatedDate() != null && p.getCreatedDate().toLocalDate().isAfter(fromDate))
+                        .toList();
+            }
+        } else if (month != null && year != null) {
+            filtered = filtered.stream()
+                    .filter(p -> {
+                        if (p.getCreatedDate() == null) return false;
+                        LocalDate date = p.getCreatedDate().toLocalDate();
+                        return date.getMonthValue() == month && date.getYear() == year;
+                    })
+                    .toList();
+        }
+        int start = (int) pageable.getOffset();
+        int end = Math.min((start + pageable.getPageSize()), filtered.size());
+        List<PaymentResponse> responses = filtered.stream().map(this::mapToPaymentResponse).toList();
+        List<PaymentResponse> pageContent = responses.subList(Math.min(start, responses.size()), Math.min(end, responses.size()));
+        return new PageImpl<>(pageContent, pageable, responses.size());
     }
 
     private void verifyOwnership(Payment payment, Long userId) {

@@ -9,11 +9,15 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.security.Principal;
@@ -34,14 +38,22 @@ public class UserPaymentHistoryController {
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Uğurlu cavab")
     })
-    @GetMapping
-    public ResponseEntity<List<PaymentResponse>> getUserPaymentHistory(@AuthenticationPrincipal Principal user) {
+    @GetMapping("/history")
+    public ResponseEntity<Page<PaymentResponse>> getUserPaymentHistory(
+            @AuthenticationPrincipal Principal user,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String range,
+            @RequestParam(required = false) Integer month,
+            @RequestParam(required = false) Integer year
+    ) {
         Long userId = UserContext.getCurrentUserId();
         if (userId == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        List<PaymentResponse> payments = userPaymentService.getUserPayments(userId);
+        Pageable pageable = PageRequest.of(Math.max(page - 1, 0), size);
+        Page<PaymentResponse> payments = userPaymentService.getUserPaymentHistory(userId, pageable, range, month, year);
         return ResponseEntity.ok(payments);
     }
-}
 
+}
