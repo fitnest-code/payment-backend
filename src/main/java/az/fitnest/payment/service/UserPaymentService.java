@@ -179,33 +179,23 @@ public class UserPaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction id: " + transactionId));
     }
 
-    public Page<PaymentResponse> getUserPaymentHistory(Long userId, Pageable pageable, String startDate, String endDate) {
+    public Page<PaymentResponse> getUserPaymentHistory(Long userId, Pageable pageable, Integer fromMonth) {
         List<Payment> allPayments = paymentRepository.findAllByUserId(userId);
-        List<Payment> filtered = allPayments;
-        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("d/MM/yyyy");
-        java.time.LocalDate start = null;
-        java.time.LocalDate end = null;
-        try {
-            if (startDate != null && !startDate.isBlank()) {
-                start = java.time.LocalDate.parse(startDate, formatter);
-            }
-            if (endDate != null && !endDate.isBlank()) {
-                end = java.time.LocalDate.parse(endDate, formatter);
-            }
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid date format. Use day/MM/yyyy");
+        java.time.LocalDate startDate;
+        java.time.LocalDate endDate = java.time.LocalDate.now();
+        int currentYear = endDate.getYear();
+        if (fromMonth != null && fromMonth >= 1 && fromMonth <= 12) {
+            startDate = java.time.LocalDate.of(currentYear, fromMonth, 1);
+        } else {
+            startDate = java.time.LocalDate.of(currentYear, 1, 1);
         }
-        if (start != null || end != null) {
-            final java.time.LocalDate finalStart = start;
-            final java.time.LocalDate finalEnd = end;
-            filtered = filtered.stream().filter(p -> {
+        List<Payment> filtered = allPayments.stream()
+            .filter(p -> {
                 if (p.getCreatedDate() == null) return false;
                 java.time.LocalDate date = p.getCreatedDate().toLocalDate();
-                boolean afterStart = finalStart == null || !date.isBefore(finalStart);
-                boolean beforeEnd = finalEnd == null || !date.isAfter(finalEnd);
-                return afterStart && beforeEnd;
-            }).toList();
-        }
+                return !date.isBefore(startDate) && !date.isAfter(endDate) && date.getYear() == currentYear;
+            })
+            .toList();
         int startIdx = (int) pageable.getOffset();
         int endIdx = Math.min((startIdx + pageable.getPageSize()), filtered.size());
         List<PaymentResponse> responses = filtered.stream().map(this::mapToPaymentResponse).toList();

@@ -42,15 +42,14 @@ public class UserPaymentHistoryController {
             @AuthenticationPrincipal Principal user,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String startDate,
-            @RequestParam(required = false) String endDate
+            @RequestParam(required = false) Integer fromMonth
     ) {
         Long userId = UserContext.getCurrentUserId();
         if (userId == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         Pageable pageable = PageRequest.of(Math.max(page - 1, 0), size);
-        Page<PaymentResponse> payments = userPaymentService.getUserPaymentHistory(userId, pageable, startDate, endDate);
+        Page<PaymentResponse> payments = userPaymentService.getUserPaymentHistory(userId, pageable, fromMonth);
         return ResponseEntity.ok(payments);
     }
 
