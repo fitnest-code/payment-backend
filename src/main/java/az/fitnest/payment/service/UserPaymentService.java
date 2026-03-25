@@ -229,6 +229,10 @@ public class UserPaymentService {
     }
 
     private PaymentResponse mapToPaymentResponse(Payment payment) {
+        String formattedStatus = payment.getStatus();
+        if (formattedStatus != null && !formattedStatus.isEmpty()) {
+            formattedStatus = formattedStatus.substring(0, 1).toUpperCase() + formattedStatus.substring(1).toLowerCase();
+        }
         return new PaymentResponse(
             payment.getId(),
             payment.getAmount(),
@@ -237,7 +241,7 @@ public class UserPaymentService {
             CardBrandDetector.detectBrand(payment.getCardMask()),
             payment.getCardMask(),
             payment.getType(),
-            payment.getStatus(),
+            formattedStatus,
             payment.getCode()
         );
     }
