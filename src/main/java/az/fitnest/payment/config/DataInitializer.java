@@ -153,36 +153,40 @@ public class DataInitializer {
     }
 
     private void initUserCards() {
-        // Always seed user cards for user 1 on startup
-        UserCard card1 = UserCard.builder()
-                .userId(1L)
-                .cardId("card_001")
-                .cardMask("424242****4242")
-                .cardName("Visa Gold")
-                .brand("VISA")
-                .isDefault(true)
-                .build();
-        userCardRepository.save(card1);
-
-        UserCard card2 = UserCard.builder()
-                .userId(1L)
-                .cardId("card_002")
-                .cardMask("555555****4444")
-                .cardName("Mastercard Platinum")
-                .brand("MASTERCARD")
-                .isDefault(false)
-                .build();
-        userCardRepository.save(card2);
-
-        UserCard card3 = UserCard.builder()
-                .userId(1L)
-                .cardId("card_003")
-                .cardMask("411111****1111")
-                .cardName("Visa Classic")
-                .brand("VISA")
-                .isDefault(false)
-                .build();
-        userCardRepository.save(card3);
-        log.info("Seeded 3 default cards for user 1.");
+        // Only seed user cards for user 1 if they do not already exist
+        if (userCardRepository.findByUserIdAndCardId(1L, "card_001").isEmpty()) {
+            UserCard card1 = UserCard.builder()
+                    .userId(1L)
+                    .cardId("card_001")
+                    .cardMask("424242****4242")
+                    .cardName("Visa Gold")
+                    .brand("VISA")
+                    .isDefault(true)
+                    .build();
+            userCardRepository.save(card1);
+        }
+        if (userCardRepository.findByUserIdAndCardId(1L, "card_002").isEmpty()) {
+            UserCard card2 = UserCard.builder()
+                    .userId(1L)
+                    .cardId("card_002")
+                    .cardMask("555555****4444")
+                    .cardName("Mastercard Platinum")
+                    .brand("MASTERCARD")
+                    .isDefault(false)
+                    .build();
+            userCardRepository.save(card2);
+        }
+        if (userCardRepository.findByUserIdAndCardId(1L, "card_003").isEmpty()) {
+            UserCard card3 = UserCard.builder()
+                    .userId(1L)
+                    .cardId("card_003")
+                    .cardMask("411111****1111")
+                    .cardName("Visa Classic")
+                    .brand("VISA")
+                    .isDefault(false)
+                    .build();
+            userCardRepository.save(card3);
+        }
+        log.info("Seeded 3 default cards for user 1 if not already present.");
     }
 }
