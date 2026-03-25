@@ -99,6 +99,7 @@ public class EpointIntegrationService {
             tracking.setCardMask(response.cardMask());
             tracking.setCardName(response.cardName());
             tracking.setCardId(response.cardId());
+            tracking.setType("CARD_REGISTRATION");
             paymentRepository.save(tracking);
             log.info("Created card-registration tracking record. Card ID: {}, UserId: {}", response.cardId(), userId);
         }
@@ -266,7 +267,7 @@ public class EpointIntegrationService {
         }
         if (callbackData.status() == null || callbackData.status().isBlank()) {
             log.error("[Callback] Missing status");
-            throw new IllegalArgumentException("error.invalid_field");
+            throw new IllegalArgumentException("error.missing_field");
         }
         if (callbackData.amount() != null && callbackData.amount() < 0) {
             log.error("[Callback] Invalid amount: {}", callbackData.amount());
@@ -435,6 +436,7 @@ public class EpointIntegrationService {
             payment.setRrn(response.rrn());
             payment.setBankTransaction(response.bankTransaction());
             payment.setMessage(response.message());
+            payment.setType("PAYMENT");
             return paymentRepository.save(payment);
         }
         return null;
@@ -463,6 +465,7 @@ public class EpointIntegrationService {
         payment.setCode(response.code());
         payment.setMessage(response.message());
         payment.setCallbackProcessed(true);
+        payment.setType("PAYMENT");
         return paymentRepository.save(payment);
     }
 

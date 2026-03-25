@@ -9,6 +9,7 @@ import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.entity.UserCard;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
+import az.fitnest.payment.util.CardBrandDetector;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -191,6 +192,7 @@ public class UserPaymentService {
             startDate = java.time.LocalDate.of(currentYear, 1, 1);
         }
         List<Payment> filtered = allPayments.stream()
+            .filter(p -> "PAYMENT".equalsIgnoreCase(p.getType()))
             .filter(p -> {
                 if (p.getCreatedDate() == null) return false;
                 java.time.LocalDate date = p.getCreatedDate().toLocalDate();
@@ -229,22 +231,14 @@ public class UserPaymentService {
     private PaymentResponse mapToPaymentResponse(Payment payment) {
         return new PaymentResponse(
             payment.getId(),
-            payment.getProvider(),
-            payment.getStatus(),
-            payment.getOrderId(),
-            payment.getTransactionId(),
             payment.getAmount(),
             payment.getCurrency(),
-            payment.getCardMask(),
-            payment.getCardName(),
-            payment.getMessage(),
-            payment.getUserId(),
-            payment.getDescription(),
-            payment.getCode(),
-            payment.getBankResponse(),
-            payment.getOperationCode(),
             payment.getCreatedDate() != null ? payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
-            payment.getLastModifiedDate() != null ? payment.getLastModifiedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null
+            CardBrandDetector.detectBrand(payment.getCardMask()),
+            payment.getCardMask(),
+            payment.getType(),
+            payment.getStatus(),
+            payment.getCode()
         );
     }
 }
