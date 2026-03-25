@@ -11,6 +11,8 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.UUID;
+
 @Configuration
 @RequiredArgsConstructor
 public class DataInitializer {
@@ -30,13 +32,17 @@ public class DataInitializer {
         };
     }
 
+    private String unique(String base) {
+        return base + "_" + UUID.randomUUID();
+    }
+
     private void initPayments() {
         Payment payment = new Payment();
         payment.setProvider("STRIPE");
         payment.setPaymentIntentClientSecret("pi_test_secret_123");
         payment.setStatus("SUCCEEDED");
-        payment.setOrderId("ORD999");
-        payment.setTransactionId("txn_test_123");
+        payment.setOrderId(unique("ORD999"));
+        payment.setTransactionId(unique("txn_test_123"));
         payment.setAmount(29.99);
         payment.setCurrency("AZN");
         payment.setCardMask("424242****4242");
@@ -49,8 +55,8 @@ public class DataInitializer {
         payment2.setProvider("STRIPE");
         payment2.setPaymentIntentClientSecret("pi_test_secret_124");
         payment2.setStatus("PENDING");
-        payment2.setOrderId("ORD998");
-        payment2.setTransactionId("txn_test_124");
+        payment2.setOrderId(unique("ORD998"));
+        payment2.setTransactionId(unique("txn_test_124"));
         payment2.setAmount(19.99);
         payment2.setCurrency("AZN");
         payment2.setCardMask("555555****4444");
@@ -63,8 +69,8 @@ public class DataInitializer {
         payment3.setProvider("STRIPE");
         payment3.setPaymentIntentClientSecret("pi_test_secret_125");
         payment3.setStatus("FAILED");
-        payment3.setOrderId("ORD997");
-        payment3.setTransactionId("txn_test_125");
+        payment3.setOrderId(unique("ORD997"));
+        payment3.setTransactionId(unique("txn_test_125"));
         payment3.setAmount(99.99);
         payment3.setCurrency("AZN");
         payment3.setCardMask("411111****1111");
@@ -78,8 +84,8 @@ public class DataInitializer {
         p1.setProvider("STRIPE");
         p1.setPaymentIntentClientSecret("pi_user1_001");
         p1.setStatus("SUCCEEDED");
-        p1.setOrderId("U1_ORD001");
-        p1.setTransactionId("u1_txn_001");
+        p1.setOrderId(unique("U1_ORD001"));
+        p1.setTransactionId(unique("u1_txn_001"));
         p1.setAmount(49.99);
         p1.setCurrency("AZN");
         p1.setCardMask("424242****4242");
@@ -95,8 +101,8 @@ public class DataInitializer {
         p2.setProvider("STRIPE");
         p2.setPaymentIntentClientSecret("pi_user1_002");
         p2.setStatus("FAILED");
-        p2.setOrderId("U1_ORD002");
-        p2.setTransactionId("u1_txn_002");
+        p2.setOrderId(unique("U1_ORD002"));
+        p2.setTransactionId(unique("u1_txn_002"));
         p2.setAmount(19.99);
         p2.setCurrency("AZN");
         p2.setCardMask("555555****4444");
@@ -113,8 +119,8 @@ public class DataInitializer {
         p3.setProvider("STRIPE");
         p3.setPaymentIntentClientSecret("pi_user1_003");
         p3.setStatus("REFUNDED");
-        p3.setOrderId("U1_ORD003");
-        p3.setTransactionId("u1_txn_003");
+        p3.setOrderId(unique("U1_ORD003"));
+        p3.setTransactionId(unique("u1_txn_003"));
         p3.setAmount(49.99);
         p3.setCurrency("AZN");
         p3.setCardMask("424242****4242");
@@ -130,8 +136,8 @@ public class DataInitializer {
         p4.setProvider("STRIPE");
         p4.setPaymentIntentClientSecret("pi_user1_004");
         p4.setStatus("SUCCEEDED");
-        p4.setOrderId("U1_ORD004");
-        p4.setTransactionId("u1_txn_004");
+        p4.setOrderId(unique("U1_ORD004"));
+        p4.setTransactionId(unique("u1_txn_004"));
         p4.setAmount(9.99);
         p4.setCurrency("USD");
         p4.setCardMask("411111****1111");
