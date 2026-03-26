@@ -20,6 +20,7 @@ import org.springframework.web.context.request.WebRequest;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     private final MessageSource messageSource;
 
@@ -90,14 +91,24 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<Void>> handleRuntimeException(RuntimeException ex, WebRequest request) {
-        ApiError apiError = ApiError.builder()
+        logger.error("Unhandled RuntimeException", ex);
+        // In production, you may want to hide details. Here, we expose the real message for debugging.
+        ApiError.ApiErrorBuilder builder = ApiError.builder()
                 .code("RUNTIME_EXCEPTION")
-                .message(getMessage("error.unexpected"))
+                .message(ex.getMessage() != null ? ex.getMessage() : getMessage("error.unexpected"))
                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .path(request.getDescription(false).replace("uri=", ""))
-                .timestamp(OffsetDateTime.now())
-                .build();
-
+                .timestamp(OffsetDateTime.now());
+        // Optionally, add stack trace in details for non-production
+        boolean isProd = false;
+        try {
+            String profile = System.getenv("SPRING_PROFILES_ACTIVE");
+            isProd = profile != null && (profile.equalsIgnoreCase("prod") || profile.equalsIgnoreCase("production"));
+        } catch (Exception ignore) {}
+        if (!isProd) {
+            builder.details(Map.of("exception", ex.getClass().getName(), "stackTrace", ex.getStackTrace()));
+        }
+        ApiError apiError = builder.build();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse.error(apiError));
     }
 
