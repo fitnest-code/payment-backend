@@ -179,7 +179,7 @@ payment:
     cleanup-logging-enabled: ${IDEMPOTENCY_CLEANUP_LOGGING_ENABLED:true}
 
     # Enable detailed logging for cache hits/misses (set to true for debugging)
-    detailed-logging-enabled: ${IDEMPOTENCY_DETAILED_LOGGING_ENABLED:false}
+    detailed-logging-enabled: true
 
 management:
   endpoints:
@@ -226,7 +226,3 @@ logging:
     org.springframework.security: DEBUG
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
-
-payment:
-  idempotency:
-    detailed-logging-enabled: true
