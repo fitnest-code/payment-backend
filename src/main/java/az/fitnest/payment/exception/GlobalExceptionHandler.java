@@ -26,10 +26,12 @@ public class GlobalExceptionHandler {
 
     public GlobalExceptionHandler(MessageSource messageSource) {
         this.messageSource = messageSource;
+        logger.warn("[TEST] GlobalExceptionHandler initialized - logging is working");
     }
 
     @ExceptionHandler(BaseException.class)
     public ResponseEntity<ApiResponse<Void>> handleBaseException(BaseException exception, WebRequest request) {
+        logger.error("BaseException handled", exception);
 
         Map<String, Object> details = null;
         if (exception instanceof ValidationException validationException) {
@@ -58,6 +60,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleMethodArgumentNotValidException(MethodArgumentNotValidException exception, WebRequest request) {
+        logger.error("MethodArgumentNotValidException handled", exception);
         BindingResult result = exception.getBindingResult();
         Map<String, String> validationErrors = new HashMap<>();
         for (FieldError error : result.getFieldErrors()) {
@@ -78,6 +81,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponse<Void>> handleHttpMessageNotReadableException(HttpMessageNotReadableException exception, WebRequest request) {
+        logger.error("HttpMessageNotReadableException handled", exception);
         ApiError apiError = ApiError.builder()
                 .code("HTTP_MESSAGE_NOT_READABLE")
                 .message(getMessage("error.invalid_json_format"))
@@ -114,6 +118,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGenericException(Exception ex, WebRequest request) {
+        logger.error("Unhandled Exception", ex);
         ApiError apiError = ApiError.builder()
                 .code("INTERNAL_SERVER_ERROR")
                 .message(getMessage("error.internal_server_error"))
