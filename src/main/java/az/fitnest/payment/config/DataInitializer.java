@@ -153,7 +153,6 @@ public class DataInitializer {
     }
 
     private void initUserCards() {
-        // Only seed user cards for user 1 if they do not already exist
         if (userCardRepository.findByUserIdAndCardId(1L, "card_001").isEmpty()) {
             UserCard card1 = UserCard.builder()
                     .userId(1L)
