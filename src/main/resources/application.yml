@@ -217,3 +217,16 @@ springdoc:
 grpc:
   server:
     port: 9091
+
+logging:
+  level:
+    root: INFO
+    com.fitnest: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+payment:
+  idempotency:
+    detailed-logging-enabled: true
