@@ -8,6 +8,14 @@ public record UserCardResponse(
     String cardMask,
     String cardName,
     String brand,
+    String bankTransaction,
+    String bankResponse,
+    String operationCode,
+    String rrn,
+    String approvalCode,
+    String cardNumber,
+    String reccPmntId,
+    String reccPmntExpiry,
     Instant createdAt,
     Instant updatedAt
 ) {}
