@@ -56,7 +56,6 @@ public class PaymentController {
             @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        // Pass new fields to the integration service
         return ResponseEntity.ok(
             integrationService.initiatePayment(
                 currencyRequest.amount(),
