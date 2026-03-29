@@ -50,6 +50,7 @@ public class EpointIntegrationService {
     private final CallbackLogRepository callbackLogRepository;
     private final IdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
+    private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
 
     @Transactional
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
@@ -90,6 +91,11 @@ public class EpointIntegrationService {
         }
         EpointResponse response = epointService.cardRegistration(request);
         log.info("Epoint cardRegistration response: status={}, message={}, cardId={}", response.status(), response.message(), response.cardId());
+        if ("success".equalsIgnoreCase(response.status()) && response.cardId() != null) {
+            String redisKey = "card-reg:" + response.cardId();
+            redisTemplate.opsForValue().set(redisKey, String.valueOf(userId), 30, java.util.concurrent.TimeUnit.MINUTES);
+            log.info("Stored card registration mapping cardId={} -> userId={}", response.cardId(), userId);
+        }
         return response;
     }
 
@@ -246,7 +252,7 @@ public class EpointIntegrationService {
         }
         EpointResponse callbackData = signer.decodeData(base64Data, EpointResponse.class);
         log.info("[Callback] Decoded callbackData: {}", callbackData);
-        log.info("[Callback] Processing callback for bankTransaction: {}, bankResponse: {}, rrn: {}, approvalCode: {}", 
+        log.info("[Callback] Processing callback for bankTransaction: {}, bankResponse: {}, rrn: {}, approvalCode: {}",
                 callbackData.bankTransaction(), callbackData.bankResponse(), callbackData.rrn(), callbackData.approvalCode());
 
         if (callbackData.bankTransaction() == null || callbackData.bankTransaction().isBlank()) {
@@ -263,7 +269,7 @@ public class EpointIntegrationService {
         }
         if (callbackData.approvalCode() == null || callbackData.approvalCode().isBlank()) {
             log.warn("[Callback] Missing approvalCode for orderId: {}, transaction: {}. Setting default value.", callbackData.orderId(), callbackData.transaction());
-            callbackData = callbackData.withApprovalCode("N/A"); // Set default value for missing approvalCode
+            callbackData = callbackData.withApprovalCode("N/A");
         }
         CallbackLog logEntry = CallbackLog.builder()
             .orderId(callbackData.orderId())
@@ -314,22 +320,21 @@ public class EpointIntegrationService {
                     }
                 }
             } else {
-                log.warn("[Callback] No payment found for orderId: {} in callback. Creating new record.", callbackData.orderId());
-                Payment payment = new Payment();
-                payment.setProvider("EPOINT");
-                payment.setOrderId(callbackData.orderId());
-                payment.setTransactionId(callbackData.transaction());
-                payment.setAmount(callbackData.amount());
-                String callbackCurrency = null;
-                if (callbackData.otherAttr() != null && callbackData.otherAttr().get("currency") != null) {
-                    callbackCurrency = String.valueOf(callbackData.otherAttr().get("currency"));
+                if (callbackData.cardId() != null && !callbackData.cardId().isBlank()
+                        && "success".equalsIgnoreCase(callbackData.status())) {
+                    String redisKey = "card-reg:" + callbackData.cardId();
+                    String userIdStr = redisTemplate.opsForValue().get(redisKey);
+                    if (userIdStr != null) {
+                        Long userId = Long.parseLong(userIdStr);
+                        log.info("[Callback] Card-registration callback for cardId={}, userId={}", callbackData.cardId(), userId);
+                        upsertCardFromCallback(userId, callbackData);
+                        redisTemplate.delete(redisKey);
+                        log.info("[Callback] Card saved for userId={}, cardId={}", userId, callbackData.cardId());
+                    } else {
+                        log.warn("[Callback] No userId found in Redis for cardId={}. Card not saved.", callbackData.cardId());
+                    }
+                    return;
                 }
-                if (callbackCurrency != null && !callbackCurrency.isBlank()) {
-                    payment.setCurrency(callbackCurrency);
-                }
-                updatePaymentFromEpointResponse(payment, callbackData);
-                payment.setCallbackProcessed(true);
-                paymentRepository.save(payment);
             }
         } catch (org.springframework.orm.ObjectOptimisticLockingFailureException e) {
             log.warn("[Callback] Concurrent callback detected for orderId: {}. Another thread already processed it. Ignoring.", callbackData.orderId());
@@ -550,6 +555,7 @@ public class EpointIntegrationService {
                     .cardId(callbackData.cardId())
                     .cardMask(callbackData.cardMask())
                     .cardName(callbackData.cardName())
+                    .brand(CardBrandDetector.detectBrand(callbackData.cardMask()))
                     .bankTransaction(callbackData.bankTransaction())
                     .bankResponse(callbackData.bankResponse())
                     .operationCode(callbackData.operationCode())

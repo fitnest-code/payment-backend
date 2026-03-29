@@ -96,14 +96,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<Void>> handleRuntimeException(RuntimeException ex, WebRequest request) {
         logger.error("Unhandled RuntimeException", ex);
-        // In production, you may want to hide details. Here, we expose the real message for debugging.
         ApiError.ApiErrorBuilder builder = ApiError.builder()
                 .code("RUNTIME_EXCEPTION")
                 .message(ex.getMessage() != null ? ex.getMessage() : getMessage("error.unexpected"))
                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .path(request.getDescription(false).replace("uri=", ""))
                 .timestamp(OffsetDateTime.now());
-        // Optionally, add stack trace in details for non-production
         boolean isProd = false;
         try {
             String profile = System.getenv("SPRING_PROFILES_ACTIVE");
