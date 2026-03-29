@@ -3,6 +3,7 @@ package az.fitnest.payment.service;
 import az.fitnest.payment.client.epoint.EpointService;
 import az.fitnest.payment.client.epoint.EpointSigner;
 import az.fitnest.payment.client.epoint.EpointProperties;
+import az.fitnest.payment.dto.epoint.EpointResponse;
 import az.fitnest.payment.dto.epoint.*;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.entity.UserCard;
@@ -245,19 +246,24 @@ public class EpointIntegrationService {
         }
         EpointResponse callbackData = signer.decodeData(base64Data, EpointResponse.class);
         log.info("[Callback] Decoded callbackData: {}", callbackData);
-        log.info("[Callback] Processing callback for orderId: {}, transaction: {}, status: {}, cardId: {}, cardMask: {}", callbackData.orderId(), callbackData.transaction(), callbackData.status(), callbackData.cardId(), callbackData.cardMask());
-        if ((callbackData.orderId() == null || callbackData.orderId().isBlank()) &&
-            (callbackData.transaction() == null || callbackData.transaction().isBlank())) {
-            log.error("[Callback] Missing orderId and transaction");
+        log.info("[Callback] Processing callback for bankTransaction: {}, bankResponse: {}, rrn: {}, approvalCode: {}", 
+                callbackData.bankTransaction(), callbackData.bankResponse(), callbackData.rrn(), callbackData.approvalCode());
+
+        if (callbackData.bankTransaction() == null || callbackData.bankTransaction().isBlank()) {
+            log.error("[Callback] Missing bankTransaction");
             throw new IllegalArgumentException("error.missing_field");
         }
-        if (callbackData.status() == null || callbackData.status().isBlank()) {
-            log.error("[Callback] Missing status");
+        if (callbackData.bankResponse() == null || callbackData.bankResponse().isBlank()) {
+            log.error("[Callback] Missing bankResponse");
             throw new IllegalArgumentException("error.missing_field");
         }
-        if (callbackData.amount() != null && callbackData.amount() < 0) {
-            log.error("[Callback] Invalid amount: {}", callbackData.amount());
-            throw new IllegalArgumentException("error.out_of_range");
+        if (callbackData.rrn() == null || callbackData.rrn().isBlank()) {
+            log.error("[Callback] Missing rrn");
+            throw new IllegalArgumentException("error.missing_field");
+        }
+        if (callbackData.approvalCode() == null || callbackData.approvalCode().isBlank()) {
+            log.error("[Callback] Missing approvalCode");
+            throw new IllegalArgumentException("error.missing_field");
         }
         CallbackLog logEntry = CallbackLog.builder()
             .orderId(callbackData.orderId())
@@ -667,5 +673,45 @@ public class EpointIntegrationService {
                 .splitAmount(splitAmount)
                 .build();
         return splitCardRegistrationWithPay(request, userId);
+    }
+
+    private void validateCallbackData(EpointResponse callbackData) {
+        if (callbackData == null || callbackData.orderId() == null || callbackData.orderId().isBlank()) {
+            throw new IllegalArgumentException("Missing or invalid orderId in callback data.");
+        }
+        if (callbackData.transaction() == null || callbackData.transaction().isBlank()) {
+            throw new IllegalArgumentException("Missing or invalid transaction in callback data.");
+        }
+    }
+
+    @Transactional
+    public void processCardSaveCallback(EpointResponse callbackData) {
+        log.info("[Callback] Processing card save callback: {}", callbackData);
+
+        if (callbackData.cardNumber() == null || callbackData.cardNumber().isBlank()) {
+            log.error("[Callback] Missing cardNumber");
+            throw new IllegalArgumentException("error.missing_field");
+        }
+        if (callbackData.reccPmntId() == null || callbackData.reccPmntId().isBlank()) {
+            log.error("[Callback] Missing reccPmntId");
+            throw new IllegalArgumentException("error.missing_field");
+        }
+
+        Optional<UserCard> existingCard = userCardRepository.findByCardNumberAndReccPmntId(
+                callbackData.cardNumber(), callbackData.reccPmntId());
+
+        if (existingCard.isPresent()) {
+            log.warn("[Callback] Duplicate card detected: {}", callbackData.cardNumber());
+            return;
+        }
+
+        UserCard newCard = UserCard.builder()
+                .cardNumber(callbackData.cardNumber())
+                .reccPmntId(callbackData.reccPmntId())
+                .reccPmntExpiry(callbackData.reccPmntExpiry())
+                .build();
+
+        userCardRepository.save(newCard);
+        log.info("[Callback] New card saved: {}", newCard);
     }
 }
