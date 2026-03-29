@@ -526,7 +526,6 @@ public class EpointIntegrationService {
             return;
         }
 
-        // Utility to parse bankResponse
         java.util.Map<String, String> bankRespMap = new java.util.HashMap<>();
         if (callbackData.bankResponse() != null) {
             String[] lines = callbackData.bankResponse().split("\\n");
@@ -540,7 +539,6 @@ public class EpointIntegrationService {
             }
         }
 
-        // Helper to get value from callbackData or bankResponse
         java.util.function.BiFunction<String, String, String> getField = (direct, key) -> {
             if (direct != null && !direct.isBlank()) return direct;
             return bankRespMap.getOrDefault(key, null);
@@ -556,7 +554,6 @@ public class EpointIntegrationService {
             }
             card.setCardName(getField.apply(callbackData.cardName(), "CARDNAME"));
             card.setBankTransaction(callbackData.bankTransaction());
-            // Optionally: card.setBankResponse(null); // Don't store raw response
             card.setOperationCode(callbackData.operationCode());
             card.setRrn(getField.apply(callbackData.rrn(), "RRN"));
             card.setApprovalCode(getField.apply(callbackData.approvalCode(), "APPROVAL_CODE"));
@@ -581,7 +578,6 @@ public class EpointIntegrationService {
                     .cardName(getField.apply(callbackData.cardName(), "CARDNAME"))
                     .brand(CardBrandDetector.detectBrand(callbackData.cardMask()))
                     .bankTransaction(callbackData.bankTransaction())
-                    // Optionally: .bankResponse(null)
                     .operationCode(callbackData.operationCode())
                     .rrn(getField.apply(callbackData.rrn(), "RRN"))
                     .approvalCode(getField.apply(callbackData.approvalCode(), "APPROVAL_CODE"))
