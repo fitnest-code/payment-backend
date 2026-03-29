@@ -744,4 +744,24 @@ public class EpointIntegrationService {
         userCardRepository.save(newCard);
         log.info("[Callback] New card saved: {}", newCard);
     }
+
+    @Transactional
+    public EpointResponse initiatePayment(Double amount, String currency, Long userId, Long packageId, Long optionId) {
+        validatePaymentRequest(amount, currency);
+        String orderId = java.util.UUID.randomUUID().toString();
+        java.util.List<String> otherAttr = new java.util.ArrayList<>();
+        if (packageId != null) otherAttr.add("packageId:" + packageId);
+        if (optionId != null) otherAttr.add("optionId:" + optionId);
+        EpointPaymentRequest request = EpointPaymentRequest.builder()
+                .currency(currency != null ? currency : "AZN")
+                .amount(amount)
+                .language("az")
+                .orderId(orderId)
+                .description("Fitness package payment")
+                .isInstallment(0)
+                .refund(0)
+                .otherAttr(otherAttr.isEmpty() ? null : otherAttr)
+                .build();
+        return initiatePayment(request, userId);
+    }
 }
