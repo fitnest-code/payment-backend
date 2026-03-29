@@ -176,21 +176,10 @@ public class UserPaymentService {
 
     private UserCardResponse mapToCardResponse(UserCard card) {
         return new UserCardResponse(
-            card.getId(),
-            card.getCardId(),
-            card.getCardMask(),
             card.getCardName(),
+            card.getCardMask(),
             card.getBrand(),
-            card.getBankTransaction(),
-            card.getBankResponse(),
-            card.getOperationCode(),
-            card.getRrn(),
-            card.getApprovalCode(),
-            card.getCardNumber(),
-            card.getReccPmntId(),
-            card.getReccPmntExpiry(),
-            card.getCreatedDate() != null ? card.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
-            card.getLastModifiedDate() != null ? card.getLastModifiedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null
+            card.getReccPmntExpiry()
         );
     }
 

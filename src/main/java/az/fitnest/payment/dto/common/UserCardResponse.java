@@ -5,19 +5,20 @@ import java.time.Instant;
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public record UserCardResponse(
-    Long id,
-    String cardId,
-    String cardMask,
     String cardName,
+    String cardMask,
     String brand,
-    String bankTransaction,
-    String bankResponse,
-    String operationCode,
-    String rrn,
-    String approvalCode,
-    String cardNumber,
-    String reccPmntId,
-    String reccPmntExpiry,
-    Instant createdAt,
-    Instant updatedAt
-) {}
+    String reccPmntExpiry
+) {
+    public UserCardResponse(String cardName, String cardMask, String brand, String reccPmntExpiry) {
+        this.cardName = cardName;
+        this.cardMask = cardMask;
+        this.brand = brand;
+        this.reccPmntExpiry = formatExpiry(reccPmntExpiry);
+    }
+
+    private static String formatExpiry(String expiry) {
+        if (expiry == null || expiry.length() != 4) return expiry;
+        return expiry.substring(0, 2) + "/" + expiry.substring(2);
+    }
+}
