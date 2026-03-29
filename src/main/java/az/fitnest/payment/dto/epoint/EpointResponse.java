@@ -42,4 +42,13 @@ public record EpointResponse(
     String reccPmntId,
     @JsonProperty("recc_pmnt_expiry")
     String reccPmntExpiry
-) {}
+) {
+    public EpointResponse withApprovalCode(String approvalCode) {
+        return new EpointResponse(
+            status, transaction, orderId, redirectUrl, bankTransaction,
+            bankResponse, operationCode, rrn, cardName, cardMask,
+            amount, splitAmount, cardId, widgetUrl, message, code,
+            otherAttr, approvalCode, cardNumber, reccPmntId, reccPmntExpiry
+        );
+    }
+}

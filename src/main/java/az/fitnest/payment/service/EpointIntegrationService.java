@@ -262,8 +262,8 @@ public class EpointIntegrationService {
             throw new IllegalArgumentException("error.missing_field");
         }
         if (callbackData.approvalCode() == null || callbackData.approvalCode().isBlank()) {
-            log.error("[Callback] Missing approvalCode");
-            throw new IllegalArgumentException("error.missing_field");
+            log.warn("[Callback] Missing approvalCode for orderId: {}, transaction: {}. Setting default value.", callbackData.orderId(), callbackData.transaction());
+            callbackData = callbackData.withApprovalCode("N/A"); // Set default value for missing approvalCode
         }
         CallbackLog logEntry = CallbackLog.builder()
             .orderId(callbackData.orderId())
