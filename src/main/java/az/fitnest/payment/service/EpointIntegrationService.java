@@ -560,6 +560,10 @@ public class EpointIntegrationService {
                     .bankResponse(callbackData.bankResponse())
                     .operationCode(callbackData.operationCode())
                     .rrn(callbackData.rrn())
+                    .approvalCode(callbackData.approvalCode())
+                    .cardNumber(callbackData.cardNumber())
+                    .reccPmntId(callbackData.reccPmntId())
+                    .reccPmntExpiry(callbackData.reccPmntExpiry())
                     .build();
             userCardRepository.save(userCard);
             log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);
