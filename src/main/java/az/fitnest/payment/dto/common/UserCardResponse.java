@@ -1,7 +1,9 @@
 package az.fitnest.payment.dto.common;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
 
+@JsonInclude(JsonInclude.Include.ALWAYS)
 public record UserCardResponse(
     Long id,
     String cardId,
