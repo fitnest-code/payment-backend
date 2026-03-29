@@ -34,55 +34,6 @@ public class UserCardController {
     private final UserPaymentService userPaymentService;
 
     @Operation(
-            summary = "Varsayılan kartı əldə edin",
-            description = "İstifadəçinin varsayılan kartını qaytarır"
-    )
-    @ApiResponses(value = {
-            @ApiResponse(
-                    responseCode = "200",
-                    description = "Uğurlu cavab",
-                    content = @Content(
-                            mediaType = "application/json",
-                            schema = @Schema(implementation = UserCardResponse.class)
-                    )
-            )
-    })
-    @GetMapping("/default")
-    public ResponseEntity<UserCardResponse> getDefaultCard(@AuthenticationPrincipal Principal user) {
-        Long userId = UserContext.getCurrentUserId();
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        return ResponseEntity.ok(userPaymentService.getDefaultCard(userId));
-    }
-
-    @Operation(
-            summary = "Varsayılan kartı dəyişdirin",
-            description = "Göstərilən kartı istifadəçinin varsayılan kartı kimi təyin edir"
-    )
-    @ApiResponses(value = {
-            @ApiResponse(
-                    responseCode = "200",
-                    description = "Kart uğurla varsayılan kart kimi təyin edildi",
-                    content = @Content(
-                            mediaType = "application/json",
-                            schema = @Schema(implementation = UserCardResponse.class)
-                    )
-            ),
-            @ApiResponse(responseCode = "400", description = "Yanlış sorğu")
-    })
-    @PutMapping("/default")
-    public ResponseEntity<UserCardResponse> setDefaultCard(
-            @Valid @RequestBody SetDefaultCardRequest request,
-            @AuthenticationPrincipal Principal user) {
-        Long userId = UserContext.getCurrentUserId();
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        return ResponseEntity.ok(userPaymentService.setDefaultCard(userId, request.cardId()));
-    }
-
-    @Operation(
             summary = "Kartı silin",
             description = "Yadda saxlanmış kartı sistemdən silir"
     )

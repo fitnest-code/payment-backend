@@ -23,10 +23,12 @@ import org.springframework.data.domain.PageImpl;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import az.fitnest.payment.dto.epoint.EpointResponse;
 
 @Service
 @RequiredArgsConstructor
@@ -44,45 +46,12 @@ public class UserPaymentService {
         List<UserCard> cards = userCardRepository.findAllByUserId(userId);
         log.info("[FetchCards] Found {} cards for user {}", cards.size(), userId);
         for (UserCard card : cards) {
-            log.info("[FetchCards] Card: id={}, cardId={}, cardMask={}, cardName={}, brand={}, isDefault={}, createdDate={}, lastModifiedDate={}",
-                card.getId(), card.getCardId(), card.getCardMask(), card.getCardName(), card.getBrand(), card.isDefault(), card.getCreatedDate(), card.getLastModifiedDate());
+            log.info("[FetchCards] Card: id={}, cardId={}, cardMask={}, cardName={}, brand={}, createdDate={}, lastModifiedDate={}",
+                card.getId(), card.getCardId(), card.getCardMask(), card.getCardName(), card.getBrand(), card.getCreatedDate(), card.getLastModifiedDate());
         }
         return cards.stream()
                 .map(this::mapToCardResponse)
                 .collect(Collectors.toList());
-    }
-
-    public UserCardResponse getDefaultCard(Long userId) {
-        log.info("Fetching default card for user: {}", userId);
-        return userCardRepository.findByUserIdAndIsDefaultTrue(userId)
-                .map(this::mapToCardResponse)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        messageSource.getMessage("error.card.default.not.found", null, Locale.getDefault())));
-    }
-
-    @Transactional
-    public UserCardResponse setDefaultCard(Long userId, Long cardId) {
-        log.info("Setting card {} as default for user: {}", cardId, userId);
-
-        UserCard card = userCardRepository.findById(cardId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        messageSource.getMessage("error.card.not.found", null, Locale.getDefault())));
-
-        if (!card.getUserId().equals(userId)) {
-            throw new ForbiddenException(messageSource.getMessage("error.forbidden", null, Locale.getDefault()));
-        }
-
-        userCardRepository.findAllByUserId(userId).forEach(c -> {
-            if (c.isDefault()) {
-                c.setDefault(false);
-                userCardRepository.save(c);
-            }
-        });
-
-        card.setDefault(true);
-        UserCard savedCard = userCardRepository.save(card);
-
-        return mapToCardResponse(savedCard);
     }
 
     @Transactional
@@ -97,17 +66,7 @@ public class UserPaymentService {
             throw new ForbiddenException(messageSource.getMessage("error.forbidden", null, Locale.getDefault()));
         }
 
-        boolean wasDefault = card.isDefault();
         userCardRepository.delete(card);
-
-        if (wasDefault) {
-            List<UserCard> remainingCards = userCardRepository.findAllByUserId(userId);
-            if (!remainingCards.isEmpty()) {
-                UserCard newDefault = remainingCards.get(0);
-                newDefault.setDefault(true);
-                userCardRepository.save(newDefault);
-            }
-        }
     }
 
     public List<PaymentResponse> getUserPayments(Long userId) {
@@ -222,7 +181,6 @@ public class UserPaymentService {
             card.getCardMask(),
             card.getCardName(),
             card.getBrand(),
-            card.isDefault(),
             card.getCreatedDate() != null ? card.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
             card.getLastModifiedDate() != null ? card.getLastModifiedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null
         );
@@ -244,5 +202,36 @@ public class UserPaymentService {
             formattedStatus,
             payment.getCode()
         );
+    }
+
+    private void upsertCardFromCallback(Long userId, EpointResponse callbackData) {
+        log.info("[CardSave] (ENTRY) upsertCardFromCallback: userId={}, cardId={}, cardMask={}, cardName={}, callbackData={}", userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName(), callbackData);
+        if (callbackData.cardId() == null || callbackData.cardId().isBlank()) {
+            log.warn("[CardSave] No cardId in callbackData, skipping card save.");
+            return;
+        }
+        Optional<UserCard> existingCard = userCardRepository.findByUserIdAndCardId(userId, callbackData.cardId());
+        if (existingCard.isPresent()) {
+            UserCard card = existingCard.get();
+            card.setCardMask(callbackData.cardMask());
+            card.setCardName(callbackData.cardName());
+            if (callbackData.cardMask() != null) {
+                card.setBrand(CardBrandDetector.detectBrand(callbackData.cardMask()));
+            }
+            userCardRepository.save(card);
+            log.info("[CardSave] Updated existing card {} for user {}", callbackData.cardId(), userId);
+        } else {
+            UserCard userCard = UserCard.builder()
+                    .userId(userId)
+                    .cardId(callbackData.cardId())
+                    .cardMask(callbackData.cardMask())
+                    .cardName(callbackData.cardName())
+                    .brand(CardBrandDetector.detectBrand(callbackData.cardMask()))
+                    .build();
+            userCardRepository.save(userCard);
+            log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);
+        }
+        List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
+        log.info("[CardSave] (EXIT) All cards for user {} after upsert: {}", userId, allCards);
     }
 }

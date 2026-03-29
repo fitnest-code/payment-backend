@@ -81,7 +81,7 @@ public class EpointIntegrationService {
             .description("card_save")
             .build();
         String idempotencyKey = generateCardRegistrationKey(userId);
-        log.info("cardRegistration: userId={}, idempotencyKey={}, request.publicKey={}, epointProperties.publicKey={}, env.EPOINT_PUBLIC_KEY={}", userId, idempotencyKey, request.publicKey(), epointProperties.getPublicKey(), System.getenv("EPOINT_PUBLIC_KEY"));
+        log.info("cardRegistration: userId={}, idempotencyKey={}", userId, idempotencyKey);
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
         if (cachedResponse.isPresent()) {
             log.info("Returning cached card registration response for idempotency key: {}", idempotencyKey);
@@ -89,20 +89,6 @@ public class EpointIntegrationService {
         }
         EpointResponse response = epointService.cardRegistration(request);
         log.info("Epoint cardRegistration response: status={}, message={}, cardId={}", response.status(), response.message(), response.cardId());
-        if ("success".equalsIgnoreCase(response.status()) && response.cardId() != null) {
-            Payment tracking = new Payment();
-            tracking.setProvider("EPOINT");
-            tracking.setStatus("PENDING_USER_ACTION");
-            tracking.setUserId(userId);
-            tracking.setDescription("card-registration");
-            tracking.setRedirectUrl(response.redirectUrl());
-            tracking.setCardMask(response.cardMask());
-            tracking.setCardName(response.cardName());
-            tracking.setCardId(response.cardId());
-            tracking.setType("CARD_REGISTRATION");
-            paymentRepository.save(tracking);
-            log.info("Created card-registration tracking record. Card ID: {}, UserId: {}", response.cardId(), userId);
-        }
         return response;
     }
 
@@ -538,20 +524,17 @@ public class EpointIntegrationService {
             userCardRepository.save(card);
             log.info("[CardSave] Updated existing card {} for user {}", callbackData.cardId(), userId);
         } else {
-            boolean isFirstCard = userCardRepository.findAllByUserId(userId).isEmpty();
             UserCard userCard = UserCard.builder()
                     .userId(userId)
                     .cardId(callbackData.cardId())
                     .cardMask(callbackData.cardMask())
                     .cardName(callbackData.cardName())
                     .brand(CardBrandDetector.detectBrand(callbackData.cardMask()))
-                    .isDefault(isFirstCard)
                     .build();
             userCardRepository.save(userCard);
             log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);
         }
-        List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
-        log.info("[CardSave] (EXIT) All cards for user {} after upsert: {}", userId, allCards);
+        log.info("[CardSave] (EXIT) All cards for user {} after upsert.", userId);
     }
 
     private String generateIdempotencyKey(String operation, String orderId, Long userId) {

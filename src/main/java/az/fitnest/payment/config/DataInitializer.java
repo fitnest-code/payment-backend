@@ -160,7 +160,6 @@ public class DataInitializer {
                     .cardMask("424242****4242")
                     .cardName("Visa Gold")
                     .brand("VISA")
-                    .isDefault(true)
                     .build();
             userCardRepository.save(card1);
         }
@@ -171,7 +170,6 @@ public class DataInitializer {
                     .cardMask("555555****4444")
                     .cardName("Mastercard Platinum")
                     .brand("MASTERCARD")
-                    .isDefault(false)
                     .build();
             userCardRepository.save(card2);
         }
@@ -182,7 +180,6 @@ public class DataInitializer {
                     .cardMask("411111****1111")
                     .cardName("Visa Classic")
                     .brand("VISA")
-                    .isDefault(false)
                     .build();
             userCardRepository.save(card3);
         }

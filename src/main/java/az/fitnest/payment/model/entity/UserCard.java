@@ -31,6 +31,4 @@ public class UserCard extends BaseAuditableEntity {
     @Column(name = "brand")
     private String brand;
 
-    @Column(name = "is_default")
-    private boolean isDefault;
 }

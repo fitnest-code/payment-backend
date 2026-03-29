@@ -8,7 +8,6 @@ public record UserCardResponse(
     String cardMask,
     String cardName,
     String brand,
-    boolean isDefault,
     Instant createdAt,
     Instant updatedAt
 ) {}
