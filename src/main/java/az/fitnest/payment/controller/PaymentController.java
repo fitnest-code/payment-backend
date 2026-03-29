@@ -56,7 +56,16 @@ public class PaymentController {
             @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        return ResponseEntity.ok(integrationService.initiatePayment(currencyRequest.amount(), currencyRequest.currency(), userId));
+        // Pass new fields to the integration service
+        return ResponseEntity.ok(
+            integrationService.initiatePayment(
+                currencyRequest.amount(),
+                currencyRequest.currency(),
+                userId,
+                currencyRequest.packageId(),
+                currencyRequest.optionId()
+            )
+        );
     }
 
     @Operation(summary = "Tranzaksiya statusunu yoxlayın", description = "Tranzaksiyanın statusunu sorğulayır.")
