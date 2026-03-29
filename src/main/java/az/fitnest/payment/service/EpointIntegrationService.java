@@ -509,32 +509,49 @@ public class EpointIntegrationService {
 
     private void upsertCardFromCallback(Long userId, EpointResponse callbackData) {
         log.info("[CardSave] (ENTRY) upsertCardFromCallback: userId={}, cardId={}, cardMask={}, cardName={}, callbackData={}", userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName(), callbackData);
+
         if (callbackData.cardId() == null || callbackData.cardId().isBlank()) {
             log.warn("[CardSave] No cardId in callbackData, skipping card save.");
             return;
         }
+
         Optional<UserCard> existingCard = userCardRepository.findByUserIdAndCardId(userId, callbackData.cardId());
+
         if (existingCard.isPresent()) {
             UserCard card = existingCard.get();
-            card.setCardMask(callbackData.cardMask());
-            card.setCardName(callbackData.cardName());
-            if (callbackData.cardMask() != null) {
-                card.setBrand(CardBrandDetector.detectBrand(callbackData.cardMask()));
+            if (!card.getCardMask().equals(callbackData.cardMask())) {
+                log.warn("[CardSave] Card mask mismatch for cardId {}: existing={}, new={}. Skipping update.", callbackData.cardId(), card.getCardMask(), callbackData.cardMask());
+                return;
             }
+            card.setCardName(callbackData.cardName());
+            card.setBankTransaction(callbackData.bankTransaction());
+            card.setBankResponse(callbackData.bankResponse());
+            card.setOperationCode(callbackData.operationCode());
+            card.setRrn(callbackData.rrn());
             userCardRepository.save(card);
             log.info("[CardSave] Updated existing card {} for user {}", callbackData.cardId(), userId);
         } else {
+            boolean duplicateCard = userCardRepository.findAllByUserId(userId).stream()
+                .anyMatch(card -> card.getCardMask().equals(callbackData.cardMask()) && card.getCardName().equals(callbackData.cardName()));
+
+            if (duplicateCard) {
+                log.warn("[CardSave] Duplicate card detected for user {} with cardMask {}. Skipping save.", userId, callbackData.cardMask());
+                return;
+            }
+
             UserCard userCard = UserCard.builder()
                     .userId(userId)
                     .cardId(callbackData.cardId())
                     .cardMask(callbackData.cardMask())
                     .cardName(callbackData.cardName())
-                    .brand(CardBrandDetector.detectBrand(callbackData.cardMask()))
+                    .bankTransaction(callbackData.bankTransaction())
+                    .bankResponse(callbackData.bankResponse())
+                    .operationCode(callbackData.operationCode())
+                    .rrn(callbackData.rrn())
                     .build();
             userCardRepository.save(userCard);
             log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);
         }
-        log.info("[CardSave] (EXIT) All cards for user {} after upsert.", userId);
     }
 
     private String generateIdempotencyKey(String operation, String orderId, Long userId) {

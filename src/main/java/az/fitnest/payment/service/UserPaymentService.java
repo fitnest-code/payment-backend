@@ -206,18 +206,21 @@ public class UserPaymentService {
 
     private void upsertCardFromCallback(Long userId, EpointResponse callbackData) {
         log.info("[CardSave] (ENTRY) upsertCardFromCallback: userId={}, cardId={}, cardMask={}, cardName={}, callbackData={}", userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName(), callbackData);
+
         if (callbackData.cardId() == null || callbackData.cardId().isBlank()) {
             log.warn("[CardSave] No cardId in callbackData, skipping card save.");
             return;
         }
+
         Optional<UserCard> existingCard = userCardRepository.findByUserIdAndCardId(userId, callbackData.cardId());
         if (existingCard.isPresent()) {
             UserCard card = existingCard.get();
             card.setCardMask(callbackData.cardMask());
             card.setCardName(callbackData.cardName());
-            if (callbackData.cardMask() != null) {
-                card.setBrand(CardBrandDetector.detectBrand(callbackData.cardMask()));
-            }
+            card.setBankTransaction(callbackData.bankTransaction());
+            card.setBankResponse(callbackData.bankResponse());
+            card.setOperationCode(callbackData.operationCode());
+            card.setRrn(callbackData.rrn());
             userCardRepository.save(card);
             log.info("[CardSave] Updated existing card {} for user {}", callbackData.cardId(), userId);
         } else {
@@ -226,7 +229,10 @@ public class UserPaymentService {
                     .cardId(callbackData.cardId())
                     .cardMask(callbackData.cardMask())
                     .cardName(callbackData.cardName())
-                    .brand(CardBrandDetector.detectBrand(callbackData.cardMask()))
+                    .bankTransaction(callbackData.bankTransaction())
+                    .bankResponse(callbackData.bankResponse())
+                    .operationCode(callbackData.operationCode())
+                    .rrn(callbackData.rrn())
                     .build();
             userCardRepository.save(userCard);
             log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);

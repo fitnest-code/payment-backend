@@ -31,4 +31,15 @@ public class UserCard extends BaseAuditableEntity {
     @Column(name = "brand")
     private String brand;
 
+    @Column(name = "bank_transaction")
+    private String bankTransaction;
+
+    @Column(name = "bank_response")
+    private String bankResponse;
+
+    @Column(name = "operation_code")
+    private String operationCode;
+
+    @Column(name = "rrn")
+    private String rrn;
 }
