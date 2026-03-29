@@ -46,7 +46,10 @@ public class EpointSigner {
     public <T> T decodeData(String base64Data, Class<T> clazz) {
         try {
             byte[] decoded = Base64.getDecoder().decode(base64Data);
-            return objectMapper.readValue(decoded, clazz);
+            String json = new String(decoded, StandardCharsets.UTF_8);
+            // Log the raw JSON data for debugging purposes
+            System.out.println("Decoded JSON: " + json);
+            return objectMapper.readValue(json, clazz);
         } catch (Exception e) {
             throw new RuntimeException("error.payment_decoding_failed", e);
         }
