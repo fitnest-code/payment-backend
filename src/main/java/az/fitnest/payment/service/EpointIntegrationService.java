@@ -526,6 +526,26 @@ public class EpointIntegrationService {
             return;
         }
 
+        // Utility to parse bankResponse
+        java.util.Map<String, String> bankRespMap = new java.util.HashMap<>();
+        if (callbackData.bankResponse() != null) {
+            String[] lines = callbackData.bankResponse().split("\\n");
+            for (String line : lines) {
+                int idx = line.indexOf(":");
+                if (idx > 0) {
+                    String key = line.substring(0, idx).trim();
+                    String value = line.substring(idx + 1).trim();
+                    bankRespMap.put(key, value);
+                }
+            }
+        }
+
+        // Helper to get value from callbackData or bankResponse
+        java.util.function.BiFunction<String, String, String> getField = (direct, key) -> {
+            if (direct != null && !direct.isBlank()) return direct;
+            return bankRespMap.getOrDefault(key, null);
+        };
+
         Optional<UserCard> existingCard = userCardRepository.findByUserIdAndCardId(userId, callbackData.cardId());
 
         if (existingCard.isPresent()) {
@@ -534,11 +554,15 @@ public class EpointIntegrationService {
                 log.warn("[CardSave] Card mask mismatch for cardId {}: existing={}, new={}. Skipping update.", callbackData.cardId(), card.getCardMask(), callbackData.cardMask());
                 return;
             }
-            card.setCardName(callbackData.cardName());
+            card.setCardName(getField.apply(callbackData.cardName(), "CARDNAME"));
             card.setBankTransaction(callbackData.bankTransaction());
-            card.setBankResponse(callbackData.bankResponse());
+            // Optionally: card.setBankResponse(null); // Don't store raw response
             card.setOperationCode(callbackData.operationCode());
-            card.setRrn(callbackData.rrn());
+            card.setRrn(getField.apply(callbackData.rrn(), "RRN"));
+            card.setApprovalCode(getField.apply(callbackData.approvalCode(), "APPROVAL_CODE"));
+            card.setCardNumber(getField.apply(callbackData.cardNumber(), "CARD_NUMBER"));
+            card.setReccPmntId(getField.apply(callbackData.reccPmntId(), "RECC_PMNT_ID"));
+            card.setReccPmntExpiry(getField.apply(callbackData.reccPmntExpiry(), "RECC_PMNT_EXPIRY"));
             userCardRepository.save(card);
             log.info("[CardSave] Updated existing card {} for user {}", callbackData.cardId(), userId);
         } else {
@@ -554,16 +578,16 @@ public class EpointIntegrationService {
                     .userId(userId)
                     .cardId(callbackData.cardId())
                     .cardMask(callbackData.cardMask())
-                    .cardName(callbackData.cardName())
+                    .cardName(getField.apply(callbackData.cardName(), "CARDNAME"))
                     .brand(CardBrandDetector.detectBrand(callbackData.cardMask()))
                     .bankTransaction(callbackData.bankTransaction())
-                    .bankResponse(callbackData.bankResponse())
+                    // Optionally: .bankResponse(null)
                     .operationCode(callbackData.operationCode())
-                    .rrn(callbackData.rrn())
-                    .approvalCode(callbackData.approvalCode())
-                    .cardNumber(callbackData.cardNumber())
-                    .reccPmntId(callbackData.reccPmntId())
-                    .reccPmntExpiry(callbackData.reccPmntExpiry())
+                    .rrn(getField.apply(callbackData.rrn(), "RRN"))
+                    .approvalCode(getField.apply(callbackData.approvalCode(), "APPROVAL_CODE"))
+                    .cardNumber(getField.apply(callbackData.cardNumber(), "CARD_NUMBER"))
+                    .reccPmntId(getField.apply(callbackData.reccPmntId(), "RECC_PMNT_ID"))
+                    .reccPmntExpiry(getField.apply(callbackData.reccPmntExpiry(), "RECC_PMNT_EXPIRY"))
                     .build();
             userCardRepository.save(userCard);
             log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);
