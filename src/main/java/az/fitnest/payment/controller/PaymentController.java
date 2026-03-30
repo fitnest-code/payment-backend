@@ -17,6 +17,7 @@ import az.fitnest.payment.dto.epoint.*;
 import java.util.Map;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 @RestController
 @RequestMapping("/payment")
@@ -26,6 +27,7 @@ public class PaymentController {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PaymentController.class);
 
     private final EpointIntegrationService integrationService;
+    private final StringRedisTemplate redisTemplate;
 
     @Operation(summary = "Geri çağırışı emal edin", description = "Epoint-dən ödəniş nəticələrini qəbul edir.")
     @PostMapping(value = {"/result", "/callback", "/epoint/callback"})
