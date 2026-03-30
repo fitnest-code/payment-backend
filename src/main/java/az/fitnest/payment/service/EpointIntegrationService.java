@@ -749,9 +749,10 @@ public class EpointIntegrationService {
     public EpointResponse initiatePayment(Double amount, String currency, Long userId, Long packageId, Long optionId) {
         validatePaymentRequest(amount, currency);
         String orderId = java.util.UUID.randomUUID().toString();
-        java.util.List<String> otherAttr = new java.util.ArrayList<>();
-        if (packageId != null) otherAttr.add("packageId:" + packageId);
-        if (optionId != null) otherAttr.add("optionId:" + optionId);
+        java.util.List<String> otherAttrList = new java.util.ArrayList<>();
+        if (packageId != null) otherAttrList.add("packageId:" + packageId);
+        if (optionId != null) otherAttrList.add("optionId:" + optionId);
+        String otherAttr = otherAttrList.isEmpty() ? null : String.join(",", otherAttrList);
         EpointPaymentRequest request = EpointPaymentRequest.builder()
                 .currency(currency != null ? currency : "AZN")
                 .amount(amount)
@@ -760,7 +761,7 @@ public class EpointIntegrationService {
                 .description("Fitness package payment")
                 .isInstallment(0)
                 .refund(0)
-                .otherAttr(otherAttr.isEmpty() ? null : otherAttr)
+                .otherAttr(otherAttr)
                 .build();
         return initiatePayment(request, userId);
     }

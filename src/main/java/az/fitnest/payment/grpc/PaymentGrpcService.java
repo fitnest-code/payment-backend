@@ -32,7 +32,7 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                     .language(request.getLanguage())
                     .isInstallment(request.getIsInstallment())
                     .refund(request.getRefund())
-                    .otherAttr(request.getOtherAttrList())
+                    .otherAttr(request.getOtherAttrList().isEmpty() ? null : String.join(",", request.getOtherAttrList()))
                     .build();
 
             EpointResponse epointResponse = integrationService.initiatePayment(paymentRequest, null);
