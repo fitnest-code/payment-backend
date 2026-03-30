@@ -55,16 +55,12 @@ public class UserPaymentService {
     }
 
     @Transactional
-    public void deleteCard(Long userId, Long cardId) {
+    public void deleteCard(Long userId, String cardId) {
         log.info("Deleting card {} for user: {}", cardId, userId);
 
-        UserCard card = userCardRepository.findById(cardId)
+        UserCard card = userCardRepository.findByUserIdAndCardId(userId, cardId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         messageSource.getMessage("error.card.not.found", null, Locale.getDefault())));
-
-        if (!card.getUserId().equals(userId)) {
-            throw new ForbiddenException(messageSource.getMessage("error.forbidden", null, Locale.getDefault()));
-        }
 
         userCardRepository.delete(card);
     }
@@ -176,6 +172,7 @@ public class UserPaymentService {
 
     private UserCardResponse mapToCardResponse(UserCard card) {
         return new UserCardResponse(
+            card.getCardId(),
             card.getCardName(),
             card.getCardMask(),
             card.getBrand(),

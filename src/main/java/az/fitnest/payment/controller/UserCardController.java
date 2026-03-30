@@ -3,6 +3,7 @@ package az.fitnest.payment.controller;
 import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.dto.common.SetDefaultCardRequest;
 import az.fitnest.payment.dto.common.UserCardResponse;
+import az.fitnest.payment.dto.common.DeleteCardRequest;
 import az.fitnest.payment.service.UserPaymentService;
 import az.fitnest.payment.util.UserContext;
 import io.swagger.v3.oas.annotations.Operation;
@@ -40,16 +41,16 @@ public class UserCardController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Kart uğurla silindi")
     })
-    @DeleteMapping("/{cardId}")
+    @DeleteMapping
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteCard(
-            @Parameter(description = "Silinəcək kartın ID-si") @PathVariable Long cardId,
+            @Valid @RequestBody DeleteCardRequest request,
             @AuthenticationPrincipal Principal user) {
         Long userId = UserContext.getCurrentUserId();
         if (userId == null) {
             throw new RuntimeException("Unauthorized: User ID not found");
         }
-        userPaymentService.deleteCard(userId, cardId);
+        userPaymentService.deleteCard(userId, request.cardId());
     }
 
     @Operation(
