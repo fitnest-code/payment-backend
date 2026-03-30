@@ -64,6 +64,7 @@ dependencies {
 
     // gRPC (versions come from grpc-bom)
     implementation "net.devh:grpc-server-spring-boot-starter:3.1.0.RELEASE"
+    implementation "net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE"
     implementation "com.google.protobuf:protobuf-java:4.34.0"
     implementation "io.grpc:grpc-netty-shaded"
     implementation "io.grpc:grpc-protobuf"

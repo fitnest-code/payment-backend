@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package az.fitnest.order;
+
+option java_multiple_files = true;
+option java_package = "az.fitnest.order.grpc";
+option java_outer_classname = "SubscriptionPackageProto";
+
+service SubscriptionPackageService {
+  rpc GetGymPlans(GetGymPlansRequest) returns (GetGymPlansResponse);
+  rpc CheckIn(CheckInRequest) returns (CheckInResponse);
+
+  rpc CheckPlanExists(CheckPlanExistsRequest) returns (CheckPlanExistsResponse);
+  rpc CheckOptionInPackageExists(CheckOptionInPackageExistsRequest) returns (CheckOptionInPackageExistsResponse);
+  rpc GetPlansByIds(GetPlansByIdsRequest) returns (GetPlansByIdsResponse);
+  rpc GetPackageNamesByIds(GetPackageNamesByIdsRequest) returns (GetPackageNamesByIdsResponse);
+
+}
+
+message GetGymPlansRequest {
+  int64 gym_id = 1;
+}
+
+message CheckPlanExistsRequest {
+  int64 package_id = 1;
+}
+
+message CheckPlanExistsResponse {
+  bool exists = 1;
+  bool is_active = 2;
+}
+
+message GetPlansByIdsRequest {
+  repeated int64 package_ids = 1;
+}
+
+message GetPackageNamesByIdsRequest {
+  repeated int64 package_ids = 1;
+}
+
+message GetPackageNamesByIdsResponse {
+  repeated PackageNameInfo packages = 1;
+}
+
+message PackageNameInfo {
+  int64 package_id = 1;
+  string name = 2;
+}
+
+message GetPlansByIdsResponse {
+  repeated SubscriptionPackageInfo packages = 1;
+}
+
+message GetGymPlansResponse {
+  repeated SubscriptionPackageInfo packages = 1;
+}
+
+message SubscriptionPackageInfo {
+  int64 package_id = 1;
+  string name = 2;
+  string currency = 3;
+  bool is_active = 4;
+  repeated SubscriptionPackageOption options = 5;
+  repeated string benefits = 6;
+}
+
+message SubscriptionPackageOption {
+  int32 duration_months = 1;
+  string price_standard = 2;
+  string price_discounted = 3;
+  int32 entry_limit = 4;
+  int32 freeze_days = 5;
+  repeated string services = 6;
+}
+
+message CheckInRequest {
+  int64 user_id = 1;
+  int64 gym_id = 2;
+}
+
+message CheckInResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message CheckOptionInPackageExistsRequest {
+  int64 package_id = 1;
+  int64 option_id = 2;
+}
+
+message CheckOptionInPackageExistsResponse {
+  bool exists = 1;
+}
+
+
