@@ -216,7 +216,11 @@ springdoc:
 
 grpc:
   server:
-    port: 9091
+    port: 9090
+  client:
+    order-service:
+      address: 'dns:///order-service.fitnest-dev.svc.cluster.local:9090'
+      negotiation-type: plaintext
 
 logging:
   level:
