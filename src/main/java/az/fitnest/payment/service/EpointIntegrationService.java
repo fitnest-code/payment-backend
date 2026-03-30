@@ -55,25 +55,33 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
-                        validatePaymentRequest(request.amount(), request.currency());
-        String idempotencyKey = generateIdempotencyKey("payment", request.orderId(), userId);
-        Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
-        if (cachedResponse.isPresent()) {
-            log.info("Returning cached response for idempotency key: {}", idempotencyKey);
-            return cachedResponse.get();
-        }
-
-        Optional<Payment> existingPayment = paymentRepository.findByOrderId(request.orderId());
-        if (existingPayment.isPresent()) {
-            log.warn("Payment with orderId {} already exists", request.orderId());
-            Payment payment = existingPayment.get();
-            EpointResponse response = buildResponseFromPayment(payment);
+        log.info("[PaymentInit] (SERVICE ENTRY) userId={}, orderId={}, amount={}, currency={}, description={}, optionId={}, packageId={}",
+            userId, request.orderId(), request.amount(), request.currency(), request.description(), request.otherAttr(), request.publicKey());
+        try {
+            validatePaymentRequest(request.amount(), request.currency());
+            String idempotencyKey = generateIdempotencyKey("payment", request.orderId(), userId);
+            Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
+            if (cachedResponse.isPresent()) {
+                log.info("[PaymentInit] (SERVICE) Returning cached response for idempotency key: {}", idempotencyKey);
+                return cachedResponse.get();
+            }
+            Optional<Payment> existingPayment = paymentRepository.findByOrderId(request.orderId());
+            if (existingPayment.isPresent()) {
+                log.warn("[PaymentInit] (SERVICE) Payment with orderId {} already exists", request.orderId());
+                Payment payment = existingPayment.get();
+                EpointResponse response = buildResponseFromPayment(payment);
+                return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
+            }
+            log.info("[PaymentInit] (SERVICE) Creating payment via epointService.createPayment. orderId={}, userId={}", request.orderId(), userId);
+            EpointResponse response = epointService.createPayment(request);
+            log.info("[PaymentInit] (SERVICE) Payment created. status={}, message={}, transaction={}, orderId={}", response.status(), response.message(), response.transaction(), response.orderId());
+            Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+            log.info("[PaymentInit] (SERVICE) Payment entity saved. paymentId={}, userId={}, orderId={}", payment != null ? payment.getId() : null, userId, request.orderId());
             return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
+        } catch (Exception e) {
+            log.error("[PaymentInit] (SERVICE ERROR) Exception occurred: {}", e.getMessage(), e);
+            throw e;
         }
-
-        EpointResponse response = epointService.createPayment(request);
-        Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
-        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
     }
 
     @Transactional

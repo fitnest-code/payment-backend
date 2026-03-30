@@ -60,26 +60,35 @@ public class PaymentController {
             @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        log.info("[PaymentInit] (ENTRY) userId={}, packageId={}, optionId={}", userId, currencyRequest.packageId(), currencyRequest.optionId());
         boolean hasPackageId = currencyRequest.packageId() != null;
         boolean hasOptionId = currencyRequest.optionId() != null;
         if (hasPackageId ^ hasOptionId) {
+            log.warn("[PaymentInit] (ERROR) Both packageId and optionId must be provided together. packageId={}, optionId={}", currencyRequest.packageId(), currencyRequest.optionId());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(EpointResponse.builder().status("error").message("Both packageId and optionId must be provided together").build());
         }
         if (hasPackageId && hasOptionId) {
             boolean valid = subscriptionPackageGrpcClient.checkOptionInPackageExists(currencyRequest.packageId(), currencyRequest.optionId());
             if (!valid) {
+                log.warn("[PaymentInit] (ERROR) Invalid packageId or optionId. packageId={}, optionId={}", currencyRequest.packageId(), currencyRequest.optionId());
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body(EpointResponse.builder().status("error").message("Invalid packageId or optionId").build());
             }
         }
-        return ResponseEntity.ok(
-            integrationService.initiatePayment(
+        try {
+            EpointResponse response = integrationService.initiatePayment(
                 userId,
                 currencyRequest.packageId(),
                 currencyRequest.optionId()
-            )
-        );
+            );
+            log.info("[PaymentInit] (EXIT) userId={}, packageId={}, optionId={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), response.status(), response.message());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("[PaymentInit] (ERROR) Exception occurred: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(EpointResponse.builder().status("error").message("Internal server error").build());
+        }
     }
 
     @Operation(summary = "Kartın qeydiyyatı", description = "Yeni bir kartı sistemdə qeydiyyatdan keçirir.")
@@ -206,7 +215,7 @@ public class PaymentController {
     //     return ResponseEntity.ok(integrationService.updateInvoice(request));
     // }
 
-    // @Operation(summary = "Hesab-fakturaya baxın", description = "Hesab haqqında məlumatı əldə edir.")
+    // @Operation(summary = "Hesab-faktura baxın", description = "Hesab haqqında məlumatı əldə edir.")
     // @GetMapping("/invoice/view/{id}")
     // public ResponseEntity<EpointResponse> viewInvoice(@PathVariable Long id) {
     //     return ResponseEntity.ok(integrationService.viewInvoice(id));
