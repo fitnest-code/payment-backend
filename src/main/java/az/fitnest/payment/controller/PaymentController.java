@@ -82,40 +82,34 @@ public class PaymentController {
         );
     }
 
-    // @Operation(summary = "Tranzaksiya statusunu yoxlayın", description = "Tranzaksiyanın statusunu sorğulayır.")
-    // @GetMapping("/payment/status/{orderId}")
-    // public ResponseEntity<EpointResponse> getStatus(@PathVariable String orderId) {
-    //     return ResponseEntity.ok(integrationService.getStatus(orderId));
-    // }
-
-    // @Operation(summary = "Kartın qeydiyyatı", description = "Yeni bir kartı sistemdə qeydiyyatdan keçirir.")
-    // @PostMapping("/card/save-init")
-    // public ResponseEntity<EpointResponse> cardRegistration(Authentication authentication) {
-    //     Long userId = (Long) authentication.getPrincipal();
-    //     EpointResponse response = integrationService.cardRegistration(userId);
-    //     log.info("Card registration result: status={}, code={}, message={}, cardId={}, cardMask={}, cardName={}, bankTransaction={}, bankResponse={}, operationCode={}, rrn={}",
-    //         response.status(),
-    //         response.code(),
-    //         response.message(),
-    //         response.cardId(),
-    //         response.cardMask(),
-    //         response.cardName(),
-    //         response.bankTransaction(),
-    //         response.bankResponse(),
-    //         response.operationCode(),
-    //         response.rrn()
-    //     );
-    //     return ResponseEntity.ok(response);
-    // }
-
-    @Operation(summary = "Yadda saxlanmış kartla ödəniş", description = "Yadda saxlanmış kartla ödəniş edir.")
-    @PostMapping("/payment/with-card")
-    public ResponseEntity<EpointResponse> executePay(
-            @RequestBody EpointExecutePayRequest request,
-            Authentication authentication) {
-        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        return ResponseEntity.ok(integrationService.executePay(request, userId));
+    @Operation(summary = "Kartın qeydiyyatı", description = "Yeni bir kartı sistemdə qeydiyyatdan keçirir.")
+    @PostMapping("/card/save-init")
+    public ResponseEntity<EpointResponse> cardRegistration(Authentication authentication) {
+        Long userId = (Long) authentication.getPrincipal();
+        EpointResponse response = integrationService.cardRegistration(userId);
+        log.info("Card registration result: status={}, code={}, message={}, cardId={}, cardMask={}, cardName={}, bankTransaction={}, bankResponse={}, operationCode={}, rrn={}",
+            response.status(),
+            response.code(),
+            response.message(),
+            response.cardId(),
+            response.cardMask(),
+            response.cardName(),
+            response.bankTransaction(),
+            response.bankResponse(),
+            response.operationCode(),
+            response.rrn()
+        );
+        return ResponseEntity.ok(response);
     }
+
+    // @Operation(summary = "Yadda saxlanmış kartla ödəniş", description = "Yadda saxlanmış kartla ödəniş edir.")
+    // @PostMapping("/payment/with-card")
+    // public ResponseEntity<EpointResponse> executePay(
+    //         @RequestBody EpointExecutePayRequest request,
+    //         Authentication authentication) {
+    //     Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+    //     return ResponseEntity.ok(integrationService.executePay(request, userId));
+    // }
 
     // @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir. Yalnız məbləğ və valyuta göndərilir, digər sahələr serverdə doldurulur.")
     // @PostMapping("/payment/save-and-pay")

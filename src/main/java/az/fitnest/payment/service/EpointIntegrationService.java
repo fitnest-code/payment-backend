@@ -124,9 +124,24 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse cardRegistrationWithPay(Long userId, EpointPaymentRequest request) {
-        // Implement the actual logic as needed, for now just call cardRegistration or throw if not supported
-        // Example: return cardRegistration(userId);
-        throw new UnsupportedOperationException("cardRegistrationWithPay is not yet implemented");
+        String idempotencyKey = generateIdempotencyKey("card-reg-pay", request.orderId(), userId);
+        Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
+        if (cachedResponse.isPresent()) {
+            log.info("Returning cached card-registration-with-pay response for idempotency key: {}", idempotencyKey);
+            return cachedResponse.get();
+        }
+
+        Optional<Payment> existingPayment = paymentRepository.findByOrderId(request.orderId());
+        if (existingPayment.isPresent()) {
+            log.warn("Payment with orderId {} already exists", request.orderId());
+            Payment payment = existingPayment.get();
+            EpointResponse response = buildResponseFromPayment(payment);
+            return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
+        }
+
+        EpointResponse response = epointService.cardRegistrationWithPay(request);
+        Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
     }
 
     @Transactional
