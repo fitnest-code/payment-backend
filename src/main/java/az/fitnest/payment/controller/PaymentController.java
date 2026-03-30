@@ -1,6 +1,7 @@
 package az.fitnest.payment.controller;
 
 import az.fitnest.payment.service.EpointIntegrationService;
+import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -28,6 +29,7 @@ public class PaymentController {
 
     private final EpointIntegrationService integrationService;
     private final StringRedisTemplate redisTemplate;
+    private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
 
     @Operation(summary = "Geri çağırışı emal edin", description = "Epoint-dən ödəniş nəticələrini qəbul edir.")
     @PostMapping(value = {"/result", "/callback", "/epoint/callback"})
@@ -58,6 +60,19 @@ public class PaymentController {
             @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        boolean hasPackageId = currencyRequest.packageId() != null;
+        boolean hasOptionId = currencyRequest.optionId() != null;
+        if (hasPackageId ^ hasOptionId) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(EpointResponse.builder().status("error").message("Both packageId and optionId must be provided together").build());
+        }
+        if (hasPackageId && hasOptionId) {
+            boolean valid = subscriptionPackageGrpcClient.checkOptionInPackageExists(currencyRequest.packageId(), currencyRequest.optionId());
+            if (!valid) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(EpointResponse.builder().status("error").message("Invalid packageId or optionId").build());
+            }
+        }
         return ResponseEntity.ok(
             integrationService.initiatePayment(
                 currencyRequest.amount(),
