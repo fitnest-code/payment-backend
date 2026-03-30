@@ -110,10 +110,17 @@ sourceSets {
                     'build/generated/source/proto/main/java',
                     'build/generated/source/proto/main/grpc'
         }
+        proto {
+            srcDirs 'src/main/proto'
+        }
     }
 }
 
 tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
     options.release = 25
+}
+
+processResources {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }

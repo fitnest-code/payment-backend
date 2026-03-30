@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import az.fitnest.payment.client.UserSubscriptionGrpcClient;
 
 @Service
 @RequiredArgsConstructor
@@ -52,6 +53,7 @@ public class EpointIntegrationService {
     private final ObjectMapper objectMapper;
     private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
     private final az.fitnest.payment.client.SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
+    private final UserSubscriptionGrpcClient userSubscriptionGrpcClient;
 
     @Transactional
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
@@ -324,6 +326,40 @@ public class EpointIntegrationService {
                         log.info("[Callback] Card attached to user {} from callback. Card ID: {}", userId, callbackData.cardId());
                         List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
                         log.info("[Callback] All cards for user {}: {}", userId, allCards);
+                        // --- Subscription assignment logic ---
+                        try {
+                            // Extract packageId and optionId from payment description or otherAttr
+                            Long packageId = null;
+                            Long optionId = null;
+                            if (payment.getDescription() != null && payment.getDescription().contains("packageId:")) {
+                                // Example: "packageId:123,optionId:456"
+                                String[] parts = payment.getDescription().split(",");
+                                for (String part : parts) {
+                                    if (part.startsWith("packageId:")) {
+                                        packageId = Long.parseLong(part.replace("packageId:", "").trim());
+                                    } else if (part.startsWith("optionId:")) {
+                                        optionId = Long.parseLong(part.replace("optionId:", "").trim());
+                                    }
+                                }
+                            }
+                            // Fallback: try to parse from callbackData.otherAttr if available
+                            if ((packageId == null || optionId == null) && callbackData.otherAttr() != null) {
+                                Object pkg = callbackData.otherAttr().get("packageId");
+                                Object opt = callbackData.otherAttr().get("optionId");
+                                if (pkg != null) packageId = Long.parseLong(pkg.toString());
+                                if (opt != null) optionId = Long.parseLong(opt.toString());
+                            }
+                            if (packageId != null && optionId != null) {
+                                log.info("[Callback] Assigning subscription via gRPC: userId={}, packageId={}, optionId={}", userId, packageId, optionId);
+                                var grpcResponse = userSubscriptionGrpcClient.assignSubscriptionToUser(userId, packageId, optionId);
+                                log.info("[Callback] Subscription assignment gRPC response: {}", grpcResponse);
+                            } else {
+                                log.warn("[Callback] Could not extract packageId/optionId for subscription assignment. Skipping assignment.");
+                            }
+                        } catch (Exception ex) {
+                            log.error("[Callback] Error during subscription assignment via gRPC", ex);
+                        }
+                        // --- End subscription assignment logic ---
                     } else {
                         log.warn("[Callback] Cannot attach card: payment has no userId. OrderId: {}", callbackData.orderId());
                     }

@@ -1,0 +1,23 @@
+// This file is required to import the user_subscription.proto from order-service for gRPC code generation.
+syntax = "proto3";
+
+package az.fitnest.order;
+
+option java_multiple_files = true;
+option java_package = "az.fitnest.order.grpc";
+option java_outer_classname = "UserSubscriptionProto";
+
+service UserSubscriptionService {
+  rpc AssignSubscriptionToUser(AssignSubscriptionToUserRequest) returns (AssignSubscriptionToUserResponse);
+}
+
+message AssignSubscriptionToUserRequest {
+  int64 user_id = 1;
+  int64 plan_id = 2;
+  int64 option_id = 3;
+}
+
+message AssignSubscriptionToUserResponse {
+  int64 subscription_id = 1;
+  int64 user_id = 2;
+}
