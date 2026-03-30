@@ -54,7 +54,7 @@ public class PaymentController {
         }
     }
 
-    @Operation(summary = "Ödənişi başladın", description = "Yeni bir ödəniş sorğusu yaradır. Yalnız məbləğ və valyuta göndərilir, digər sahələr serverdə doldurulur.")
+    @Operation(summary = "Ödənişi başladın", description = "Yeni bir ödəniş sorğusu yaradır. Yalnız packageId və optionId göndərilir, məbləğ və valyuta serverdə müəyyən edilir.")
     @PostMapping("/payment/init")
     public ResponseEntity<EpointResponse> initiatePayment(
             @RequestBody CurrencyRequest currencyRequest,
@@ -75,8 +75,6 @@ public class PaymentController {
         }
         return ResponseEntity.ok(
             integrationService.initiatePayment(
-                currencyRequest.amount(),
-                currencyRequest.currency(),
                 userId,
                 currencyRequest.packageId(),
                 currencyRequest.optionId()

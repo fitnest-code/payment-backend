@@ -19,4 +19,22 @@ public class SubscriptionPackageGrpcClient {
         CheckOptionInPackageExistsResponse response = stub.checkOptionInPackageExists(request);
         return response.getExists();
     }
+
+    public OptionPriceCurrency getOptionPriceCurrency(Long packageId, Long optionId) {
+        az.fitnest.order.grpc.GetOptionDetailsRequest request = az.fitnest.order.grpc.GetOptionDetailsRequest.newBuilder()
+                .setPackageId(packageId)
+                .setOptionId(optionId)
+                .build();
+        az.fitnest.order.grpc.GetOptionDetailsResponse response = stub.getOptionDetails(request);
+        return new OptionPriceCurrency(response.getAmount(), response.getCurrency());
+    }
+
+    public static class OptionPriceCurrency {
+        public final double amount;
+        public final String currency;
+        public OptionPriceCurrency(double amount, String currency) {
+            this.amount = amount;
+            this.currency = currency;
+        }
+    }
 }

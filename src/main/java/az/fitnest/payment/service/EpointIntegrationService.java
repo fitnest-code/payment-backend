@@ -51,6 +51,7 @@ public class EpointIntegrationService {
     private final IdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
     private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
+    private final az.fitnest.payment.client.SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
 
     @Transactional
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
@@ -614,145 +615,20 @@ public class EpointIntegrationService {
     }
 
     @Transactional
-    public EpointResponse initiatePayment(Double amount, String currency, Long userId) {
-        String orderId = java.util.UUID.randomUUID().toString();
-        EpointPaymentRequest request = EpointPaymentRequest.builder()
-                .currency(currency != null ? currency : "AZN")
-                .amount(amount)
-                .language("az")
-                .orderId(orderId)
-                .description("Fitness package payment")
-                .isInstallment(0)
-                .refund(0)
-                .build();
-        return initiatePayment(request, userId);
-    }
-
-    @Transactional
-    public EpointResponse executePay(Double amount, String currency, String cardId, Long userId) {
-                        validatePaymentRequest(amount, currency);
-        String orderId = java.util.UUID.randomUUID().toString();
-        EpointExecutePayRequest request = EpointExecutePayRequest.builder()
-                .language("az")
-                .orderId(orderId)
-                .amount(amount)
-                .currency(currency)
-                .cardId(cardId)
-                .isInstallment(0)
-                .build();
-        return executePay(request, userId);
-    }
-
-    @Transactional
-    public EpointResponse cardRegistrationWithPay(Double amount, String currency, Long userId) {
-                        validatePaymentRequest(amount, currency);
-        String orderId = java.util.UUID.randomUUID().toString();
-        EpointPaymentRequest request = EpointPaymentRequest.builder()
-                .currency(currency != null ? currency : "AZN")
-                .amount(amount)
-                .language("az")
-                .orderId(orderId)
-                .description("Fitness package payment")
-                .isInstallment(0)
-                .refund(0)
-                .build();
-        return cardRegistrationWithPay(userId, request);
-    }
-
-    @Transactional
-    public EpointResponse splitRequest(Double amount, String currency, String splitUser, Double splitAmount, Long userId) {
-                        validatePaymentRequest(amount, currency);
-        String orderId = java.util.UUID.randomUUID().toString();
-        EpointSplitPaymentRequest request = EpointSplitPaymentRequest.builder()
-                .language("az")
-                .orderId(orderId)
-                .amount(amount)
-                .currency(currency)
-                .splitUser(splitUser)
-                .splitAmount(splitAmount)
-                .build();
-        return splitRequest(request, userId);
-    }
-
-    @Transactional
-    public EpointResponse splitExecutePay(Double amount, String currency, String cardId, String splitUser, Double splitAmount, Long userId) {
-                        validatePaymentRequest(amount, currency);
-                        validatePaymentRequest(amount, currency);
-        String orderId = java.util.UUID.randomUUID().toString();
-        EpointSplitExecutePayRequest request = EpointSplitExecutePayRequest.builder()
-                .language("az")
-                .orderId(orderId)
-                .amount(amount)
-                .currency(currency)
-                .cardId(cardId)
-                .splitUser(splitUser)
-                .splitAmount(splitAmount)
-                .build();
-        return splitExecutePay(request, userId);
-    }
-
-    @Transactional
-    public EpointResponse splitCardRegistrationWithPay(Double amount, String currency, String splitUser, Double splitAmount, Long userId) {
-        String orderId = java.util.UUID.randomUUID().toString();
-        EpointSplitPaymentRequest request = EpointSplitPaymentRequest.builder()
-                .language("az")
-                .orderId(orderId)
-                .amount(amount)
-                .currency(currency)
-                .splitUser(splitUser)
-                .splitAmount(splitAmount)
-                .build();
-        return splitCardRegistrationWithPay(request, userId);
-    }
-
-    private void validateCallbackData(EpointResponse callbackData) {
-        if (callbackData == null || callbackData.orderId() == null || callbackData.orderId().isBlank()) {
-            throw new IllegalArgumentException("Missing or invalid orderId in callback data.");
-        }
-        if (callbackData.transaction() == null || callbackData.transaction().isBlank()) {
-            throw new IllegalArgumentException("Missing or invalid transaction in callback data.");
-        }
-    }
-
-    @Transactional
-    public void processCardSaveCallback(EpointResponse callbackData) {
-        log.info("[Callback] Processing card save callback: {}", callbackData);
-
-        if (callbackData.cardNumber() == null || callbackData.cardNumber().isBlank()) {
-            log.error("[Callback] Missing cardNumber");
-            throw new IllegalArgumentException("error.missing_field");
-        }
-        if (callbackData.reccPmntId() == null || callbackData.reccPmntId().isBlank()) {
-            log.error("[Callback] Missing reccPmntId");
-            throw new IllegalArgumentException("error.missing_field");
-        }
-
-        Optional<UserCard> existingCard = userCardRepository.findByCardNumberAndReccPmntId(
-                callbackData.cardNumber(), callbackData.reccPmntId());
-
-        if (existingCard.isPresent()) {
-            log.warn("[Callback] Duplicate card detected: {}", callbackData.cardNumber());
-            return;
-        }
-
-        UserCard newCard = UserCard.builder()
-                .cardNumber(callbackData.cardNumber())
-                .reccPmntId(callbackData.reccPmntId())
-                .reccPmntExpiry(callbackData.reccPmntExpiry())
-                .build();
-
-        userCardRepository.save(newCard);
-        log.info("[Callback] New card saved: {}", newCard);
-    }
-
-    @Transactional
-    public EpointResponse initiatePayment(Double amount, String currency, Long userId, Long packageId, Long optionId) {
+    public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId) {
+        // Fetch amount and currency from order-service
+        var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+        Double amount = priceCurrency.amount;
+        String currency = priceCurrency.currency;
+        // Validate
         validatePaymentRequest(amount, currency);
+        // Build orderId and otherAttr
         String orderId = java.util.UUID.randomUUID().toString();
         java.util.List<String> otherAttrList = new java.util.ArrayList<>();
         if (packageId != null) otherAttrList.add("packageId:" + packageId);
         if (optionId != null) otherAttrList.add("optionId:" + optionId);
         String otherAttr = otherAttrList.isEmpty() ? null : String.join(",", otherAttrList);
+        // Build payment request
         EpointPaymentRequest request = EpointPaymentRequest.builder()
                 .currency(currency != null ? currency : "AZN")
                 .amount(amount)
