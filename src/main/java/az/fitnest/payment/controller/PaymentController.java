@@ -120,14 +120,58 @@ public class PaymentController {
     //     return ResponseEntity.ok(integrationService.executePay(request, userId));
     // }
 
-    // @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir. Yalnız məbləğ və valyuta göndərilir, digər sahələr serverdə doldurulur.")
-    // @PostMapping("/payment/save-and-pay")
-    // public ResponseEntity<EpointResponse> cardRegistrationWithPay(
-    //         Authentication authentication,
-    //         @RequestBody EpointPaymentRequest request) {
-    //     Long userId = (Long) authentication.getPrincipal();
-    //     return ResponseEntity.ok(integrationService.cardRegistrationWithPay(request, userId));
-    // }
+    @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir. Yalnız məbləğ və valyuta göndərilir, digər sahələr serverdə doldurulur.")
+    @PostMapping("/payment/save-and-pay")
+    public ResponseEntity<EpointResponse> cardRegistrationWithPay(
+            @RequestBody CurrencyRequest currencyRequest,
+            Authentication authentication) {
+        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        boolean hasPackageId = currencyRequest.packageId() != null;
+        boolean hasOptionId = currencyRequest.optionId() != null;
+        if (hasPackageId ^ hasOptionId) {
+            log.warn("[SaveAndPay] (ERROR) Both packageId and optionId must be provided together. packageId={}, optionId={}", currencyRequest.packageId(), currencyRequest.optionId());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(EpointResponse.builder().status("error").message("Both packageId and optionId must be provided together").build());
+        }
+        if (hasPackageId && hasOptionId) {
+            boolean valid = subscriptionPackageGrpcClient.checkOptionInPackageExists(currencyRequest.packageId(), currencyRequest.optionId());
+            if (!valid) {
+                log.warn("[SaveAndPay] (ERROR) Invalid packageId or optionId. packageId={}, optionId={}", currencyRequest.packageId(), currencyRequest.optionId());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(EpointResponse.builder().status("error").message("Invalid packageId or optionId").build());
+            }
+        }
+        try {
+            // Fetch amount and currency
+            var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(currencyRequest.packageId(), currencyRequest.optionId());
+            Double amount = priceCurrency.amount;
+            String currency = priceCurrency.currency;
+            // Build orderId and otherAttr
+            String orderId = java.util.UUID.randomUUID().toString();
+            java.util.List<String> otherAttrList = new java.util.ArrayList<>();
+            if (currencyRequest.packageId() != null) otherAttrList.add("packageId:" + currencyRequest.packageId());
+            if (currencyRequest.optionId() != null) otherAttrList.add("optionId:" + currencyRequest.optionId());
+            String otherAttr = otherAttrList.isEmpty() ? null : String.join(",", otherAttrList);
+            // Build payment request
+            EpointPaymentRequest request = EpointPaymentRequest.builder()
+                    .currency(currency != null ? currency : "AZN")
+                    .amount(amount)
+                    .language("az")
+                    .orderId(orderId)
+                    .description("Fitness package save and pay")
+                    .isInstallment(0)
+                    .refund(0)
+                    .otherAttr(otherAttr)
+                    .build();
+            EpointResponse response = integrationService.cardRegistrationWithPay(userId, request);
+            log.info("[SaveAndPay] (EXIT) userId={}, packageId={}, optionId={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), response.status(), response.message());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("[SaveAndPay] (ERROR) Exception occurred: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(EpointResponse.builder().status("error").message("Internal server error").build());
+        }
+    }
 
     // @Operation(summary = "Geri qaytarma sorğusu", description = "Ödənişin geri qaytarılmasını tələb edir.")
     // @PostMapping("/refund")
