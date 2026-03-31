@@ -129,6 +129,9 @@ public class EpointService {
                     .amount(request.amount())
                     .currency(request.currency())
                     .description(request.description())
+                    .resultUrl(request.resultUrl())
+                    .successRedirectUrl(request.successRedirectUrl())
+                    .errorRedirectUrl(request.errorRedirectUrl())
                     .cardId(request.cardId())
                     .isInstallment(request.isInstallment())
                     .build();
