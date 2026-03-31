@@ -189,16 +189,21 @@ public class PaymentController {
             Double amount = priceCurrency.amount;
             String currency = priceCurrency.currency;
             String orderId = java.util.UUID.randomUUID().toString();
-            java.util.List<String> otherAttrList = new java.util.ArrayList<>();
-            otherAttrList.add("packageId:" + withCardRequest.packageId());
-            otherAttrList.add("optionId:" + withCardRequest.optionId());
-            String otherAttr = String.join(",", otherAttrList);
+            // Store packageId and optionId in Redis with orderId as key for later association
+            String redisKey = "payment:order:" + orderId;
+            redisTemplate.opsForHash().put(redisKey, "packageId", String.valueOf(withCardRequest.packageId()));
+            redisTemplate.opsForHash().put(redisKey, "optionId", String.valueOf(withCardRequest.optionId()));
+            redisTemplate.expire(redisKey, java.time.Duration.ofHours(1)); // expire in 1 hour
+            // Set public_key and language (hardcoded or from config)
+            String publicKey = integrationService.getPublicKey(); // implement this method to fetch from config or env
+            String language = "az";
             EpointExecutePayRequest request = EpointExecutePayRequest.builder()
+                    .publicKey(publicKey)
+                    .language(language)
                     .cardId(withCardRequest.cardId())
-                    .currency(currency != null ? currency : "AZN")
-                    .amount(amount)
-                    .language("az")
                     .orderId(orderId)
+                    .amount(amount)
+                    .currency(currency != null ? currency : "AZN")
                     .description("Fitness package payment with saved card")
                     .isInstallment(0)
                     .build();
