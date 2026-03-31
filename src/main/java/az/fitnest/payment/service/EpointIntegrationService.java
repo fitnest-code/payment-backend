@@ -57,8 +57,9 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
-        log.info("[PaymentInit] (SERVICE ENTRY) userId={}, orderId={}, amount={}, currency={}, description={}, optionId={}, packageId={}",
-            userId, request.orderId(), request.amount(), request.currency(), request.description(), request.otherAttr(), request.publicKey());
+        // FIX 1: Corrected swapped log parameter labels (was: optionId={}, packageId={} pointing to otherAttr and publicKey)
+        log.info("[PaymentInit] (SERVICE ENTRY) userId={}, orderId={}, amount={}, currency={}, description={}, otherAttr={}, publicKey={}",
+                userId, request.orderId(), request.amount(), request.currency(), request.description(), request.otherAttr(), request.publicKey());
         try {
             validatePaymentRequest(request.amount(), request.currency());
             String idempotencyKey = generateIdempotencyKey("payment", request.orderId(), userId);
@@ -94,10 +95,10 @@ public class EpointIntegrationService {
     @Transactional
     public EpointResponse cardRegistration(Long userId) {
         EpointCardRegistrationRequest request = EpointCardRegistrationRequest.builder()
-            .language("az")
-            .refund(0)
-            .description("card_save")
-            .build();
+                .language("az")
+                .refund(0)
+                .description("card_save")
+                .build();
         String idempotencyKey = generateCardRegistrationKey(userId);
         log.info("cardRegistration: userId={}, idempotencyKey={}", userId, idempotencyKey);
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
@@ -297,10 +298,14 @@ public class EpointIntegrationService {
             log.error("[Callback] Missing bankTransaction");
             throw new IllegalArgumentException("error.missing_field");
         }
-        if (callbackData.rrn() == null || callbackData.rrn().isBlank()) {
-            log.error("[Callback] Missing rrn");
+
+        // FIX 2: Only require RRN for successful callbacks. Failed/timeout transactions legitimately send empty RRN.
+        if ("success".equalsIgnoreCase(callbackData.status())
+                && (callbackData.rrn() == null || callbackData.rrn().isBlank())) {
+            log.error("[Callback] Missing rrn for successful callback");
             throw new IllegalArgumentException("error.missing_field");
         }
+
         try {
             Optional<Payment> optionalPayment = Optional.empty();
             if (callbackData.orderId() != null && !callbackData.orderId().isBlank()) {
@@ -343,18 +348,21 @@ public class EpointIntegrationService {
                 payment.setCallbackProcessed(true);
                 paymentRepository.save(payment);
                 log.info("[Callback] Payment updated from callback. OrderId: {}, Status: {}", callbackData.orderId(), callbackData.status());
-                if ("success".equalsIgnoreCase(callbackData.status()) && callbackData.cardId() != null) {
+
+                // FIX 3: Always attempt card save and subscription assignment on success,
+                // regardless of whether cardId is present. Previously, subscription was
+                // silently skipped for plain payments (no card save) because the block
+                // was gated on cardId != null.
+                if ("success".equalsIgnoreCase(callbackData.status())) {
                     Long userId = payment.getUserId();
-                    log.info("[Callback] Saving card for userId: {}, cardId: {}", userId, callbackData.cardId());
-                    if (userId != null) {
+                    if (callbackData.cardId() != null && userId != null) {
+                        log.info("[Callback] Saving card for userId: {}, cardId: {}", userId, callbackData.cardId());
                         upsertCardFromCallback(userId, callbackData);
                         log.info("[Callback] Card attached to user {} from callback. Card ID: {}", userId, callbackData.cardId());
                         List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
                         log.info("[Callback] All cards for user {}: {}", userId, allCards);
                     }
                     assignSubscriptionIfPossible(payment, callbackData, payment.getUserId());
-                } else if ("success".equalsIgnoreCase(callbackData.status())) {
-                    log.warn("[Callback] Cannot assign subscription: payment has no userId. OrderId: {}", callbackData.orderId());
                 }
             } else {
                 if (callbackData.cardId() != null && !callbackData.cardId().isBlank()
@@ -600,7 +608,7 @@ public class EpointIntegrationService {
             log.info("[CardSave] Updated existing card {} for user {}", callbackData.cardId(), userId);
         } else {
             boolean duplicateCard = userCardRepository.findAllByUserId(userId).stream()
-                .anyMatch(card -> card.getCardMask().equals(callbackData.cardMask()) && card.getCardName().equals(callbackData.cardName()));
+                    .anyMatch(card -> card.getCardMask().equals(callbackData.cardMask()) && card.getCardName().equals(callbackData.cardName()));
 
             if (duplicateCard) {
                 log.warn("[CardSave] Duplicate card detected for user {} with cardMask {}. Skipping save.", userId, callbackData.cardMask());
@@ -633,8 +641,8 @@ public class EpointIntegrationService {
     private String generateCardRegistrationKey(Long userId) {
         long timestampWindow = Instant.now().getEpochSecond() / 300;
         return String.format("card-registration:%s:%d",
-            userId != null ? userId : "guest",
-            timestampWindow);
+                userId != null ? userId : "guest",
+                timestampWindow);
     }
 
     public String getSuccessRedirectUrl() {
@@ -732,4 +740,3 @@ public class EpointIntegrationService {
         return null;
     }
 }
-
