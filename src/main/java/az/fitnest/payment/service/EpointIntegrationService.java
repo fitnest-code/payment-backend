@@ -156,7 +156,12 @@ public class EpointIntegrationService {
         }
 
         EpointResponse response = epointService.executePay(request);
-        Payment payment = saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, null);
+        // Pass the request description to saveDirectPayment
+        Payment payment = saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        // Immediately assign subscription if payment is successful
+        if ("success".equalsIgnoreCase(response.status()) && payment != null) {
+            assignSubscriptionIfPossible(payment, response, userId);
+        }
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
     }
 

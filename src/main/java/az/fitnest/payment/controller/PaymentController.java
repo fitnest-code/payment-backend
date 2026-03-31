@@ -197,6 +197,8 @@ public class PaymentController {
             // Set public_key and language (hardcoded or from config)
             String publicKey = integrationService.getPublicKey(); // implement this method to fetch from config or env
             String language = "az";
+            // Build description with packageId and optionId for downstream assignment
+            String description = "packageId:" + withCardRequest.packageId() + ",optionId:" + withCardRequest.optionId();
             EpointExecutePayRequest request = EpointExecutePayRequest.builder()
                     .publicKey(publicKey)
                     .language(language)
@@ -204,7 +206,7 @@ public class PaymentController {
                     .orderId(orderId)
                     .amount(amount)
                     .currency(currency != null ? currency : "AZN")
-                    .description("Fitness package payment with saved card")
+                    .description(description)
                     .isInstallment(0)
                     .build();
             EpointResponse response = integrationService.executePay(request, userId);
