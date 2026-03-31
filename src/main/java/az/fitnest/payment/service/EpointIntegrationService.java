@@ -112,6 +112,28 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse executePay(EpointExecutePayRequest request, Long userId) {
+        // Fetch redirect URLs from environment if not set in request
+        String successRedirectUrl = request.successRedirectUrl();
+        String errorRedirectUrl = request.errorRedirectUrl();
+        if (successRedirectUrl == null) {
+            successRedirectUrl = System.getenv("EPOINT_SUCCESS_REDIRECT_URL");
+        }
+        if (errorRedirectUrl == null) {
+            errorRedirectUrl = System.getenv("EPOINT_ERROR_REDIRECT_URL");
+        }
+        request = EpointExecutePayRequest.builder()
+                .publicKey(request.publicKey())
+                .language(request.language())
+                .orderId(request.orderId())
+                .amount(request.amount())
+                .currency(request.currency())
+                .description(request.description())
+                .resultUrl(request.resultUrl())
+                .successRedirectUrl(successRedirectUrl)
+                .errorRedirectUrl(errorRedirectUrl)
+                .cardId(request.cardId())
+                .isInstallment(request.isInstallment())
+                .build();
         String idempotencyKey = generateIdempotencyKey("execute-pay", request.orderId(), userId);
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
         if (cachedResponse.isPresent()) {
