@@ -292,6 +292,20 @@ public class EpointIntegrationService {
                     log.error("[Callback] Amount mismatch: payment={}, callback={}", payment.getAmount(), callbackData.amount());
                     throw new SecurityException("Amount mismatch");
                 }
+                // If userId is null and cardId is present, try to fetch userId from Redis
+                if (payment.getUserId() == null && callbackData.cardId() != null && !callbackData.cardId().isBlank()) {
+                    String redisKey = "card-reg:" + callbackData.cardId();
+                    String userIdStr = redisTemplate.opsForValue().get(redisKey);
+                    if (userIdStr != null) {
+                        try {
+                            Long userId = Long.parseLong(userIdStr);
+                            payment.setUserId(userId);
+                            log.info("[Callback] Set userId from Redis for cardId={}, userId={}", callbackData.cardId(), userId);
+                        } catch (NumberFormatException e) {
+                            log.warn("[Callback] Invalid userId in Redis for cardId={}: {}", callbackData.cardId(), userIdStr);
+                        }
+                    }
+                }
                 updatePaymentFromEpointResponse(payment, callbackData);
                 if ((payment.getCurrency() == null || payment.getCurrency().isBlank()) && callbackData.otherAttr() != null) {
                     String callbackCurrency = getOtherAttrValue(callbackData.otherAttr(), "currency");
