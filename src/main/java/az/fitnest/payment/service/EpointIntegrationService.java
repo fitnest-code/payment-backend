@@ -78,6 +78,11 @@ public class EpointIntegrationService {
             EpointResponse response = epointService.createPayment(request);
             log.info("[PaymentInit] (SERVICE) Payment created. status={}, message={}, transaction={}, orderId={}", response.status(), response.message(), response.transaction(), response.orderId());
             Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+            // Store userId in Redis for fallback in callback
+            if (userId != null && request.orderId() != null) {
+                String redisKey = "payment-user:" + request.orderId();
+                redisTemplate.opsForValue().set(redisKey, String.valueOf(userId), 1, java.util.concurrent.TimeUnit.DAYS);
+            }
             log.info("[PaymentInit] (SERVICE) Payment entity saved. paymentId={}, userId={}, orderId={}", payment != null ? payment.getId() : null, userId, request.orderId());
             return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
         } catch (Exception e) {
@@ -314,17 +319,17 @@ public class EpointIntegrationService {
                     log.error("[Callback] Amount mismatch: payment={}, callback={}", payment.getAmount(), callbackData.amount());
                     throw new SecurityException("Amount mismatch");
                 }
-                // If userId is null and cardId is present, try to fetch userId from Redis
-                if (payment.getUserId() == null && callbackData.cardId() != null && !callbackData.cardId().isBlank()) {
-                    String redisKey = "card-reg:" + callbackData.cardId();
+                // If userId is null, try to fetch from Redis using orderId
+                if (payment.getUserId() == null && callbackData.orderId() != null && !callbackData.orderId().isBlank()) {
+                    String redisKey = "payment-user:" + callbackData.orderId();
                     String userIdStr = redisTemplate.opsForValue().get(redisKey);
                     if (userIdStr != null) {
                         try {
                             Long userId = Long.parseLong(userIdStr);
                             payment.setUserId(userId);
-                            log.info("[Callback] Set userId from Redis for cardId={}, userId={}", callbackData.cardId(), userId);
+                            log.info("[Callback] Set userId from Redis for orderId={}, userId={}", callbackData.orderId(), userId);
                         } catch (NumberFormatException e) {
-                            log.warn("[Callback] Invalid userId in Redis for cardId={}: {}", callbackData.cardId(), userIdStr);
+                            log.warn("[Callback] Invalid userId in Redis for orderId={}: {}", callbackData.orderId(), userIdStr);
                         }
                     }
                 }
