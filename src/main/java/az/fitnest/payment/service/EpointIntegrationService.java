@@ -318,18 +318,20 @@ public class EpointIntegrationService {
                 payment.setCallbackProcessed(true);
                 paymentRepository.save(payment);
                 log.info("[Callback] Payment updated from callback. OrderId: {}, Status: {}", callbackData.orderId(), callbackData.status());
-                if ("success".equalsIgnoreCase(callbackData.status()) && callbackData.cardId() != null) {
-                    Long userId = payment.getUserId();
-                    log.info("[Callback] Saving card for userId: {}, cardId: {}", userId, callbackData.cardId());
-                    if (userId != null) {
+                Long userId = payment.getUserId();
+                if ("success".equalsIgnoreCase(callbackData.status()) && userId != null) {
+                    // Attach card if cardId is present
+                    if (callbackData.cardId() != null) {
+                        log.info("[Callback] Saving card for userId: {}, cardId: {}", userId, callbackData.cardId());
                         upsertCardFromCallback(userId, callbackData);
                         log.info("[Callback] Card attached to user {} from callback. Card ID: {}", userId, callbackData.cardId());
                         List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
                         log.info("[Callback] All cards for user {}: {}", userId, allCards);
-                        assignSubscriptionIfPossible(payment, callbackData, userId);
-                    } else {
-                        log.warn("[Callback] Cannot attach card: payment has no userId. OrderId: {}", callbackData.orderId());
                     }
+                    // Always assign subscription for successful payment
+                    assignSubscriptionIfPossible(payment, callbackData, userId);
+                } else if ("success".equalsIgnoreCase(callbackData.status())) {
+                    log.warn("[Callback] Cannot assign subscription: payment has no userId. OrderId: {}", callbackData.orderId());
                 }
             } else {
                 if (callbackData.cardId() != null && !callbackData.cardId().isBlank()
