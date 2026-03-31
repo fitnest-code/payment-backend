@@ -326,40 +326,7 @@ public class EpointIntegrationService {
                         log.info("[Callback] Card attached to user {} from callback. Card ID: {}", userId, callbackData.cardId());
                         List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
                         log.info("[Callback] All cards for user {}: {}", userId, allCards);
-                        // --- Subscription assignment logic ---
-                        try {
-                            // Extract packageId and optionId from payment description or otherAttr
-                            Long packageId = null;
-                            Long optionId = null;
-                            if (payment.getDescription() != null && payment.getDescription().contains("packageId:")) {
-                                // Example: "packageId:123,optionId:456"
-                                String[] parts = payment.getDescription().split(",");
-                                for (String part : parts) {
-                                    if (part.startsWith("packageId:")) {
-                                        packageId = Long.parseLong(part.replace("packageId:", "").trim());
-                                    } else if (part.startsWith("optionId:")) {
-                                        optionId = Long.parseLong(part.replace("optionId:", "").trim());
-                                    }
-                                }
-                            }
-                            // Fallback: try to parse from callbackData.otherAttr if available
-                            if ((packageId == null || optionId == null) && callbackData.otherAttr() != null) {
-                                String pkg = getOtherAttrValue(callbackData.otherAttr(), "packageId");
-                                String opt = getOtherAttrValue(callbackData.otherAttr(), "optionId");
-                                if (pkg != null) packageId = Long.parseLong(pkg);
-                                if (opt != null) optionId = Long.parseLong(opt);
-                            }
-                            if (packageId != null && optionId != null) {
-                                log.info("[Callback] Assigning subscription via gRPC: userId={}, packageId={}, optionId={}", userId, packageId, optionId);
-                                var grpcResponse = userSubscriptionGrpcClient.assignSubscriptionToUser(userId, packageId, optionId);
-                                log.info("[Callback] Subscription assignment gRPC response: {}", grpcResponse);
-                            } else {
-                                log.warn("[Callback] Could not extract packageId/optionId for subscription assignment. Skipping assignment.");
-                            }
-                        } catch (Exception ex) {
-                            log.error("[Callback] Error during subscription assignment via gRPC", ex);
-                        }
-                        // --- End subscription assignment logic ---
+                        assignSubscriptionIfPossible(payment, callbackData, userId);
                     } else {
                         log.warn("[Callback] Cannot attach card: payment has no userId. OrderId: {}", callbackData.orderId());
                     }
@@ -700,4 +667,44 @@ public class EpointIntegrationService {
         }
         return null;
     }
+
+    /**
+     * Attempts to assign a subscription to the user after successful payment callback.
+     * Extracts packageId and optionId from payment or callback data, logs all steps and errors.
+     */
+    private void assignSubscriptionIfPossible(Payment payment, EpointResponse callbackData, Long userId) {
+        log.info("[SubscriptionAssign] Entry: userId={}, paymentId={}, orderId={}", userId, payment.getId(), payment.getOrderId());
+        try {
+            Long packageId = null;
+            Long optionId = null;
+            // Try extracting from payment description
+            if (payment.getDescription() != null && payment.getDescription().contains("packageId:")) {
+                String[] parts = payment.getDescription().split(",");
+                for (String part : parts) {
+                    if (part.startsWith("packageId:")) {
+                        packageId = Long.parseLong(part.replace("packageId:", "").trim());
+                    } else if (part.startsWith("optionId:")) {
+                        optionId = Long.parseLong(part.replace("optionId:", "").trim());
+                    }
+                }
+            }
+            // Fallback: try to parse from callbackData.otherAttr if available
+            if ((packageId == null || optionId == null) && callbackData.otherAttr() != null) {
+                String pkg = getOtherAttrValue(callbackData.otherAttr(), "packageId");
+                String opt = getOtherAttrValue(callbackData.otherAttr(), "optionId");
+                if (pkg != null) packageId = Long.parseLong(pkg);
+                if (opt != null) optionId = Long.parseLong(opt);
+            }
+            if (packageId != null && optionId != null) {
+                log.info("[SubscriptionAssign] Assigning subscription via gRPC: userId={}, packageId={}, optionId={}", userId, packageId, optionId);
+                var grpcResponse = userSubscriptionGrpcClient.assignSubscriptionToUser(userId, packageId, optionId);
+                log.info("[SubscriptionAssign] Subscription assignment gRPC response: {}", grpcResponse);
+            } else {
+                log.warn("[SubscriptionAssign] Could not extract packageId/optionId for subscription assignment. Skipping assignment. userId={}, paymentId={}, orderId={}", userId, payment.getId(), payment.getOrderId());
+            }
+        } catch (Exception ex) {
+            log.error("[SubscriptionAssign] Error during subscription assignment via gRPC. userId={}, paymentId={}, orderId={}", userId, payment.getId(), payment.getOrderId(), ex);
+        }
+    }
+
 }
