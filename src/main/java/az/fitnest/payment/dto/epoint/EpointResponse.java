@@ -33,7 +33,7 @@ public record EpointResponse(
     String message,
     String code,
     @JsonProperty("other_attr")
-    Map<String, Object> otherAttr,
+    String otherAttr,
     @JsonProperty("approval_code")
     String approvalCode,
     @JsonProperty("card_number")

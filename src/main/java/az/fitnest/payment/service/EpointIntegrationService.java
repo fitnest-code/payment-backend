@@ -309,8 +309,8 @@ public class EpointIntegrationService {
                     throw new SecurityException("Amount mismatch");
                 }
                 updatePaymentFromEpointResponse(payment, callbackData);
-                if ((payment.getCurrency() == null || payment.getCurrency().isBlank()) && callbackData.otherAttr() != null && callbackData.otherAttr().get("currency") != null) {
-                    String callbackCurrency = String.valueOf(callbackData.otherAttr().get("currency"));
+                if ((payment.getCurrency() == null || payment.getCurrency().isBlank()) && callbackData.otherAttr() != null) {
+                    String callbackCurrency = getOtherAttrValue(callbackData.otherAttr(), "currency");
                     if (callbackCurrency != null && !callbackCurrency.isBlank()) {
                         payment.setCurrency(callbackCurrency);
                     }
@@ -344,10 +344,10 @@ public class EpointIntegrationService {
                             }
                             // Fallback: try to parse from callbackData.otherAttr if available
                             if ((packageId == null || optionId == null) && callbackData.otherAttr() != null) {
-                                Object pkg = callbackData.otherAttr().get("packageId");
-                                Object opt = callbackData.otherAttr().get("optionId");
-                                if (pkg != null) packageId = Long.parseLong(pkg.toString());
-                                if (opt != null) optionId = Long.parseLong(opt.toString());
+                                String pkg = getOtherAttrValue(callbackData.otherAttr(), "packageId");
+                                String opt = getOtherAttrValue(callbackData.otherAttr(), "optionId");
+                                if (pkg != null) packageId = Long.parseLong(pkg);
+                                if (opt != null) optionId = Long.parseLong(opt);
                             }
                             if (packageId != null && optionId != null) {
                                 log.info("[Callback] Assigning subscription via gRPC: userId={}, packageId={}, optionId={}", userId, packageId, optionId);
@@ -684,5 +684,20 @@ public class EpointIntegrationService {
                 .otherAttr(otherAttr)
                 .build();
         return initiatePayment(request, userId);
+    }
+
+    /**
+     * Parses a key-value string like "packageId:19,optionId:30" and returns the value for the given key.
+     */
+    private static String getOtherAttrValue(String otherAttr, String key) {
+        if (otherAttr == null || otherAttr.isBlank()) return null;
+        String[] pairs = otherAttr.split(",");
+        for (String pair : pairs) {
+            String[] kv = pair.split(":", 2);
+            if (kv.length == 2 && kv[0].trim().equals(key)) {
+                return kv[1].trim();
+            }
+        }
+        return null;
     }
 }
