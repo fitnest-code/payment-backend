@@ -112,14 +112,14 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse executePay(EpointExecutePayRequest request, Long userId) {
-        // Fetch redirect URLs from environment if not set in request
+        // Fetch redirect URLs from properties if not set in request
         String successRedirectUrl = request.successRedirectUrl();
         String errorRedirectUrl = request.errorRedirectUrl();
         if (successRedirectUrl == null) {
-            successRedirectUrl = System.getenv("EPOINT_SUCCESS_REDIRECT_URL");
+            successRedirectUrl = epointProperties.getSuccessRedirectUrl();
         }
         if (errorRedirectUrl == null) {
-            errorRedirectUrl = System.getenv("EPOINT_ERROR_REDIRECT_URL");
+            errorRedirectUrl = epointProperties.getErrorRedirectUrl();
         }
         request = EpointExecutePayRequest.builder()
                 .publicKey(request.publicKey())
