@@ -111,15 +111,6 @@ public class PaymentController {
         return ResponseEntity.ok(response);
     }
 
-    // @Operation(summary = "Yadda saxlanmış kartla ödəniş", description = "Yadda saxlanmış kartla ödəniş edir.")
-    // @PostMapping("/payment/with-card")
-    // public ResponseEntity<EpointResponse> executePay(
-    //         @RequestBody EpointExecutePayRequest request,
-    //         Authentication authentication) {
-    //     Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-    //     return ResponseEntity.ok(integrationService.executePay(request, userId));
-    // }
-
     @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir. Yalnız məbləğ və valyuta göndərilir, digər sahələr serverdə doldurulur.")
     @PostMapping("/payment/save-and-pay")
     public ResponseEntity<EpointResponse> cardRegistrationWithPay(
@@ -168,6 +159,54 @@ public class PaymentController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[SaveAndPay] (ERROR) Exception occurred: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(EpointResponse.builder().status("error").message("Internal server error").build());
+        }
+    }
+
+    @Operation(summary = "Yadda saxlanmış kartla ödəniş", description = "Yadda saxlanmış kartla ödəniş edir. CardId, packageId və optionId göndərilir, məbləğ və valyuta serverdə müəyyən edilir.")
+    @PostMapping("/payment/with-card")
+    public ResponseEntity<EpointResponse> executePayWithCard(
+            @RequestBody WithCardRequest withCardRequest,
+            Authentication authentication) {
+        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        boolean hasPackageId = withCardRequest.packageId() != null;
+        boolean hasOptionId = withCardRequest.optionId() != null;
+        boolean hasCardId = withCardRequest.cardId() != null && !withCardRequest.cardId().isBlank();
+        if (!hasPackageId || !hasOptionId || !hasCardId) {
+            log.warn("[WithCard] (ERROR) cardId, packageId and optionId must be provided. cardId={}, packageId={}, optionId={}", withCardRequest.cardId(), withCardRequest.packageId(), withCardRequest.optionId());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(EpointResponse.builder().status("error").message("cardId, packageId and optionId must be provided").build());
+        }
+        boolean valid = subscriptionPackageGrpcClient.checkOptionInPackageExists(withCardRequest.packageId(), withCardRequest.optionId());
+        if (!valid) {
+            log.warn("[WithCard] (ERROR) Invalid packageId or optionId. packageId={}, optionId={}", withCardRequest.packageId(), withCardRequest.optionId());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(EpointResponse.builder().status("error").message("Invalid packageId or optionId").build());
+        }
+        try {
+            var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(withCardRequest.packageId(), withCardRequest.optionId());
+            Double amount = priceCurrency.amount;
+            String currency = priceCurrency.currency;
+            String orderId = java.util.UUID.randomUUID().toString();
+            java.util.List<String> otherAttrList = new java.util.ArrayList<>();
+            otherAttrList.add("packageId:" + withCardRequest.packageId());
+            otherAttrList.add("optionId:" + withCardRequest.optionId());
+            String otherAttr = String.join(",", otherAttrList);
+            EpointExecutePayRequest request = EpointExecutePayRequest.builder()
+                    .cardId(withCardRequest.cardId())
+                    .currency(currency != null ? currency : "AZN")
+                    .amount(amount)
+                    .language("az")
+                    .orderId(orderId)
+                    .description("Fitness package payment with saved card")
+                    .isInstallment(0)
+                    .build();
+            EpointResponse response = integrationService.executePay(request, userId);
+            log.info("[WithCard] (EXIT) userId={}, cardId={}, packageId={}, optionId={}, status={}, message={}", userId, withCardRequest.cardId(), withCardRequest.packageId(), withCardRequest.optionId(), response.status(), response.message());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("[WithCard] (ERROR) Exception occurred: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(EpointResponse.builder().status("error").message("Internal server error").build());
         }
