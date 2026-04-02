@@ -185,12 +185,22 @@ public class UserPaymentService {
         if (formattedStatus != null && !formattedStatus.isEmpty()) {
             formattedStatus = formattedStatus.substring(0, 1).toUpperCase() + formattedStatus.substring(1).toLowerCase();
         }
+
+        String brand = CardBrandDetector.detectBrand(payment.getCardMask());
+        if ("WIDGET_PAYMENT".equals(payment.getType()) && payment.getDescription() != null) {
+            if (payment.getDescription().contains("device:iOS")) {
+                brand = "Apple Pay";
+            } else if (payment.getDescription().contains("device:Android")) {
+                brand = "Google Pay";
+            }
+        }
+
         return new PaymentResponse(
             payment.getId(),
             payment.getAmount(),
             payment.getCurrency(),
             payment.getCreatedDate() != null ? payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
-            CardBrandDetector.detectBrand(payment.getCardMask()),
+            brand,
             payment.getCardMask(),
             payment.getType(),
             formattedStatus,

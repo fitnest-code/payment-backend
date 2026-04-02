@@ -414,7 +414,8 @@ public class EpointIntegrationService {
         validatePaymentRequest(amount, currency);
 
         String orderId = java.util.UUID.randomUUID().toString();
-        String description = "packageId:" + packageId + ",optionId:" + optionId;
+        String deviceType = az.fitnest.payment.util.DeviceDetector.detectDeviceType();
+        String description = "packageId:" + packageId + ",optionId:" + optionId + ",device:" + deviceType;
 
         if (userId != null) {
             String redisKey = "payment-user:" + orderId;
