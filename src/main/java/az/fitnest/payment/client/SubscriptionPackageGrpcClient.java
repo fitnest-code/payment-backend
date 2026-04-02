@@ -20,9 +20,7 @@ public class SubscriptionPackageGrpcClient {
         return response.getExists();
     }
 
-    // Fetch option price and currency by packageId and optionId
     public OptionPriceCurrency getOptionPriceCurrency(Long packageId, Long optionId) {
-        // This assumes a GetOptionDetailsRequest/Response exists in the proto and generated code
         az.fitnest.order.grpc.GetOptionDetailsRequest request = az.fitnest.order.grpc.GetOptionDetailsRequest.newBuilder()
                 .setPackageId(packageId)
                 .setOptionId(optionId)

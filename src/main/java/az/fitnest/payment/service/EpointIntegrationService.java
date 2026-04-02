@@ -57,7 +57,6 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
-        // FIX 1: Corrected swapped log parameter labels (was: optionId={}, packageId={} pointing to otherAttr and publicKey)
         log.info("[PaymentInit] (SERVICE ENTRY) userId={}, orderId={}, amount={}, currency={}, description={}, otherAttr={}, publicKey={}",
                 userId, request.orderId(), request.amount(), request.currency(), request.description(), request.otherAttr(), request.publicKey());
         try {
@@ -79,7 +78,6 @@ public class EpointIntegrationService {
             EpointResponse response = epointService.createPayment(request);
             log.info("[PaymentInit] (SERVICE) Payment created. status={}, message={}, transaction={}, orderId={}", response.status(), response.message(), response.transaction(), response.orderId());
             Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
-            // Store userId in Redis for fallback in callback
             if (userId != null && request.orderId() != null) {
                 String redisKey = "payment-user:" + request.orderId();
                 redisTemplate.opsForValue().set(redisKey, String.valueOf(userId), 1, java.util.concurrent.TimeUnit.DAYS);
@@ -118,7 +116,6 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse executePay(EpointExecutePayRequest request, Long userId) {
-        // Fetch redirect URLs from properties if not set in request
         String successRedirectUrl = request.successRedirectUrl();
         String errorRedirectUrl = request.errorRedirectUrl();
         if (successRedirectUrl == null) {
@@ -156,9 +153,7 @@ public class EpointIntegrationService {
         }
 
         EpointResponse response = epointService.executePay(request);
-        // Pass the request description to saveDirectPayment
         Payment payment = saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
-        // Immediately assign subscription if payment is successful
         if ("success".equalsIgnoreCase(response.status()) && payment != null) {
             assignSubscriptionIfPossible(payment, response, userId);
         }
@@ -304,7 +299,6 @@ public class EpointIntegrationService {
             throw new IllegalArgumentException("error.missing_field");
         }
 
-        // FIX 2: Only require RRN for successful callbacks. Failed/timeout transactions legitimately send empty RRN.
         if ("success".equalsIgnoreCase(callbackData.status())
                 && (callbackData.rrn() == null || callbackData.rrn().isBlank())) {
             log.error("[Callback] Missing rrn for successful callback");
@@ -329,7 +323,6 @@ public class EpointIntegrationService {
                     log.error("[Callback] Amount mismatch: payment={}, callback={}", payment.getAmount(), callbackData.amount());
                     throw new SecurityException("Amount mismatch");
                 }
-                // If userId is null, try to fetch from Redis using orderId
                 if (payment.getUserId() == null && callbackData.orderId() != null && !callbackData.orderId().isBlank()) {
                     String redisKey = "payment-user:" + callbackData.orderId();
                     String userIdStr = redisTemplate.opsForValue().get(redisKey);
@@ -354,10 +347,6 @@ public class EpointIntegrationService {
                 paymentRepository.save(payment);
                 log.info("[Callback] Payment updated from callback. OrderId: {}, Status: {}", callbackData.orderId(), callbackData.status());
 
-                // FIX 3: Always attempt card save and subscription assignment on success,
-                // regardless of whether cardId is present. Previously, subscription was
-                // silently skipped for plain payments (no card save) because the block
-                // was gated on cardId != null.
                 if ("success".equalsIgnoreCase(callbackData.status())) {
                     Long userId = payment.getUserId();
                     if (callbackData.cardId() != null && userId != null) {
@@ -415,6 +404,53 @@ public class EpointIntegrationService {
     public EpointResponse preAuthComplete(EpointPreAuthCompleteRequest request) {
         return epointService.preAuthComplete(request);
     }
+
+    @Transactional
+    public EpointResponse createWidgetUrl(Long userId, Long packageId, Long optionId) {
+        var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+        Double amount = priceCurrency.amount;
+        String currency = priceCurrency.currency;
+
+        validatePaymentRequest(amount, currency);
+
+        String orderId = java.util.UUID.randomUUID().toString();
+        String description = "packageId:" + packageId + ",optionId:" + optionId;
+
+        if (userId != null) {
+            String redisKey = "payment-user:" + orderId;
+            redisTemplate.opsForValue().set(redisKey, String.valueOf(userId), 1, java.util.concurrent.TimeUnit.DAYS);
+            log.info("[WidgetUrl] Stored userId mapping in Redis for orderId: {}", orderId);
+        }
+
+        EpointWidgetRequest request = EpointWidgetRequest.builder()
+                .amount(amount)
+                .currency(currency != null ? currency : "AZN")
+                .orderId(orderId)
+                .description(description)
+                .build();
+
+        log.info("[WidgetUrl] (SERVICE) Calling Epoint widget API. userId={}, orderId={}, amount={}", userId, orderId, amount);
+
+        EpointResponse response = epointService.createWidgetUrl(request);
+
+        if ("success".equalsIgnoreCase(response.status())) {
+            Payment payment = new Payment();
+            payment.setProvider("EPOINT");
+            payment.setOrderId(orderId);
+            payment.setTransactionId(response.transaction());
+            payment.setAmount(amount);
+            payment.setCurrency(currency);
+            payment.setStatus("PENDING_USER_ACTION");
+            payment.setUserId(userId);
+            payment.setDescription(description);
+            payment.setType("WIDGET_PAYMENT");
+            paymentRepository.save(payment);
+            log.info("[WidgetUrl] (SERVICE) Pending payment saved. orderId={}, transactionId={}", orderId, response.transaction());
+        }
+
+        return response;
+    }
+
     @Transactional
     public EpointResponse createWidgetUrl(EpointWidgetRequest request) {
         return epointService.createWidgetUrl(request);
@@ -658,21 +694,15 @@ public class EpointIntegrationService {
         return epointProperties.getErrorRedirectUrl();
     }
 
-    // Returns the Epoint public key from properties
     public String getPublicKey() {
         return epointProperties.getPublicKey();
     }
 
-    /**
-     * Attempts to assign a subscription to the user after successful payment callback.
-     * Extracts packageId and optionId from payment or callback data, logs all steps and errors.
-     */
     private void assignSubscriptionIfPossible(Payment payment, EpointResponse callbackData, Long userId) {
         log.info("[SubscriptionAssign] Entry: userId={}, paymentId={}, orderId={}", userId, payment.getId(), payment.getOrderId());
         try {
             Long packageId = null;
             Long optionId = null;
-            // Try extracting from payment description
             if (payment.getDescription() != null && payment.getDescription().contains("packageId:")) {
                 String[] parts = payment.getDescription().split(",");
                 for (String part : parts) {
@@ -683,7 +713,6 @@ public class EpointIntegrationService {
                     }
                 }
             }
-            // Fallback: try to parse from callbackData.otherAttr if available
             if ((packageId == null || optionId == null) && callbackData.otherAttr() != null) {
                 String pkg = getOtherAttrValue(callbackData.otherAttr(), "packageId");
                 String opt = getOtherAttrValue(callbackData.otherAttr(), "optionId");
@@ -704,19 +733,15 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId) {
-        // Fetch amount and currency from order-service
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
         Double amount = priceCurrency.amount;
         String currency = priceCurrency.currency;
-        // Validate
         validatePaymentRequest(amount, currency);
-        // Build orderId and otherAttr
         String orderId = java.util.UUID.randomUUID().toString();
         java.util.List<String> otherAttrList = new java.util.ArrayList<>();
         if (packageId != null) otherAttrList.add("packageId:" + packageId);
         if (optionId != null) otherAttrList.add("optionId:" + optionId);
         String otherAttr = otherAttrList.isEmpty() ? null : String.join(",", otherAttrList);
-        // Build payment request
         EpointPaymentRequest request = EpointPaymentRequest.builder()
                 .currency(currency != null ? currency : "AZN")
                 .amount(amount)
@@ -730,9 +755,6 @@ public class EpointIntegrationService {
         return initiatePayment(request, userId);
     }
 
-    /**
-     * Parses a key-value string like "packageId:19,optionId:30" and returns the value for the given key.
-     */
     private static String getOtherAttrValue(String otherAttr, String key) {
         if (otherAttr == null || otherAttr.isBlank()) return null;
         String[] pairs = otherAttr.split(",");

@@ -133,17 +133,14 @@ public class PaymentController {
             }
         }
         try {
-            // Fetch amount and currency
             var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(currencyRequest.packageId(), currencyRequest.optionId());
             Double amount = priceCurrency.amount;
             String currency = priceCurrency.currency;
-            // Build orderId and otherAttr
             String orderId = java.util.UUID.randomUUID().toString();
             java.util.List<String> otherAttrList = new java.util.ArrayList<>();
             if (currencyRequest.packageId() != null) otherAttrList.add("packageId:" + currencyRequest.packageId());
             if (currencyRequest.optionId() != null) otherAttrList.add("optionId:" + currencyRequest.optionId());
             String otherAttr = otherAttrList.isEmpty() ? null : String.join(",", otherAttrList);
-            // Build payment request
             EpointPaymentRequest request = EpointPaymentRequest.builder()
                     .currency(currency != null ? currency : "AZN")
                     .amount(amount)
@@ -189,15 +186,12 @@ public class PaymentController {
             Double amount = priceCurrency.amount;
             String currency = priceCurrency.currency;
             String orderId = java.util.UUID.randomUUID().toString();
-            // Store packageId and optionId in Redis with orderId as key for later association
             String redisKey = "payment:order:" + orderId;
             redisTemplate.opsForHash().put(redisKey, "packageId", String.valueOf(withCardRequest.packageId()));
             redisTemplate.opsForHash().put(redisKey, "optionId", String.valueOf(withCardRequest.optionId()));
-            redisTemplate.expire(redisKey, java.time.Duration.ofHours(1)); // expire in 1 hour
-            // Set public_key and language (hardcoded or from config)
-            String publicKey = integrationService.getPublicKey(); // implement this method to fetch from config or env
+            redisTemplate.expire(redisKey, java.time.Duration.ofHours(1));
+            String publicKey = integrationService.getPublicKey();
             String language = "az";
-            // Build description with packageId and optionId for downstream assignment
             String description = "packageId:" + withCardRequest.packageId() + ",optionId:" + withCardRequest.optionId();
             EpointExecutePayRequest request = EpointExecutePayRequest.builder()
                     .publicKey(publicKey)
@@ -219,120 +213,36 @@ public class PaymentController {
         }
     }
 
-    // @Operation(summary = "Geri qaytarma sorğusu", description = "Ödənişin geri qaytarılmasını tələb edir.")
-    // @PostMapping("/refund")
-    // public ResponseEntity<EpointResponse> refundRequest(@RequestBody EpointRefundRequest request) {
-    //     return ResponseEntity.ok(integrationService.refundRequest(request));
-    // }
+    @Operation(summary = "Vidcet URL-i yaradın", description = "Apple Pay və Google Pay üçün ödəniş vidceti linki yaradır.")
+    @PostMapping("/widget-url")
+    public ResponseEntity<EpointResponse> createWidgetUrl(
+            @RequestBody CurrencyRequest currencyRequest,
+            Authentication authentication) {
+        Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
+        log.info("[WidgetUrl] (ENTRY) userId={}, packageId={}, optionId={}", userId, currencyRequest.packageId(), currencyRequest.optionId());
 
-    // @Operation(summary = "Tranzaksiyanı geri qaytarın", description = "Tranzaksiyanı tam və ya qismən geri qaytarır (reverse). " +
-    //         "Əgər göndərilən məbləğ orijinal məbləğdən azdırsa, qismən geri qaytarma (partial reversal) həyata keçirilir.")
-    // @PostMapping("/reverse")
-    // public ResponseEntity<EpointResponse> reverse(@RequestBody ReverseRequest request) {
-    //     return ResponseEntity.ok(integrationService.reverse(request.transactionId(), request.amount(), request.currency()));
-    // }
+        if (currencyRequest.packageId() == null || currencyRequest.optionId() == null) {
+            log.warn("[WidgetUrl] (ERROR) Both packageId and optionId must be provided.");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(EpointResponse.builder().status("error").message("Both packageId and optionId must be provided").build());
+        }
 
-    // @Operation(summary = "Bölünmüş ödəniş sorğusu", description = "Bölünmüş (split) ödəniş yaradır.")
-    // @PostMapping("/payment/split-init")
-    // public ResponseEntity<EpointResponse> splitRequest(
-    //         @RequestBody EpointSplitPaymentRequest request,
-    //         Authentication authentication) {
-    //     Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-    //     return ResponseEntity.ok(integrationService.splitRequest(request, userId));
-    // }
+        boolean valid = subscriptionPackageGrpcClient.checkOptionInPackageExists(currencyRequest.packageId(), currencyRequest.optionId());
+        if (!valid) {
+            log.warn("[WidgetUrl] (ERROR) Invalid packageId or optionId. packageId={}, optionId={}", currencyRequest.packageId(), currencyRequest.optionId());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(EpointResponse.builder().status("error").message("Invalid packageId or optionId").build());
+        }
 
-    // @Operation(summary = "Bölünmüş ödənişi icra edin", description = "Bölünmüş ödənişi tamamlayır.")
-    // @PostMapping("/split/with-card")
-    // public ResponseEntity<EpointResponse> splitExecutePay(
-    //         @RequestBody EpointSplitExecutePayRequest request,
-    //         Authentication authentication) {
-    //     Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-    //     return ResponseEntity.ok(integrationService.splitExecutePay(request, userId));
-    // }
+        try {
+            EpointResponse response = integrationService.createWidgetUrl(userId, currencyRequest.packageId(), currencyRequest.optionId());
+            log.info("[WidgetUrl] (EXIT) userId={}, packageId={}, optionId={}, status={}, widgetUrl={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), response.status(), response.widgetUrl());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("[WidgetUrl] (ERROR) Exception occurred: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(EpointResponse.builder().status("error").message("Internal server error").build());
+        }
+    }
 
-    // @Operation(summary = "Bölünmüş ödənişlə kartın qeydiyyatı", description = "Bölünmüş ödəniş zamanı kartı qeydiyyatdan keçirir.")
-    // @PostMapping("/payment/split-save-and-pay")
-    // public ResponseEntity<EpointResponse> splitCardRegistrationWithPay(
-    //         @RequestBody EpointSplitPaymentRequest request,
-    //         Authentication authentication) {
-    //     Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-    //     return ResponseEntity.ok(integrationService.splitCardRegistrationWithPay(request, userId));
-    // }
-
-    // @Operation(summary = "İlkin avtorizasiya sorğusu", description = "Vəsaitin bloklanması üçün ilkin avtorizasiya yaradır.")
-    // @PostMapping("/pre-auth-request")
-    // public ResponseEntity<EpointResponse> preAuthRequest(
-    //         @RequestBody EpointPaymentRequest request,
-    //         Authentication authentication) {
-    //     Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-    //     return ResponseEntity.ok(integrationService.preAuthRequest(request, userId));
-    // }
-
-    // @Operation(summary = "İlkin avtorizasiyanı tamamlayın", description = "Bloklanmış vəsaitin silinməsini tamamlayır.")
-    // @PostMapping("/pre-auth-complete")
-    // public ResponseEntity<EpointResponse> preAuthComplete(@RequestBody EpointPreAuthCompleteRequest request) {
-    //     return ResponseEntity.ok(integrationService.preAuthComplete(request));
-    // }
-
-    // @Operation(summary = "Vidcet URL-i yaradın", description = "Ödəniş vidceti üçün keçid yaradır.")
-    // @PostMapping("/widget-url")
-    // public ResponseEntity<EpointResponse> createWidgetUrl(@RequestBody EpointWidgetRequest request) {
-    //     return ResponseEntity.ok(integrationService.createWidgetUrl(request));
-    // }
-
-    // @Operation(summary = "Pul kisəsi statusu", description = "Epoint pul kisəsinin statusunu yoxlayır.")
-    // @GetMapping("/wallet/status")
-    // public ResponseEntity<EpointResponse> walletStatus() {
-    //     return ResponseEntity.ok(integrationService.walletStatus());
-    // }
-
-    // @Operation(summary = "Pul kisəsi ilə ödəniş", description = "Epoint pul kisəsindən istifadə edərək ödəniş edir.")
-    // @PostMapping("/wallet/pay")
-    // public ResponseEntity<EpointResponse> walletPayment(@RequestBody EpointWalletPaymentRequest request, Authentication authentication) {
-    //     Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-    //     return ResponseEntity.ok(integrationService.walletPayment(request, userId));
-    // }
-
-    // @Operation(summary = "Hesab-faktura yaradın", description = "Yeni ödəniş hesabı yaradır.")
-    // @PostMapping("/invoice/create")
-    // public ResponseEntity<EpointResponse> createInvoice(@RequestBody EpointInvoiceCreateRequest request) {
-    //     return ResponseEntity.ok(integrationService.createInvoice(request));
-    // }
-
-    // @Operation(summary = "Hesab-fakturayı yeniləyin", description = "Mövcud hesabı yeniləyir.")
-    // @PostMapping("/invoice/update")
-    // public ResponseEntity<EpointResponse> updateInvoice(@RequestBody EpointInvoiceUpdateRequest request) {
-    //     return ResponseEntity.ok(integrationService.updateInvoice(request));
-    // }
-
-    // @Operation(summary = "Hesab-faktura baxın", description = "Hesab haqqında məlumatı əldə edir.")
-    // @GetMapping("/invoice/view/{id}")
-    // public ResponseEntity<EpointResponse> viewInvoice(@PathVariable Long id) {
-    //     return ResponseEntity.ok(integrationService.viewInvoice(id));
-    // }
-
-    // @Operation(summary = "Hesab-fakturaların siyahısı", description = "Bütün hesab-fakturaları sadalayır.")
-    // @GetMapping("/invoice/list")
-    // public ResponseEntity<EpointResponse> listInvoices(@RequestParam(required = false) String type,
-    //                                                    @RequestParam(required = false) String order) {
-    //     return ResponseEntity.ok(integrationService.listInvoices(type, order));
-    // }
-
-    // @Operation(summary = "SMS vasitəsilə hesabı göndərin", description = "Hesab-faktura linkini SMS ilə göndərir.")
-    // @PostMapping("/invoice/send-sms/{id}")
-    // public ResponseEntity<EpointResponse> sendInvoiceSms(@PathVariable Long id, @RequestParam String phone) {
-    //     return ResponseEntity.ok(integrationService.sendInvoiceSms(id, phone));
-    // }
-
-    // @Operation(summary = "E-poçt vasitəsilə hesabı göndərin", description = "Hesab-faktura linkini e-poçt ilə göndərir.")
-    // @PostMapping("/invoice/send-email/{id}")
-    // public ResponseEntity<EpointResponse> sendInvoiceEmail(@PathVariable Long id, @RequestParam String email) {
-    //     return ResponseEntity.ok(integrationService.sendInvoiceEmail(id, email));
-    // }
-
-    // @Operation(summary = "Heartbeat API", description = "Check Epoint service availability.")
-    // @GetMapping("/heartbeat")
-    // public ResponseEntity<EpointResponse> heartbeat() {
-    //     return ResponseEntity.ok(integrationService.heartbeat());
-    // }
 }

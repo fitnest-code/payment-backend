@@ -10,4 +10,3 @@ public record WithCardRequest(
     @Schema(description = "Seçim ID-si", example = "456")
     Long optionId
 ) {}
-
