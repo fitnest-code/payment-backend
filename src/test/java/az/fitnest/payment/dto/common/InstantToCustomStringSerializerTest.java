@@ -18,6 +18,11 @@ class InstantToCustomStringSerializerTest {
         );
         String json = mapper.writeValueAsString(response);
         System.out.println(json);
-        assertTrue(json.contains("05/03/2000 15:05"), "Date format should be dd/MM/yyyy HH:mm");
+
+        String expectedDateStr = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+                .withZone(java.time.ZoneId.systemDefault())
+                .format(Instant.parse("2000-03-05T15:05:00Z"));
+
+        assertTrue(json.contains(expectedDateStr), "Date format should be dd/MM/yyyy HH:mm in system timezone");
     }
 }

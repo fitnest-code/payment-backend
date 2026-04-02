@@ -80,7 +80,7 @@ public class EpointService {
 
     public EpointResponse createWidgetUrl(EpointWidgetRequest request) {
         if (request.getPublicKey() == null) {
-            request.setPublicKey(properties.getPublicKey());
+            request = request.setPublicKey(properties.getPublicKey());
         }
         return httpClient.postSigned("/token/widget", request);
     }
