@@ -147,7 +147,7 @@ public class UserPaymentService {
             startDate = java.time.LocalDate.of(currentYear, 1, 1);
         }
         List<Payment> filtered = allPayments.stream()
-            .filter(p -> "PAYMENT".equalsIgnoreCase(p.getType()))
+            .filter(p -> "PAYMENT".equalsIgnoreCase(p.getType()) || "WIDGET_PAYMENT".equalsIgnoreCase(p.getType()))
             .filter(p -> {
                 if (p.getCreatedDate() == null) return false;
                 java.time.LocalDate date = p.getCreatedDate().toLocalDate();
