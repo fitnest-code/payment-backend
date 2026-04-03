@@ -406,7 +406,7 @@ public class EpointIntegrationService {
     }
 
     @Transactional
-    public EpointResponse createWidgetUrl(Long userId, Long packageId, Long optionId) {
+    public EpointResponse createWidgetUrl(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled) {
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
         Double amount = priceCurrency.amount;
         String currency = priceCurrency.currency;
@@ -428,6 +428,7 @@ public class EpointIntegrationService {
                 .currency(currency != null ? currency : "AZN")
                 .orderId(orderId)
                 .description(description)
+                .autoPaymentEnabled(autoPaymentEnabled)
                 .build();
 
         log.info("[WidgetUrl] (SERVICE) Calling Epoint widget API. userId={}, orderId={}, amount={}", userId, orderId, amount);
@@ -445,6 +446,7 @@ public class EpointIntegrationService {
             payment.setUserId(userId);
             payment.setDescription(description);
             payment.setType("WIDGET_PAYMENT");
+            payment.setAutoPaymentEnabled(autoPaymentEnabled != null ? autoPaymentEnabled : false);
             paymentRepository.save(payment);
             log.info("[WidgetUrl] (SERVICE) Pending payment saved. orderId={}, transactionId={}", orderId, response.transaction());
         }

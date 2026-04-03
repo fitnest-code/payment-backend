@@ -256,8 +256,16 @@ public class PaymentController {
         }
 
         try {
-            EpointResponse response = integrationService.createWidgetUrl(userId, currencyRequest.packageId(), currencyRequest.optionId());
-            log.info("[WidgetUrl] (EXIT) userId={}, packageId={}, optionId={}, status={}, widgetUrl={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), response.status(), response.widgetUrl());
+            if (Boolean.TRUE.equals(currencyRequest.autoPaymentEnabled())) {
+                var details = subscriptionPackageGrpcClient.getOptionPriceCurrency(currencyRequest.packageId(), currencyRequest.optionId());
+                if (details.durationMonths != 1) {
+                    log.warn("[WidgetUrl] (ERROR) Auto-payment is only acceptable for 1-month duration. packageId={}, optionId={}, duration={}", currencyRequest.packageId(), currencyRequest.optionId(), details.durationMonths);
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(EpointResponse.builder().status("error").message("Avtomatik ödəniş yalnız 1 aylıq paketlər üçün keçərlidir").build());
+                }
+            }
+            EpointResponse response = integrationService.createWidgetUrl(userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled());
+            log.info("[WidgetUrl] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, status={}, widgetUrl={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), response.status(), response.widgetUrl());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[WidgetUrl] (ERROR) Exception occurred: {}", e.getMessage(), e);

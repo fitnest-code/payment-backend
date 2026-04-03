@@ -13,10 +13,13 @@ public record EpointWidgetRequest(
     String currency,
     @JsonProperty("order_id")
     String orderId,
-    String description
+    String description,
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    Boolean autoPaymentEnabled
 ) {
     public EpointWidgetRequest setPublicKey(String publicKey) {
-        return new EpointWidgetRequest(publicKey, amount, currency, orderId, description);
+        return new EpointWidgetRequest(publicKey, amount, currency, orderId, description, autoPaymentEnabled);
     }
 
     public String getPublicKey() {
