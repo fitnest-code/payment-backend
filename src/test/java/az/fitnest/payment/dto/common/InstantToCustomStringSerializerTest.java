@@ -14,7 +14,7 @@ class InstantToCustomStringSerializerTest {
     void testCustomFormat() throws JsonProcessingException {
         ObjectMapper mapper = new JacksonConfig().objectMapper();
         PaymentResponse response = new PaymentResponse(
-                1L, 100.0, "USD", Instant.parse("2000-03-05T15:05:00Z"), "VISA", "****1234", "PAYMENT", "SUCCESS", null, "order_123"
+                1L, 100.0, "USD", Instant.parse("2000-03-05T15:05:00Z"), "VISA", "****1234", "PAYMENT", "SUCCESS", null, "txn_123"
         );
         String json = mapper.writeValueAsString(response);
         System.out.println(json);

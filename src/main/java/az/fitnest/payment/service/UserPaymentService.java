@@ -202,7 +202,7 @@ public class UserPaymentService {
             payment.getType(),
             formattedStatus,
             payment.getCode(),
-            payment.getOrderId()
+            payment.getTransactionId()
         );
     }
 
