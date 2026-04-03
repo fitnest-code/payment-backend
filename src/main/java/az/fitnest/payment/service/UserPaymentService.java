@@ -25,9 +25,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import az.fitnest.payment.dto.epoint.EpointResponse;
 
 @Service
@@ -204,7 +201,8 @@ public class UserPaymentService {
             payment.getCardMask(),
             payment.getType(),
             formattedStatus,
-            payment.getCode()
+            payment.getCode(),
+            payment.getOrderId()
         );
     }
 

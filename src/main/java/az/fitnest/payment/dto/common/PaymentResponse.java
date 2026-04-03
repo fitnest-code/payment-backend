@@ -14,5 +14,6 @@ public record PaymentResponse(
     String maskedPan,
     String type,
     String status,
-    String failureCode
+    String failureCode,
+    String orderId
 ) {}
