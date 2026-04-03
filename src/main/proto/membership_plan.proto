@@ -100,4 +100,5 @@ message GetOptionDetailsRequest {
 message GetOptionDetailsResponse {
   double amount = 1;
   string currency = 2;
+  int32 duration_months = 3;
 }

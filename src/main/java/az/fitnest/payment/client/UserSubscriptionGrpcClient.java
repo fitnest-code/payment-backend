@@ -14,13 +14,14 @@ public class UserSubscriptionGrpcClient {
     @GrpcClient("order-service")
     private UserSubscriptionServiceGrpc.UserSubscriptionServiceBlockingStub stub;
 
-    public AssignSubscriptionToUserResponse assignSubscriptionToUser(Long userId, Long planId, Long optionId) {
+    public AssignSubscriptionToUserResponse assignSubscriptionToUser(Long userId, Long planId, Long optionId, Boolean autoPaymentEnabled) {
         AssignSubscriptionToUserRequest request = AssignSubscriptionToUserRequest.newBuilder()
                 .setUserId(userId)
                 .setPlanId(planId)
                 .setOptionId(optionId)
+                .setAutoPaymentEnabled(autoPaymentEnabled != null ? autoPaymentEnabled : false)
                 .build();
-        log.info("[gRPC] Sending AssignSubscriptionToUser request: userId={}, planId={}, optionId={}", userId, planId, optionId);
+        log.info("[gRPC] Sending AssignSubscriptionToUser request: userId={}, planId={}, optionId={}, autoPaymentEnabled={}", userId, planId, optionId, autoPaymentEnabled);
         try {
             AssignSubscriptionToUserResponse response = stub.assignSubscriptionToUser(request);
             log.info("[gRPC] Received AssignSubscriptionToUser response: subscriptionId={}, userId={}", response.getSubscriptionId(), response.getUserId());
@@ -29,5 +30,9 @@ public class UserSubscriptionGrpcClient {
             log.error("[gRPC] Error during AssignSubscriptionToUser request: userId={}, planId={}, optionId={}", userId, planId, optionId, e);
             throw e;
         }
+    }
+
+    public AssignSubscriptionToUserResponse assignSubscriptionToUser(Long userId, Long planId, Long optionId) {
+        return assignSubscriptionToUser(userId, planId, optionId, false);
     }
 }

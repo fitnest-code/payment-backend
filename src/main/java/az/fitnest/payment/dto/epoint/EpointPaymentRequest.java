@@ -28,5 +28,8 @@ public record EpointPaymentRequest(
     Integer isInstallment,
     Integer refund,
     @JsonProperty("other_attr")
-    String otherAttr
+    String otherAttr,
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    Boolean autoPaymentEnabled
 ) {}

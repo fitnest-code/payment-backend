@@ -9,7 +9,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.devh.boot.grpc.server.service.GrpcService;
 
+import az.fitnest.payment.dto.epoint.EpointExecutePayRequest;
+import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import java.util.Collections;
+
+import az.fitnest.payment.service.UserPaymentService;
 
 @GrpcService
 @RequiredArgsConstructor
@@ -18,6 +22,8 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
     private static final Logger log = LoggerFactory.getLogger(PaymentGrpcService.class);
 
     private final EpointIntegrationService integrationService;
+    private final UserPaymentService userPaymentService;
+    private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
 
     @Override
     public void createPayment(CreatePaymentRequest request, StreamObserver<CreatePaymentResponse> responseObserver) {
@@ -51,6 +57,64 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
             responseObserver.onError(io.grpc.Status.INTERNAL
                     .withDescription("Internal error processing payment: " + e.getMessage())
                     .asRuntimeException());
+        }
+    }
+
+    @Override
+    public void payWithCard(PayWithCardRequest request, StreamObserver<PayWithCardResponse> responseObserver) {
+        log.info("Received gRPC PayWithCard request for userId: {}, cardId: {}, packageId: {}, optionId: {}",
+                request.getUserId(), request.getCardId(), request.getPackageId(), request.getOptionId());
+
+        try {
+            String orderId = java.util.UUID.randomUUID().toString();
+            var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(request.getPackageId(), request.getOptionId());
+
+            EpointExecutePayRequest payRequest = EpointExecutePayRequest.builder()
+                    .publicKey(integrationService.getPublicKey())
+                    .language("az")
+                    .orderId(orderId)
+                    .amount(priceCurrency.amount)
+                    .currency(priceCurrency.currency)
+                    .cardId(request.getCardId())
+                    .description("packageId:" + request.getPackageId() + ",optionId:" + request.getOptionId())
+                    .isInstallment(0)
+                    .build();
+
+            EpointResponse epointResponse = integrationService.executePay(payRequest, request.getUserId());
+
+            PayWithCardResponse response = PayWithCardResponse.newBuilder()
+                    .setStatus(epointResponse.status() != null ? epointResponse.status() : "error")
+                    .setTransactionId(epointResponse.transaction() != null ? epointResponse.transaction() : "")
+                    .setMessage(epointResponse.message() != null ? epointResponse.message() : "")
+                    .build();
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (Exception e) {
+            log.error("Error in payWithCard", e);
+            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    @Override
+    public void getUserCards(GetUserCardsRequest request, StreamObserver<GetUserCardsResponse> responseObserver) {
+        log.info("Received gRPC GetUserCards request for userId: {}", request.getUserId());
+        try {
+            var cards = userPaymentService.getUserCards(request.getUserId());
+            GetUserCardsResponse.Builder responseBuilder = GetUserCardsResponse.newBuilder();
+            for (var card : cards) {
+                responseBuilder.addCards(UserCardDto.newBuilder()
+                        .setCardId(card.cardId())
+                        .setCardMask(card.cardMask())
+                        .setCardName(card.cardName() != null ? card.cardName() : "")
+                        .setBrand(card.brand() != null ? card.brand() : "")
+                        .build());
+            }
+            responseObserver.onNext(responseBuilder.build());
+            responseObserver.onCompleted();
+        } catch (Exception e) {
+            log.error("Error in getUserCards", e);
+            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
         }
     }
 }

@@ -8,6 +8,36 @@ option java_outer_classname = "PaymentProto";
 
 service PaymentService {
   rpc CreatePayment (CreatePaymentRequest) returns (CreatePaymentResponse);
+  rpc PayWithCard (PayWithCardRequest) returns (PayWithCardResponse);
+  rpc GetUserCards (GetUserCardsRequest) returns (GetUserCardsResponse);
+}
+
+message PayWithCardRequest {
+  int64 user_id = 1;
+  string card_id = 2;
+  int64 package_id = 3;
+  int64 option_id = 4;
+}
+
+message PayWithCardResponse {
+  string status = 1; // success, error
+  string transaction_id = 2;
+  string message = 3;
+}
+
+message GetUserCardsRequest {
+  int64 user_id = 1;
+}
+
+message UserCardDto {
+  string card_id = 1;
+  string card_mask = 2;
+  string card_name = 3;
+  string brand = 4;
+}
+
+message GetUserCardsResponse {
+  repeated UserCardDto cards = 1;
 }
 
 message CreatePaymentRequest {

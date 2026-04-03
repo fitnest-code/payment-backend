@@ -77,12 +77,21 @@ public class PaymentController {
             }
         }
         try {
+            if (Boolean.TRUE.equals(currencyRequest.autoPaymentEnabled())) {
+                var details = subscriptionPackageGrpcClient.getOptionPriceCurrency(currencyRequest.packageId(), currencyRequest.optionId());
+                if (details.durationMonths != 1) {
+                    log.warn("[PaymentInit] (ERROR) Auto-payment is only acceptable for 1-month duration. packageId={}, optionId={}, duration={}", currencyRequest.packageId(), currencyRequest.optionId(), details.durationMonths);
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(EpointResponse.builder().status("error").message("Avtomatik ödəniş yalnız 1 aylıq paketlər üçün keçərlidir").build());
+                }
+            }
             EpointResponse response = integrationService.initiatePayment(
                 userId,
                 currencyRequest.packageId(),
-                currencyRequest.optionId()
+                currencyRequest.optionId(),
+                currencyRequest.autoPaymentEnabled()
             );
-            log.info("[PaymentInit] (EXIT) userId={}, packageId={}, optionId={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), response.status(), response.message());
+            log.info("[PaymentInit] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), response.status(), response.message());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[PaymentInit] (ERROR) Exception occurred: {}", e.getMessage(), e);
@@ -134,6 +143,11 @@ public class PaymentController {
         }
         try {
             var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(currencyRequest.packageId(), currencyRequest.optionId());
+            if (Boolean.TRUE.equals(currencyRequest.autoPaymentEnabled()) && priceCurrency.durationMonths != 1) {
+                log.warn("[SaveAndPay] (ERROR) Auto-payment is only acceptable for 1-month duration. packageId={}, optionId={}, duration={}", currencyRequest.packageId(), currencyRequest.optionId(), priceCurrency.durationMonths);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(EpointResponse.builder().status("error").message("Avtomatik ödəniş yalnız 1 aylıq paketlər üçün keçərlidir").build());
+            }
             Double amount = priceCurrency.amount;
             String currency = priceCurrency.currency;
             String orderId = java.util.UUID.randomUUID().toString();
@@ -150,9 +164,10 @@ public class PaymentController {
                     .isInstallment(0)
                     .refund(0)
                     .otherAttr(otherAttr)
+                    .autoPaymentEnabled(currencyRequest.autoPaymentEnabled())
                     .build();
             EpointResponse response = integrationService.cardRegistrationWithPay(userId, request);
-            log.info("[SaveAndPay] (EXIT) userId={}, packageId={}, optionId={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), response.status(), response.message());
+            log.info("[SaveAndPay] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), response.status(), response.message());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[SaveAndPay] (ERROR) Exception occurred: {}", e.getMessage(), e);
@@ -183,6 +198,11 @@ public class PaymentController {
         }
         try {
             var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(withCardRequest.packageId(), withCardRequest.optionId());
+            if (Boolean.TRUE.equals(withCardRequest.autoPaymentEnabled()) && priceCurrency.durationMonths != 1) {
+                log.warn("[WithCard] (ERROR) Auto-payment is only acceptable for 1-month duration. packageId={}, optionId={}, duration={}", withCardRequest.packageId(), withCardRequest.optionId(), priceCurrency.durationMonths);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(EpointResponse.builder().status("error").message("Avtomatik ödəniş yalnız 1 aylıq paketlər üçün keçərlidir").build());
+            }
             Double amount = priceCurrency.amount;
             String currency = priceCurrency.currency;
             String orderId = java.util.UUID.randomUUID().toString();
@@ -202,9 +222,10 @@ public class PaymentController {
                     .currency(currency != null ? currency : "AZN")
                     .description(description)
                     .isInstallment(0)
+                    .autoPaymentEnabled(withCardRequest.autoPaymentEnabled())
                     .build();
             EpointResponse response = integrationService.executePay(request, userId);
-            log.info("[WithCard] (EXIT) userId={}, cardId={}, packageId={}, optionId={}, status={}, message={}", userId, withCardRequest.cardId(), withCardRequest.packageId(), withCardRequest.optionId(), response.status(), response.message());
+            log.info("[WithCard] (EXIT) userId={}, cardId={}, packageId={}, optionId={}, autoPay={}, status={}, message={}", userId, withCardRequest.cardId(), withCardRequest.packageId(), withCardRequest.optionId(), withCardRequest.autoPaymentEnabled(), response.status(), response.message());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[WithCard] (ERROR) Exception occurred: {}", e.getMessage(), e);

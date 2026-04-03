@@ -26,15 +26,17 @@ public class SubscriptionPackageGrpcClient {
                 .setOptionId(optionId)
                 .build();
         az.fitnest.order.grpc.GetOptionDetailsResponse response = stub.getOptionDetails(request);
-        return new OptionPriceCurrency(response.getAmount(), response.getCurrency());
+        return new OptionPriceCurrency(response.getAmount(), response.getCurrency(), response.getDurationMonths());
     }
 
     public static class OptionPriceCurrency {
         public final double amount;
         public final String currency;
-        public OptionPriceCurrency(double amount, String currency) {
+        public final int durationMonths;
+        public OptionPriceCurrency(double amount, String currency, int durationMonths) {
             this.amount = amount;
             this.currency = currency;
+            this.durationMonths = durationMonths;
         }
     }
 }

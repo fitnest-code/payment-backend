@@ -8,5 +8,7 @@ public record WithCardRequest(
     @Schema(description = "Paket ID-si", example = "123")
     Long packageId,
     @Schema(description = "Seçim ID-si", example = "456")
-    Long optionId
+    Long optionId,
+    @Schema(description = "Avtomatik ödəniş aktivdir", example = "true")
+    Boolean autoPaymentEnabled
 ) {}

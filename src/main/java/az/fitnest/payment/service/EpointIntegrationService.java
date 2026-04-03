@@ -77,7 +77,7 @@ public class EpointIntegrationService {
             log.info("[PaymentInit] (SERVICE) Creating payment via epointService.createPayment. orderId={}, userId={}", request.orderId(), userId);
             EpointResponse response = epointService.createPayment(request);
             log.info("[PaymentInit] (SERVICE) Payment created. status={}, message={}, transaction={}, orderId={}", response.status(), response.message(), response.transaction(), response.orderId());
-            Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+            Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description(), request.autoPaymentEnabled());
             if (userId != null && request.orderId() != null) {
                 String redisKey = "payment-user:" + request.orderId();
                 redisTemplate.opsForValue().set(redisKey, String.valueOf(userId), 1, java.util.concurrent.TimeUnit.DAYS);
@@ -153,7 +153,7 @@ public class EpointIntegrationService {
         }
 
         EpointResponse response = epointService.executePay(request);
-        Payment payment = saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        Payment payment = saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description(), request.autoPaymentEnabled());
         if ("success".equalsIgnoreCase(response.status()) && payment != null) {
             assignSubscriptionIfPossible(payment, response, userId);
         }
@@ -178,7 +178,7 @@ public class EpointIntegrationService {
         }
 
         EpointResponse response = epointService.cardRegistrationWithPay(request);
-        Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description(), request.autoPaymentEnabled());
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
     }
 
@@ -216,7 +216,7 @@ public class EpointIntegrationService {
             return cachedResponse.get();
         }
         EpointResponse response = epointService.splitRequest(request);
-        saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description(), false);
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
@@ -229,7 +229,7 @@ public class EpointIntegrationService {
             return cachedResponse.get();
         }
         EpointResponse response = epointService.splitExecutePay(request);
-        saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, null);
+        saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, null, false);
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
@@ -242,7 +242,7 @@ public class EpointIntegrationService {
             return cachedResponse.get();
         }
         EpointResponse response = epointService.splitCardRegistrationWithPay(request);
-        saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description(), false);
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
@@ -255,7 +255,7 @@ public class EpointIntegrationService {
             return cachedResponse.get();
         }
         EpointResponse response = epointService.preAuthRequest(request);
-        saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description(), false);
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
@@ -268,7 +268,7 @@ public class EpointIntegrationService {
             return cachedResponse.get();
         }
         EpointResponse response = epointService.walletPayment(request);
-        saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description());
+        saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description(), false);
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
@@ -502,7 +502,7 @@ public class EpointIntegrationService {
         payment.setOperationCode(response.operationCode());
     }
 
-    private Payment saveRedirectPayment(EpointResponse response, String orderId, Double amount, String currency, Long userId, String description) {
+    private Payment saveRedirectPayment(EpointResponse response, String orderId, Double amount, String currency, Long userId, String description, Boolean autoPaymentEnabled) {
         if ("success".equalsIgnoreCase(response.status())) {
             Payment payment = new Payment();
             payment.setProvider("EPOINT");
@@ -520,16 +520,17 @@ public class EpointIntegrationService {
             payment.setBankTransaction(response.bankTransaction());
             payment.setMessage(response.message());
             payment.setType("PAYMENT");
+            payment.setAutoPaymentEnabled(autoPaymentEnabled != null ? autoPaymentEnabled : false);
             return paymentRepository.save(payment);
         }
         return null;
     }
 
     private Payment saveRedirectPayment(EpointResponse response, String orderId, Double amount, String currency) {
-        return saveRedirectPayment(response, orderId, amount, currency, null, null);
+        return saveRedirectPayment(response, orderId, amount, currency, null, null, false);
     }
 
-    private Payment saveDirectPayment(EpointResponse response, String orderId, Double amount, String currency, Long userId, String description) {
+    private Payment saveDirectPayment(EpointResponse response, String orderId, Double amount, String currency, Long userId, String description, Boolean autoPaymentEnabled) {
         Payment payment = new Payment();
         payment.setProvider("EPOINT");
         payment.setOrderId(orderId);
@@ -549,11 +550,12 @@ public class EpointIntegrationService {
         payment.setMessage(response.message());
         payment.setCallbackProcessed(true);
         payment.setType("PAYMENT");
+        payment.setAutoPaymentEnabled(autoPaymentEnabled != null ? autoPaymentEnabled : false);
         return paymentRepository.save(payment);
     }
 
     private Payment saveDirectPayment(EpointResponse response, String orderId, Double amount, String currency) {
-        return saveDirectPayment(response, orderId, amount, currency, null, null);
+        return saveDirectPayment(response, orderId, amount, currency, null, null, false);
     }
 
     private EpointResponse buildResponseFromPayment(Payment payment) {
@@ -721,8 +723,8 @@ public class EpointIntegrationService {
                 if (opt != null) optionId = Long.parseLong(opt);
             }
             if (packageId != null && optionId != null) {
-                log.info("[SubscriptionAssign] Assigning subscription via gRPC: userId={}, packageId={}, optionId={}", userId, packageId, optionId);
-                var grpcResponse = userSubscriptionGrpcClient.assignSubscriptionToUser(userId, packageId, optionId);
+                log.info("[SubscriptionAssign] Assigning subscription via gRPC: userId={}, packageId={}, optionId={}, autoPaymentEnabled={}", userId, packageId, optionId, payment.getAutoPaymentEnabled());
+                var grpcResponse = userSubscriptionGrpcClient.assignSubscriptionToUser(userId, packageId, optionId, payment.getAutoPaymentEnabled());
                 log.info("[SubscriptionAssign] Subscription assignment gRPC response: {}", grpcResponse);
             } else {
                 log.warn("[SubscriptionAssign] Could not extract packageId/optionId for subscription assignment. Skipping assignment. userId={}, paymentId={}, orderId={}", userId, payment.getId(), payment.getOrderId());
@@ -733,7 +735,7 @@ public class EpointIntegrationService {
     }
 
     @Transactional
-    public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId) {
+    public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled) {
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
         Double amount = priceCurrency.amount;
         String currency = priceCurrency.currency;
@@ -752,8 +754,14 @@ public class EpointIntegrationService {
                 .isInstallment(0)
                 .refund(0)
                 .otherAttr(otherAttr)
+                .autoPaymentEnabled(autoPaymentEnabled)
                 .build();
         return initiatePayment(request, userId);
+    }
+
+    @Transactional
+    public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId) {
+        return initiatePayment(userId, packageId, optionId, false);
     }
 
     private static String getOtherAttrValue(String otherAttr, String key) {

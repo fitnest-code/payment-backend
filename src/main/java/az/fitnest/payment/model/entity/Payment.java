@@ -88,6 +88,9 @@ public class Payment extends BaseAuditableEntity {
     @Column(name = "type")
     private String type;
 
+    @Column(name = "auto_payment_enabled")
+    private Boolean autoPaymentEnabled = false;
+
     public void setCardId(String cardId) {
         this.cardId = cardId;
     }

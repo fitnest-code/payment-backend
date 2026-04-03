@@ -35,5 +35,8 @@ public record EpointExecutePayRequest(
     String cardId,
 
     @JsonProperty("is_installment")
-    Integer isInstallment
+    Integer isInstallment,
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    Boolean autoPaymentEnabled
 ) {}
