@@ -155,12 +155,13 @@ public class PaymentController {
             if (currencyRequest.packageId() != null) otherAttrList.add("packageId:" + currencyRequest.packageId());
             if (currencyRequest.optionId() != null) otherAttrList.add("optionId:" + currencyRequest.optionId());
             String otherAttr = otherAttrList.isEmpty() ? null : String.join(",", otherAttrList);
+            String description = Boolean.TRUE.equals(currencyRequest.autoPaymentEnabled()) ? "Fitness package monthly payment" : "Fitness package payment";
             EpointPaymentRequest request = EpointPaymentRequest.builder()
                     .currency(currency != null ? currency : "AZN")
                     .amount(amount)
                     .language("az")
                     .orderId(orderId)
-                    .description("Fitness package save and pay")
+                    .description(description)
                     .isInstallment(0)
                     .refund(0)
                     .otherAttr(otherAttr)
@@ -212,7 +213,8 @@ public class PaymentController {
             redisTemplate.expire(redisKey, java.time.Duration.ofHours(1));
             String publicKey = integrationService.getPublicKey();
             String language = "az";
-            String description = "packageId:" + withCardRequest.packageId() + ",optionId:" + withCardRequest.optionId();
+            String paymentTypeDescription = Boolean.TRUE.equals(withCardRequest.autoPaymentEnabled()) ? "Monthly payment" : "One-time payment";
+            String description = "packageId:" + withCardRequest.packageId() + ",optionId:" + withCardRequest.optionId() + ",type:" + paymentTypeDescription;
             EpointExecutePayRequest request = EpointExecutePayRequest.builder()
                     .publicKey(publicKey)
                     .language(language)

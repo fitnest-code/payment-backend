@@ -415,7 +415,8 @@ public class EpointIntegrationService {
 
         String orderId = java.util.UUID.randomUUID().toString();
         String deviceType = az.fitnest.payment.util.DeviceDetector.detectDeviceType();
-        String description = "packageId:" + packageId + ",optionId:" + optionId + ",device:" + deviceType;
+        String paymentTypeDescription = Boolean.TRUE.equals(autoPaymentEnabled) ? "Monthly payment" : "One-time payment";
+        String description = "packageId:" + packageId + ",optionId:" + optionId + ",device:" + deviceType + ",type:" + paymentTypeDescription;
 
         if (userId != null) {
             String redisKey = "payment-user:" + orderId;
@@ -747,12 +748,13 @@ public class EpointIntegrationService {
         if (packageId != null) otherAttrList.add("packageId:" + packageId);
         if (optionId != null) otherAttrList.add("optionId:" + optionId);
         String otherAttr = otherAttrList.isEmpty() ? null : String.join(",", otherAttrList);
+        String description = Boolean.TRUE.equals(autoPaymentEnabled) ? "Fitness package monthly payment" : "Fitness package payment";
         EpointPaymentRequest request = EpointPaymentRequest.builder()
                 .currency(currency != null ? currency : "AZN")
                 .amount(amount)
                 .language("az")
                 .orderId(orderId)
-                .description("Fitness package payment")
+                .description(description)
                 .isInstallment(0)
                 .refund(0)
                 .otherAttr(otherAttr)
