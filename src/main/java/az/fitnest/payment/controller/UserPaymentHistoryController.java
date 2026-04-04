@@ -139,4 +139,50 @@ public class UserPaymentHistoryController {
 
         return ResponseEntity.ok(response);
     }
+
+    @Operation(
+            summary = "Xüsusi ödənişin detalları",
+            description = "Bu endpoint autentifikasiya olunmuş istifadəçinin transactionId-ə əsasən konkret ödənişin detallarını qaytarır."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Ödəniş detalları uğurla qaytarıldı",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = PaymentResponse.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "İstifadəçi autentifikasiya olunmayıb və ya token etibarsızdır",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Ödəniş tapılmadı",
+                    content = @Content
+            )
+    })
+    @GetMapping("/history/{transactionId}")
+    public ResponseEntity<PaymentResponse> getUserPaymentHistoryByTransactionId(
+            @Parameter(
+                    hidden = true,
+                    description = "Spring Security tərəfindən inject olunan istifadəçi məlumatı"
+            )
+            @AuthenticationPrincipal Principal user,
+            
+            @Parameter(
+                    description = "Ödənişin transaction identifikatoru"
+            )
+            @PathVariable String transactionId
+    ) {
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        PaymentResponse response = userPaymentService.getPaymentByTransactionId(transactionId, userId);
+        return ResponseEntity.ok(response);
+    }
 }
