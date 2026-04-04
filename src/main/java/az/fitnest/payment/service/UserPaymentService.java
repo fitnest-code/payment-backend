@@ -192,6 +192,8 @@ public class UserPaymentService {
             }
         }
 
+        String actualType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
+
         return new PaymentResponse(
             payment.getId(),
             payment.getAmount(),
@@ -199,7 +201,7 @@ public class UserPaymentService {
             payment.getCreatedDate() != null ? payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
             brand,
             payment.getCardMask(),
-            payment.getType(),
+            actualType,
             formattedStatus,
             payment.getCode(),
             payment.getTransactionId()
