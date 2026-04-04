@@ -52,9 +52,6 @@ public class UserCard extends BaseAuditableEntity {
     @Column(name = "recc_pmnt_id")
     private String reccPmntId;
 
-    @Column(name = "recc_pmnt_expiry")
-    private String reccPmntExpiry;
-
     public static class UserCardBuilder {
         public UserCardBuilder cardNumber(String cardNumber) {
             this.cardNumber = cardNumber;
@@ -63,11 +60,6 @@ public class UserCard extends BaseAuditableEntity {
 
         public UserCardBuilder reccPmntId(String reccPmntId) {
             this.reccPmntId = reccPmntId;
-            return this;
-        }
-
-        public UserCardBuilder reccPmntExpiry(String reccPmntExpiry) {
-            this.reccPmntExpiry = reccPmntExpiry;
             return this;
         }
     }

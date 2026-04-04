@@ -172,8 +172,7 @@ public class UserPaymentService {
             card.getCardId(),
             card.getCardName(),
             card.getCardMask(),
-            card.getBrand(),
-            card.getReccPmntExpiry()
+            card.getBrand()
         );
     }
 

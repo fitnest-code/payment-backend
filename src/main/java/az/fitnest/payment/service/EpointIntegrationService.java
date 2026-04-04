@@ -650,7 +650,6 @@ public class EpointIntegrationService {
             card.setApprovalCode(getField.apply(callbackData.approvalCode(), "APPROVAL_CODE"));
             card.setCardNumber(getField.apply(callbackData.cardNumber(), "CARD_NUMBER"));
             card.setReccPmntId(getField.apply(callbackData.reccPmntId(), "RECC_PMNT_ID"));
-            card.setReccPmntExpiry(getField.apply(callbackData.reccPmntExpiry(), "RECC_PMNT_EXPIRY"));
             userCardRepository.save(card);
             log.info("[CardSave] Updated existing card {} for user {}", callbackData.cardId(), userId);
         } else {
@@ -674,7 +673,6 @@ public class EpointIntegrationService {
                     .approvalCode(getField.apply(callbackData.approvalCode(), "APPROVAL_CODE"))
                     .cardNumber(getField.apply(callbackData.cardNumber(), "CARD_NUMBER"))
                     .reccPmntId(getField.apply(callbackData.reccPmntId(), "RECC_PMNT_ID"))
-                    .reccPmntExpiry(getField.apply(callbackData.reccPmntExpiry(), "RECC_PMNT_EXPIRY"))
                     .build();
             userCardRepository.save(userCard);
             log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);
