@@ -171,7 +171,7 @@ public class UserPaymentHistoryController {
                     description = "Spring Security tərəfindən inject olunan istifadəçi məlumatı"
             )
             @AuthenticationPrincipal Principal user,
-            
+
             @Parameter(
                     description = "Ödənişin transaction identifikatoru"
             )

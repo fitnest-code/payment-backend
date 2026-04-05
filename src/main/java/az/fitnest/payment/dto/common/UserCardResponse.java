@@ -8,19 +8,12 @@ public record UserCardResponse(
     String cardId,
     String cardName,
     String cardMask,
-    String brand,
-    String reccPmntExpiry
+    String brand
 ) {
-    public UserCardResponse(String cardId, String cardName, String cardMask, String brand, String reccPmntExpiry) {
+    public UserCardResponse(String cardId, String cardName, String cardMask, String brand) {
         this.cardId = cardId;
         this.cardName = cardName;
         this.cardMask = cardMask;
         this.brand = brand;
-        this.reccPmntExpiry = formatExpiry(reccPmntExpiry);
-    }
-
-    private static String formatExpiry(String expiry) {
-        if (expiry == null || expiry.length() != 4) return expiry;
-        return expiry.substring(0, 2) + "/" + expiry.substring(2);
     }
 }
