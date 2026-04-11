@@ -58,11 +58,11 @@ public class SecurityConfig {
                             response.getWriter().write(json);
                         })
                         .accessDeniedHandler((request, response, accessDeniedException) -> {
-                            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                             response.setContentType("application/json");
                             String path = request.getRequestURI();
                             String timestamp = java.time.OffsetDateTime.now().toString();
-                            String json = String.format("{\"error\":{\"code\":\"FORBIDDEN\",\"message\":\"Forbidden\",\"status\":403,\"path\":\"%s\",\"timestamp\":\"%s\"}}", path, timestamp);
+                            String json = String.format("{\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"Unauthorized\",\"status\":401,\"path\":\"%s\",\"timestamp\":\"%s\"}}", path, timestamp);
                             response.getWriter().write(json);
                         })
                 )
