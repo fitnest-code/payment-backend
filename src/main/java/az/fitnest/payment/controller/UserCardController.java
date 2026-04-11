@@ -1,7 +1,6 @@
 package az.fitnest.payment.controller;
 
 import az.fitnest.payment.dto.common.PaymentResponse;
-import az.fitnest.payment.dto.common.SetDefaultCardRequest;
 import az.fitnest.payment.dto.common.UserCardResponse;
 import az.fitnest.payment.dto.common.DeleteCardRequest;
 import az.fitnest.payment.service.UserPaymentService;
