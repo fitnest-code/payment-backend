@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Strip all comments from Java files in payment-service/src."""
+"""Strip all comments from Java files in payment-backend/src."""
 import os
 import re
 
