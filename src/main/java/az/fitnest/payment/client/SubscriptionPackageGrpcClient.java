@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class SubscriptionPackageGrpcClient {
-    @GrpcClient("order-service")
+    @GrpcClient("order-backend")
     private SubscriptionPackageServiceGrpc.SubscriptionPackageServiceBlockingStub stub;
 
     public boolean checkOptionInPackageExists(Long packageId, Long optionId) {

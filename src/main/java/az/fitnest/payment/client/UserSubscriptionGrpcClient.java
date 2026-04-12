@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
 @Component
 public class UserSubscriptionGrpcClient {
     private static final Logger log = LoggerFactory.getLogger(UserSubscriptionGrpcClient.class);
-    @GrpcClient("order-service")
+    @GrpcClient("order-backend")
     private UserSubscriptionServiceGrpc.UserSubscriptionServiceBlockingStub stub;
 
     public AssignSubscriptionToUserResponse assignSubscriptionToUser(Long userId, Long planId, Long optionId, Boolean autoPaymentEnabled) {
