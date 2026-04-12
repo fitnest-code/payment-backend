@@ -26,7 +26,7 @@ public class HealthController {
         log.debug("Heartbeat endpoint called");
         return ResponseEntity.ok(Map.of(
                 "status", "ok",
-                "service", "payment-service",
+                "service", "payment-backend",
                 "timestamp", Instant.now().toString()
         ));
     }

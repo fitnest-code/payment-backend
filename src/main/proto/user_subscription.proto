@@ -1,4 +1,4 @@
-// This file is required to import the user_subscription.proto from order-service for gRPC code generation.
+// This file is required to import the user_subscription.proto from order-backend for gRPC code generation.
 syntax = "proto3";
 
 package az.fitnest.order;

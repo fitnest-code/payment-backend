@@ -115,16 +115,16 @@ jwt:
 
 # ✅ Updated service URLs
 iam:
-  service:
-    url: ${IDENTITY_SERVICE_URL:http://identity-backend:8080}
+  backend:
+    url: ${IDENTITY_BACKEND_URL:http://identity-backend:8080}
 
 user:
-  service:
-    url: ${USER_SERVICE_URL:http://user-backend:8080}
+  backend:
+    url: ${USER_BACKEND_URL:http://user-backend:8080}
 
 media:
-  service:
-    url: ${STORAGE_SERVICE_URL:http://storage-backend:8080}
+  backend:
+    url: ${STORAGE_BACKEND_URL:http://storage-backend:8080}
 
 app:
   security:
