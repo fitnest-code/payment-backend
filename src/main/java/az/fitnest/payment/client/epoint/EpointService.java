@@ -1,12 +1,19 @@
 package az.fitnest.payment.client.epoint;
 
 import az.fitnest.payment.dto.epoint.*;
+import az.fitnest.payment.client.UserGrpcClient;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import okhttp3.Request;
 import okhttp3.Response;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import jakarta.servlet.http.HttpServletRequest;
+import java.net.URL;
 
 @Service
 @RequiredArgsConstructor
@@ -16,6 +23,7 @@ public class EpointService {
 
     private final EpointHttpClient httpClient;
     private final EpointProperties properties;
+    private final UserGrpcClient userGrpcClient;
 
     public EpointResponse createPayment(EpointPaymentRequest request) {
         request = fillPublicKey(request);
@@ -350,51 +358,81 @@ public class EpointService {
 
     private String getDynamicSuccessUrl(String explicitUrl) {
         if (explicitUrl != null) return explicitUrl;
-        String dynamic = extractUrlFromRequest("/az/payment/success");
-        return dynamic != null ? dynamic : properties.getSuccessRedirectUrl();
+        Long userId = getCurrentUserId();
+        String lang = userGrpcClient.getUserLanguage(userId);
+        String path = "/" + lang + "/payment/success";
+        String dynamic = extractUrlFromRequest(path);
+        String finalUrl = dynamic != null ? dynamic : properties.getSuccessRedirectUrl();
+        log.info("[Redirection] Resolved success URL: {} (userId: {}, lang: {})", finalUrl, userId, lang);
+        return finalUrl;
     }
 
     private String getDynamicErrorUrl(String explicitUrl) {
         if (explicitUrl != null) return explicitUrl;
-        String dynamic = extractUrlFromRequest("/az/payment/error");
-        return dynamic != null ? dynamic : properties.getErrorRedirectUrl();
+        Long userId = getCurrentUserId();
+        String lang = userGrpcClient.getUserLanguage(userId);
+        String path = "/" + lang + "/payment/error";
+        String dynamic = extractUrlFromRequest(path);
+        String finalUrl = dynamic != null ? dynamic : properties.getErrorRedirectUrl();
+        log.info("[Redirection] Resolved error URL: {} (userId: {}, lang: {})", finalUrl, userId, lang);
+        return finalUrl;
+    }
+
+    private Long getCurrentUserId() {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof Long userId) {
+                return userId;
+            }
+        } catch (Exception e) {
+            log.warn("[Redirection] Could not get userId from SecurityContext: {}", e.getMessage());
+        }
+        return null;
     }
 
     private String extractUrlFromRequest(String path) {
         try {
-            org.springframework.web.context.request.RequestAttributes attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
-            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
-                jakarta.servlet.http.HttpServletRequest request = servletAttrs.getRequest();
+            var attrs = RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof ServletRequestAttributes servletAttrs) {
+                HttpServletRequest request = servletAttrs.getRequest();
                 
                 String origin = request.getHeader("Origin");
-                if (origin == null || origin.isBlank()) {
-                    origin = request.getHeader("Referer");
-                    if (origin != null && !origin.isBlank()) {
-                        java.net.URL url = new java.net.URL(origin);
-                        origin = url.getProtocol() + "://" + url.getHost() + (url.getPort() != -1 ? ":" + url.getPort() : "");
+                String referer = request.getHeader("Referer");
+                String hostHeader = request.getHeader("Host");
+                String forwardedHost = request.getHeader("X-Forwarded-Host");
+
+                log.debug("[Redirection] Extracting URL from headers - Origin: {}, Referer: {}, Host: {}, X-Forwarded-Host: {}", 
+                    origin, referer, hostHeader, forwardedHost);
+
+                String baseURL = origin;
+                if (baseURL == null || baseURL.isBlank()) {
+                    baseURL = referer;
+                    if (baseURL != null && !baseURL.isBlank()) {
+                        URL url = new URL(baseURL);
+                        baseURL = url.getProtocol() + "://" + url.getHost() + (url.getPort() != -1 ? ":" + url.getPort() : "");
                     }
                 }
                 
-                if (origin != null && !origin.isBlank()) {
-                    if (origin.endsWith("/")) {
-                        origin = origin.substring(0, origin.length() - 1);
+                if (baseURL != null && !baseURL.isBlank()) {
+                    if (baseURL.endsWith("/")) {
+                        baseURL = baseURL.substring(0, baseURL.length() - 1);
                     }
-                    if (origin.contains("dev.fitnest.az") || origin.contains("localhost")) {
-                         return origin + path; // support localhost and dev.fitnest.az dynamically
+                    if (baseURL.contains("dev.fitnest.az") || baseURL.contains("localhost")) {
+                         log.debug("[Redirection] Using base URL from Origin/Referer: {}", baseURL);
+                         return baseURL + path;
                     }
                 }
                 
-                String host = request.getHeader("X-Forwarded-Host");
-                if (host == null || host.isBlank()) {
-                    host = request.getHeader("Host");
-                }
-                if (host != null && host.contains("dev-api.fitnest.az")) {
+                String targetHost = (forwardedHost != null && !forwardedHost.isBlank()) ? forwardedHost : hostHeader;
+                if (targetHost != null && targetHost.contains("dev-api.fitnest.az")) {
+                    log.debug("[Redirection] Detected dev-api.fitnest.az. Redirecting to dev.fitnest.az");
                     return "https://dev.fitnest.az" + path;
                 }
             }
         } catch (Exception e) {
-            log.warn("Could not extract dynamic URL from request: {}", e.getMessage());
+            log.warn("[Redirection] Could not extract dynamic URL from request: {}", e.getMessage());
         }
         return null;
     }
 }
+

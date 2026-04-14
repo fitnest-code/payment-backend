@@ -195,6 +195,9 @@ grpc:
     order-backend:
       address: 'dns:///order-backend.fitnest-development.svc.cluster.local:9090'
       negotiation-type: plaintext
+    user-backend:
+      address: 'dns:///user-backend.fitnest-development.svc.cluster.local:9090'
+      negotiation-type: plaintext
 
 logging:
   level:
