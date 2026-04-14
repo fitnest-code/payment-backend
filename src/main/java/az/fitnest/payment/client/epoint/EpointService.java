@@ -67,8 +67,8 @@ public class EpointService {
             .currency(currency)
             .description(null)
             .resultUrl(properties.getResultUrl())
-            .successRedirectUrl(properties.getSuccessRedirectUrl())
-            .errorRedirectUrl(properties.getErrorRedirectUrl())
+            .successRedirectUrl(getDynamicSuccessUrl(null))
+            .errorRedirectUrl(getDynamicErrorUrl(null))
             .build();
         return httpClient.postSigned("/reverse", request);
     }
@@ -95,8 +95,8 @@ public class EpointService {
                     .currency(request.currency())
                     .description(request.description())
                     .resultUrl(request.resultUrl() != null ? request.resultUrl() : properties.getResultUrl())
-                    .successRedirectUrl(request.successRedirectUrl() != null ? request.successRedirectUrl() : properties.getSuccessRedirectUrl())
-                    .errorRedirectUrl(request.errorRedirectUrl() != null ? request.errorRedirectUrl() : properties.getErrorRedirectUrl())
+                    .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
+                    .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
                     .isInstallment(request.isInstallment())
                     .refund(request.refund())
                     .otherAttr(request.otherAttr())
@@ -113,8 +113,8 @@ public class EpointService {
                     .refund(request.refund())
                     .description(request.description())
                     .resultUrl(request.resultUrl() != null ? request.resultUrl() : properties.getResultUrl())
-                    .successRedirectUrl(request.successRedirectUrl() != null ? request.successRedirectUrl() : properties.getSuccessRedirectUrl())
-                    .errorRedirectUrl(request.errorRedirectUrl() != null ? request.errorRedirectUrl() : properties.getErrorRedirectUrl())
+                    .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
+                    .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
                     .build();
         }
         return request;
@@ -130,8 +130,8 @@ public class EpointService {
                     .currency(request.currency())
                     .description(request.description())
                     .resultUrl(request.resultUrl())
-                    .successRedirectUrl(request.successRedirectUrl())
-                    .errorRedirectUrl(request.errorRedirectUrl())
+                    .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
+                    .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
                     .cardId(request.cardId())
                     .isInstallment(request.isInstallment())
                     .build();
@@ -149,8 +149,8 @@ public class EpointService {
                     .currency(request.currency())
                     .description(request.description())
                     .resultUrl(request.resultUrl() != null ? request.resultUrl() : properties.getResultUrl())
-                    .successRedirectUrl(request.successRedirectUrl() != null ? request.successRedirectUrl() : properties.getSuccessRedirectUrl())
-                    .errorRedirectUrl(request.errorRedirectUrl() != null ? request.errorRedirectUrl() : properties.getErrorRedirectUrl())
+                    .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
+                    .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
                     .splitUser(request.splitUser())
                     .splitAmount(request.splitAmount())
                     .build();
@@ -168,8 +168,8 @@ public class EpointService {
                     .currency(request.currency())
                     .description(request.description())
                     .resultUrl(request.resultUrl() != null ? request.resultUrl() : properties.getResultUrl())
-                    .successRedirectUrl(request.successRedirectUrl() != null ? request.successRedirectUrl() : properties.getSuccessRedirectUrl())
-                    .errorRedirectUrl(request.errorRedirectUrl() != null ? request.errorRedirectUrl() : properties.getErrorRedirectUrl())
+                    .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
+                    .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
                     .splitUser(request.splitUser())
                     .splitAmount(request.splitAmount())
                     .cardId(request.cardId())
@@ -346,5 +346,55 @@ public class EpointService {
 
     public EpointResponse heartbeat() {
         return httpClient.get("/heartbeat");
+    }
+
+    private String getDynamicSuccessUrl(String explicitUrl) {
+        if (explicitUrl != null) return explicitUrl;
+        String dynamic = extractUrlFromRequest("/az/payment/success");
+        return dynamic != null ? dynamic : properties.getSuccessRedirectUrl();
+    }
+
+    private String getDynamicErrorUrl(String explicitUrl) {
+        if (explicitUrl != null) return explicitUrl;
+        String dynamic = extractUrlFromRequest("/az/payment/error");
+        return dynamic != null ? dynamic : properties.getErrorRedirectUrl();
+    }
+
+    private String extractUrlFromRequest(String path) {
+        try {
+            org.springframework.web.context.request.RequestAttributes attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
+                jakarta.servlet.http.HttpServletRequest request = servletAttrs.getRequest();
+                
+                String origin = request.getHeader("Origin");
+                if (origin == null || origin.isBlank()) {
+                    origin = request.getHeader("Referer");
+                    if (origin != null && !origin.isBlank()) {
+                        java.net.URL url = new java.net.URL(origin);
+                        origin = url.getProtocol() + "://" + url.getHost() + (url.getPort() != -1 ? ":" + url.getPort() : "");
+                    }
+                }
+                
+                if (origin != null && !origin.isBlank()) {
+                    if (origin.endsWith("/")) {
+                        origin = origin.substring(0, origin.length() - 1);
+                    }
+                    if (origin.contains("dev.fitnest.az") || origin.contains("localhost")) {
+                         return origin + path; // support localhost and dev.fitnest.az dynamically
+                    }
+                }
+                
+                String host = request.getHeader("X-Forwarded-Host");
+                if (host == null || host.isBlank()) {
+                    host = request.getHeader("Host");
+                }
+                if (host != null && host.contains("dev-api.fitnest.az")) {
+                    return "https://dev.fitnest.az" + path;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not extract dynamic URL from request: {}", e.getMessage());
+        }
+        return null;
     }
 }

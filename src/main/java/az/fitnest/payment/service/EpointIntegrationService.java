@@ -116,27 +116,8 @@ public class EpointIntegrationService {
 
     @Transactional
     public EpointResponse executePay(EpointExecutePayRequest request, Long userId) {
-        String successRedirectUrl = request.successRedirectUrl();
-        String errorRedirectUrl = request.errorRedirectUrl();
-        if (successRedirectUrl == null) {
-            successRedirectUrl = epointProperties.getSuccessRedirectUrl();
-        }
-        if (errorRedirectUrl == null) {
-            errorRedirectUrl = epointProperties.getErrorRedirectUrl();
-        }
-        request = EpointExecutePayRequest.builder()
-                .publicKey(request.publicKey())
-                .language(request.language())
-                .orderId(request.orderId())
-                .amount(request.amount())
-                .currency(request.currency())
-                .description(request.description())
-                .resultUrl(request.resultUrl())
-                .successRedirectUrl(successRedirectUrl)
-                .errorRedirectUrl(errorRedirectUrl)
-                .cardId(request.cardId())
-                .isInstallment(request.isInstallment())
-                .build();
+        // successRedirectUrl / errorRedirectUrl are resolved dynamically in EpointService.fillPublicKey
+        // based on the incoming request Origin/Referer headers, so no manual override is needed here.
         String idempotencyKey = generateIdempotencyKey("execute-pay", request.orderId(), userId);
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
         if (cachedResponse.isPresent()) {
