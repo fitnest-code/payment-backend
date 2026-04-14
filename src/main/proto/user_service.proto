@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
+package az.fitnest.user;
+
+option java_multiple_files = true;
+option java_package = "az.fitnest.user.grpc";
+option java_outer_classname = "UserServiceProto";
+
+service UserService {
+  rpc GetUserById(GetUserByIdRequest) returns (UserResponse);
+  rpc UpdateUserProfile(UpdateUserProfileRequest) returns (UserResponse);
+  rpc UpdateProfileImage(UpdateProfileImageRequest) returns (UserResponse);
+  rpc UpdateSetupRequired(UpdateSetupRequiredRequest) returns (UserResponse);
+  rpc UpdateLanguage(UpdateLanguageRequest) returns (UserResponse);
+  rpc DeactivateUser(DeactivateUserRequest) returns (google.protobuf.Empty);
+  rpc UpdateSessionStatus(UpdateSessionStatusRequest) returns (UserResponse);
+  rpc RequestEmailChange(RequestEmailChangeRequest) returns (OtpSendResponseProto);
+  rpc ConfirmEmailChange(ConfirmEmailChangeRequest) returns (UserResponse);
+  rpc RequestMobileChange(RequestMobileChangeRequest) returns (OtpSendResponseProto);
+  rpc ConfirmMobileChange(ConfirmMobileChangeRequest) returns (UserResponse);
+}
+
+message GetUserByIdRequest {
+  int64 user_id = 1;
+}
+
+message UserResponse {
+  int64 user_id = 1;
+  string first_name = 2;
+  string last_name = 3;
+  string email = 4;
+  string mobile = 5;
+  string profile_image_url = 6;
+  bool setup_required = 7;
+  string language = 8;
+  string created_at = 9;
+  string status = 10;
+  bool account_locked = 11;
+  string session_status = 12;
+}
+
+message UpdateUserProfileRequest {
+  int64 user_id = 1;
+  string first_name = 2;
+  string last_name = 3;
+  string email = 4;
+  string mobile = 5;
+}
+
+message UpdateProfileImageRequest {
+  int64 user_id = 1;
+  string image_url = 2;
+}
+
+message UpdateSetupRequiredRequest {
+  int64 user_id = 1;
+  bool setup_required = 2;
+}
+
+message UpdateLanguageRequest {
+  int64 user_id = 1;
+  string language = 2;
+}
+
+message DeactivateUserRequest {
+  int64 user_id = 1;
+  string reason = 2;
+}
+
+message UpdateSessionStatusRequest {
+  int64 user_id = 1;
+  string session_status = 2;
+}
+
+message RequestEmailChangeRequest {
+  int64 user_id = 1;
+  string new_email = 2;
+}
+
+message ConfirmEmailChangeRequest {
+  int64 user_id = 1;
+  string otp_code = 2;
+  string otp_session_id = 3;
+}
+
+message OtpSendResponseProto {
+  string otp_session_id = 1;
+  int32 expires_in_seconds = 2;
+  int32 resend_available_in_seconds = 3;
+  string message = 4;
+}
+
+message RequestMobileChangeRequest {
+  int64 user_id = 1;
+  string new_mobile = 2;
+}
+
+message ConfirmMobileChangeRequest {
+  int64 user_id = 1;
+  string otp_code = 2;
+  string otp_session_id = 3;
+}
