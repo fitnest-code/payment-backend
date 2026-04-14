@@ -51,9 +51,10 @@ public class EpointHttpClient {
                 .slidingWindowSize(10)
                 .build();
         circuitBreaker = CircuitBreakerRegistry.of(cbConfig).circuitBreaker("epoint-http");
-        timeLimiter = TimeLimiter.of(TimeLimiterConfig.custom()
-                .timeoutDuration(Duration.ofSeconds(5))
-                .build());
+        TimeLimiterConfig tlConfig = TimeLimiterConfig.custom()
+                .timeoutDuration(Duration.ofSeconds(30))
+                .build();
+        timeLimiter = io.github.resilience4j.timelimiter.TimeLimiterRegistry.of(tlConfig).timeLimiter("epoint-http");
     }
 
     public EpointHttpClient(RestTemplate restTemplate, EpointSigner signer, EpointProperties properties, Retry retry, CircuitBreaker circuitBreaker, TimeLimiter timeLimiter) {
