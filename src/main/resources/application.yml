@@ -72,14 +72,14 @@ spring:
   # Redis
   data:
     redis:
-      host: ${SPRING_DATA_REDIS_HOST:redis.fitnest-development.svc.cluster.local}
+      host: ${SPRING_DATA_REDIS_HOST:redis.fitnest-production.svc.cluster.local}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       password: ${SPRING_DATA_REDIS_PASSWORD:}
       timeout: 2000ms
 
   # Kafka
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka-service.fitnest-development.svc.cluster.local:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka-service.fitnest-production.svc.cluster.local:9092}
     consumer:
       group-id: payment-group
       auto-offset-reset: earliest
@@ -140,7 +140,7 @@ epoint:
   public-key: ${EPOINT_PUBLIC_KEY:}
   private-key: ${EPOINT_PRIVATE_KEY:}
   base-url: ${EPOINT_BASE_URL:https://epoint.az/api/1}
-  result-url: ${EPOINT_RESULT_URL:https://dev-api.fitnest.az/payment/callback}
+  result-url: ${EPOINT_RESULT_URL:https://api.fitnest.az/payment/callback}
   success-redirect-url: ${EPOINT_SUCCESS_REDIRECT_URL:https://fitnest.az/payment/success}
   error-redirect-url: ${EPOINT_ERROR_REDIRECT_URL:https://fitnest.az/payment/error}
 
@@ -193,10 +193,10 @@ grpc:
   client:
     # ✅ Updated gRPC client from order-service to order-backend
     order-backend:
-      address: 'dns:///order-backend.fitnest-development.svc.cluster.local:9090'
+      address: 'dns:///order-backend.fitnest-production.svc.cluster.local:9090'
       negotiation-type: plaintext
     user-backend:
-      address: 'dns:///user-backend.fitnest-development.svc.cluster.local:9090'
+      address: 'dns:///user-backend.fitnest-production.svc.cluster.local:9090'
       negotiation-type: plaintext
 
 logging:

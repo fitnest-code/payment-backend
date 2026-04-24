@@ -417,16 +417,16 @@ public class EpointService {
                     if (baseURL.endsWith("/")) {
                         baseURL = baseURL.substring(0, baseURL.length() - 1);
                     }
-                    if (baseURL.contains("dev.fitnest.az") || baseURL.contains("localhost")) {
+                    if (baseURL.contains("fitnest.az") || baseURL.contains("localhost")) {
                          log.debug("[Redirection] Using base URL from Origin/Referer: {}", baseURL);
                          return baseURL + path;
                     }
                 }
                 
                 String targetHost = (forwardedHost != null && !forwardedHost.isBlank()) ? forwardedHost : hostHeader;
-                if (targetHost != null && targetHost.contains("dev-api.fitnest.az")) {
-                    log.debug("[Redirection] Detected dev-api.fitnest.az. Redirecting to dev.fitnest.az");
-                    return "https://dev.fitnest.az" + path;
+                if (targetHost != null && targetHost.contains("api.fitnest.az")) {
+                    log.debug("[Redirection] Detected api.fitnest.az. Redirecting to fitnest.az");
+                    return "https://fitnest.az" + path;
                 }
             }
         } catch (Exception e) {
