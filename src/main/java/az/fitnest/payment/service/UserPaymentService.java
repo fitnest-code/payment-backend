@@ -70,6 +70,42 @@ public class UserPaymentService {
                 .collect(Collectors.toList());
     }
 
+    public List<az.fitnest.payment.dto.admin.AdminUserPaymentHistoryResponse> getUserPaymentHistoryAdmin(Long userId) {
+        log.info("Admin: Fetching payment history for user: {}", userId);
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
+        
+        return paymentRepository.findAllByUserId(userId).stream()
+                .map(payment -> {
+                    String brand = CardBrandDetector.detectBrand(payment.getCardMask());
+                    if ("WIDGET_PAYMENT".equals(payment.getType()) && payment.getDescription() != null) {
+                        if (payment.getDescription().contains("device:iOS")) {
+                            brand = "Apple Pay";
+                        } else if (payment.getDescription().contains("device:Android")) {
+                            brand = "Google Pay";
+                        }
+                    }
+                    if (brand == null || brand.isEmpty()) brand = "N/A";
+
+                    String status = payment.getStatus();
+                    if ("SUCCESS".equalsIgnoreCase(status)) status = "Uğurlu";
+                    else if ("FAILED".equalsIgnoreCase(status)) status = "Uğursuz";
+                    else if ("PENDING".equalsIgnoreCase(status)) status = "Gözləmədə";
+                    else if (status != null) {
+                        status = status.substring(0, 1).toUpperCase() + status.substring(1).toLowerCase();
+                    }
+
+                    return az.fitnest.payment.dto.admin.AdminUserPaymentHistoryResponse.builder()
+                            .transactionId(payment.getTransactionId())
+                            .dateTime(payment.getCreatedDate() != null ? payment.getCreatedDate().format(formatter) : "N/A")
+                            .amount(payment.getAmount() + " " + (payment.getCurrency() != null ? payment.getCurrency() : "AZN"))
+                            .paymentMethod(brand)
+                            .status(status)
+                            .build();
+                })
+                .sorted((a, b) -> b.dateTime().compareTo(a.dateTime())) // Newest first
+                .collect(Collectors.toList());
+    }
+
     public PaymentResponse getPaymentById(Long paymentId, Long userId) {
         log.info("Fetching payment with id: {} for user: {}", paymentId, userId);
         Payment payment = paymentRepository.findById(paymentId)
