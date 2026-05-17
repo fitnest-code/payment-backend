@@ -21,7 +21,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/admin/payments")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+@PreAuthorize("hasRole('ADMIN')")
 @Tag(name = "Ödənişlər (Admin)", description = "Ödəniş məlumatlarını idarə etmək üçün administrativ ucluqlar")
 @SecurityRequirement(name = "bearerAuth")
 public class PaymentAdminController {
@@ -128,15 +128,15 @@ public class PaymentAdminController {
                     description = "Uğurlu cavab",
                     content = @Content(
                             mediaType = "application/json",
-                            array = @ArraySchema(schema = @Schema(implementation = PaymentResponse.class))
+                            array = @ArraySchema(schema = @Schema(implementation = az.fitnest.payment.dto.admin.AdminUserPaymentHistoryResponse.class))
                     )
             ),
             @ApiResponse(responseCode = "401", description = "Autentifikasiya tələb olunur"),
             @ApiResponse(responseCode = "403", description = "Admin icazəsi tələb olunur")
     })
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<List<PaymentResponse>> getUserPayments(
+    @GetMapping("/user/{userId}/history")
+    public ResponseEntity<List<az.fitnest.payment.dto.admin.AdminUserPaymentHistoryResponse>> getUserPayments(
             @Parameter(description = "İstifadəçi ID-si") @PathVariable Long userId) {
-        return ResponseEntity.ok(userPaymentService.getUserPayments(userId));
+        return ResponseEntity.ok(userPaymentService.getUserPaymentHistoryAdmin(userId));
     }
 }
