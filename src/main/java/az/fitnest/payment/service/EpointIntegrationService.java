@@ -431,6 +431,15 @@ public class EpointIntegrationService {
             payment.setAutoPaymentEnabled(autoPaymentEnabled != null ? autoPaymentEnabled : false);
             paymentRepository.save(payment);
             log.info("[WidgetUrl] (SERVICE) Pending payment saved. orderId={}, transactionId={}", orderId, response.transaction());
+
+            return EpointResponse.builder()
+                    .status(response.status())
+                    .transaction(response.transaction() != null ? response.transaction() : null)
+                    .orderId(orderId)
+                    .widgetUrl(response.widgetUrl())
+                    .message(response.message())
+                    .code(response.code())
+                    .build();
         }
 
         return response;

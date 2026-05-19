@@ -87,10 +87,24 @@ public class EpointService {
     }
 
     public EpointResponse createWidgetUrl(EpointWidgetRequest request) {
-        if (request.getPublicKey() == null) {
-            request = request.setPublicKey(properties.getPublicKey());
-        }
+        request = fillPublicKey(request);
         return httpClient.postSigned("/token/widget", request);
+    }
+
+    private EpointWidgetRequest fillPublicKey(EpointWidgetRequest request) {
+        if (request.publicKey() == null) {
+            return EpointWidgetRequest.builder()
+                    .publicKey(properties.getPublicKey())
+                    .amount(request.amount())
+                    .currency(request.currency())
+                    .orderId(request.orderId())
+                    .description(request.description())
+                    .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
+                    .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
+                    .autoPaymentEnabled(request.autoPaymentEnabled())
+                    .build();
+        }
+        return request;
     }
 
     private EpointPaymentRequest fillPublicKey(EpointPaymentRequest request) {
