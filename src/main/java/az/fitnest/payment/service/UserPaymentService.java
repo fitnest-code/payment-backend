@@ -125,7 +125,8 @@ public class UserPaymentService {
     public PaymentResponse getPaymentByTransactionId(String transactionId, Long userId) {
         log.info("Fetching payment with transaction id: {} for user: {}", transactionId, userId);
         Payment payment = paymentRepository.findByTransactionId(transactionId)
-                .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction id: " + transactionId));
+                .or(() -> paymentRepository.findByOrderId(transactionId))
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction/order id: " + transactionId));
         verifyOwnership(payment, userId);
         return mapToPaymentResponse(payment);
     }
