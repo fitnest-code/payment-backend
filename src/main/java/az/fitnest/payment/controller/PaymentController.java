@@ -15,7 +15,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.core.Authentication;
 import az.fitnest.payment.dto.epoint.*;
+
 import java.util.Map;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -86,10 +88,10 @@ public class PaymentController {
                 }
             }
             EpointResponse response = integrationService.initiatePayment(
-                userId,
-                currencyRequest.packageId(),
-                currencyRequest.optionId(),
-                currencyRequest.autoPaymentEnabled()
+                    userId,
+                    currencyRequest.packageId(),
+                    currencyRequest.optionId(),
+                    currencyRequest.autoPaymentEnabled()
             );
             log.info("[PaymentInit] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), response.status(), response.message());
             return ResponseEntity.ok(response);
@@ -106,16 +108,16 @@ public class PaymentController {
         Long userId = (Long) authentication.getPrincipal();
         EpointResponse response = integrationService.cardRegistration(userId);
         log.info("Card registration result: status={}, code={}, message={}, cardId={}, cardMask={}, cardName={}, bankTransaction={}, bankResponse={}, operationCode={}, rrn={}",
-            response.status(),
-            response.code(),
-            response.message(),
-            response.cardId(),
-            response.cardMask(),
-            response.cardName(),
-            response.bankTransaction(),
-            response.bankResponse(),
-            response.operationCode(),
-            response.rrn()
+                response.status(),
+                response.code(),
+                response.message(),
+                response.cardId(),
+                response.cardMask(),
+                response.cardName(),
+                response.bankTransaction(),
+                response.bankResponse(),
+                response.operationCode(),
+                response.rrn()
         );
         return ResponseEntity.ok(response);
     }
@@ -276,4 +278,10 @@ public class PaymentController {
         }
     }
 
+    @Operation(summary = "Callback probe", description = "Epoint-in GET yoxlaması üçün")
+    @GetMapping(value = {"/result", "/callback", "/epoint/callback"})
+    public ResponseEntity<String> handleCallbackGet() {
+        log.info("[Callback] GET probe received — returning OK");
+        return ResponseEntity.ok("OK");
+    }
 }
