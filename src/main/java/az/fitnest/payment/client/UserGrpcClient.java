@@ -33,4 +33,20 @@ public class UserGrpcClient {
             return "az";
         }
     }
+
+    public UserResponse getUser(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        try {
+            log.info("[gRPC] Fetching user details for userId: {}", userId);
+            GetUserByIdRequest request = GetUserByIdRequest.newBuilder()
+                    .setUserId(userId)
+                    .build();
+            return stub.getUserById(request);
+        } catch (Exception e) {
+            log.error("[gRPC] Error fetching user details for userId: {}. Error: {}", userId, e.getMessage());
+            return null;
+        }
+    }
 }

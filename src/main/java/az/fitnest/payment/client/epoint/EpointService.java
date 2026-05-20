@@ -441,6 +441,9 @@ public class EpointService {
                 if (targetHost != null && targetHost.contains("api.fitnest.az")) {
                     log.debug("[Redirection] Detected api.fitnest.az. Redirecting to fitnest.az");
                     return "https://fitnest.az" + path;
+                } else if (targetHost != null && targetHost.contains("dev-api.fitnest.az")) {
+                    log.debug("[Redirection] Detected dev-api.fitnest.az. Redirecting to dev.fitnest.az");
+                    return "https://dev.fitnest.az" + path;
                 }
             }
         } catch (Exception e) {
