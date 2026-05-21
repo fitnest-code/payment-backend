@@ -10,6 +10,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URL;
 
@@ -22,13 +23,14 @@ public class EpointService {
     private final EpointHttpClient httpClient;
     private final EpointProperties properties;
     private final UserGrpcClient userGrpcClient;
+    private final StringRedisTemplate redisTemplate;
 
     // ─────────────────────────────────────────────────────────────────
     // Public API metodları
     // ─────────────────────────────────────────────────────────────────
 
     public EpointResponse createPayment(EpointPaymentRequest request) {
-        request = fillPublicKey(request);
+        request = fillPublicKey(request, request.orderId());
         return httpClient.postSigned("/request", request);
     }
 
@@ -40,26 +42,26 @@ public class EpointService {
         return httpClient.postSigned("/get-status", request);
     }
 
-    public EpointResponse cardRegistration(EpointCardRegistrationRequest request) {
+    public EpointResponse cardRegistration(EpointCardRegistrationRequest request, String registrationId) {
         log.info("EpointService.cardRegistration: request.publicKey={}, properties.publicKey={}, env.EPOINT_PUBLIC_KEY={}",
                 request.publicKey(), properties.getPublicKey(), System.getenv("EPOINT_PUBLIC_KEY"));
-        request = fillPublicKey(request);
+        request = fillPublicKey(request, registrationId);
         log.info("EpointService.cardRegistration after fillPublicKey: request.publicKey={}", request.publicKey());
         return httpClient.postSigned("/card-registration", request);
     }
 
     public EpointResponse executePay(EpointExecutePayRequest request) {
-        request = fillPublicKey(request);
+        request = fillPublicKey(request, request.orderId());
         return httpClient.postSigned("/execute-pay", request);
     }
 
     public EpointResponse cardRegistrationWithPay(EpointPaymentRequest request) {
-        request = fillPublicKey(request);
+        request = fillPublicKey(request, request.orderId());
         return httpClient.postSigned("/card-registration-with-pay", request);
     }
 
     public EpointResponse refundRequest(EpointExecutePayRequest request) {
-        request = fillPublicKey(request);
+        request = fillPublicKey(request, request.orderId());
         return httpClient.postSigned("/refund-request", request);
     }
 
@@ -85,22 +87,22 @@ public class EpointService {
     }
 
     public EpointResponse splitRequest(EpointSplitPaymentRequest request) {
-        request = fillPublicKey(request);
+        request = fillPublicKey(request, request.orderId());
         return httpClient.postSigned("/split-request", request);
     }
 
     public EpointResponse splitExecutePay(EpointSplitExecutePayRequest request) {
-        request = fillPublicKey(request);
+        request = fillPublicKey(request, request.orderId());
         return httpClient.postSigned("/split-execute-pay", request);
     }
 
     public EpointResponse splitCardRegistrationWithPay(EpointSplitPaymentRequest request) {
-        request = fillPublicKey(request);
+        request = fillPublicKey(request, request.orderId());
         return httpClient.postSigned("/split-card-registration-with-pay", request);
     }
 
     public EpointResponse preAuthRequest(EpointPaymentRequest request) {
-        request = fillPublicKey(request);
+        request = fillPublicKey(request, request.orderId());
         return httpClient.postSigned("/pre-auth-request", request);
     }
 
@@ -110,7 +112,7 @@ public class EpointService {
     }
 
     public EpointResponse createWidgetUrl(EpointWidgetRequest request) {
-        request = fillPublicKey(request);
+        request = fillPublicKey(request, request.orderId());
         return httpClient.postSigned("/token/widget", request);
     }
 
@@ -191,7 +193,7 @@ public class EpointService {
      * bank cavabı hələ məlum deyil. Kod yalnız callback-dən sonra bilinir.
      * Frontend orderId ilə /api/v1/payments/{orderId}/status sorğusu edib kodu oxuya bilər.
      */
-    private EpointPaymentRequest fillPublicKey(EpointPaymentRequest request) {
+    private EpointPaymentRequest fillPublicKey(EpointPaymentRequest request, String key) {
         if (request.publicKey() != null) {
             return request;
         }
@@ -205,8 +207,8 @@ public class EpointService {
                 // result_url — həmişə sabit, bizim server-side callback endpoint
                 .resultUrl(properties.getResultUrl())
                 // success/error — istifadəçi brauzeri üçün, dil prefiksi ilə
-                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
-                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
+                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl(), key))
+                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl(), key))
                 .isInstallment(request.isInstallment() != null ? request.isInstallment() : 0)
                 .refund(request.refund() != null ? request.refund() : 0)
                 .otherAttr(request.otherAttr())
@@ -214,7 +216,7 @@ public class EpointService {
                 .build();
     }
 
-    private EpointCardRegistrationRequest fillPublicKey(EpointCardRegistrationRequest request) {
+    private EpointCardRegistrationRequest fillPublicKey(EpointCardRegistrationRequest request, String key) {
         if (request.publicKey() != null) {
             return request;
         }
@@ -224,12 +226,12 @@ public class EpointService {
                 .refund(request.refund())
                 .description(request.description())
                 .resultUrl(properties.getResultUrl())
-                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
-                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
+                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl(), key))
+                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl(), key))
                 .build();
     }
 
-    private EpointExecutePayRequest fillPublicKey(EpointExecutePayRequest request) {
+    private EpointExecutePayRequest fillPublicKey(EpointExecutePayRequest request, String key) {
         if (request.publicKey() != null) {
             return request;
         }
@@ -241,15 +243,15 @@ public class EpointService {
                 .currency(request.currency())
                 .description(request.description())
                 .resultUrl(properties.getResultUrl())
-                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
-                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
+                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl(), key))
+                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl(), key))
                 .cardId(request.cardId())
                 .isInstallment(request.isInstallment() != null ? request.isInstallment() : 0)
                 .autoPaymentEnabled(request.autoPaymentEnabled())
                 .build();
     }
 
-    private EpointSplitPaymentRequest fillPublicKey(EpointSplitPaymentRequest request) {
+    private EpointSplitPaymentRequest fillPublicKey(EpointSplitPaymentRequest request, String key) {
         if (request.publicKey() != null) {
             return request;
         }
@@ -261,14 +263,14 @@ public class EpointService {
                 .currency(request.currency())
                 .description(request.description())
                 .resultUrl(properties.getResultUrl())
-                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
-                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
+                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl(), key))
+                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl(), key))
                 .splitUser(request.splitUser())
                 .splitAmount(request.splitAmount())
                 .build();
     }
 
-    private EpointSplitExecutePayRequest fillPublicKey(EpointSplitExecutePayRequest request) {
+    private EpointSplitExecutePayRequest fillPublicKey(EpointSplitExecutePayRequest request, String key) {
         if (request.publicKey() != null) {
             return request;
         }
@@ -280,8 +282,8 @@ public class EpointService {
                 .currency(request.currency())
                 .description(request.description())
                 .resultUrl(properties.getResultUrl())
-                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
-                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
+                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl(), key))
+                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl(), key))
                 .splitUser(request.splitUser())
                 .splitAmount(request.splitAmount())
                 .cardId(request.cardId())
@@ -299,7 +301,7 @@ public class EpointService {
                 .build();
     }
 
-    private EpointWidgetRequest fillPublicKey(EpointWidgetRequest request) {
+    private EpointWidgetRequest fillPublicKey(EpointWidgetRequest request, String key) {
         if (request.publicKey() != null) {
             return request;
         }
@@ -309,8 +311,8 @@ public class EpointService {
                 .currency(request.currency())
                 .orderId(request.orderId())
                 .description(request.description())
-                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl()))
-                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl()))
+                .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl(), key))
+                .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl(), key))
                 .autoPaymentEnabled(request.autoPaymentEnabled())
                 .build();
     }
@@ -395,6 +397,21 @@ public class EpointService {
     // Redirect URL həlli — dil prefiksi + Origin/Referer header-dən
     // ─────────────────────────────────────────────────────────────────
 
+    public String getApiBaseUrl() {
+        try {
+            String resultUrl = properties.getResultUrl();
+            if (resultUrl != null && !resultUrl.isBlank()) {
+                URL url = new URL(resultUrl);
+                String protocol = url.getProtocol();
+                String authority = url.getAuthority();
+                return protocol + "://" + authority;
+            }
+        } catch (Exception e) {
+            log.error("[Redirection] Failed to parse resultUrl", e);
+        }
+        return "";
+    }
+
     /**
      * Success redirect URL-i dinamik həll edir.
      * Əgər request-də açıq URL verilib onu qaytarır.
@@ -402,34 +419,63 @@ public class EpointService {
      * istifadəçinin dilinə uyğun path qurur.
      * Heç biri yoxdursa — application.yml-dakı default qaytarılır.
      */
-    private String getDynamicSuccessUrl(String explicitUrl) {
-        if (explicitUrl != null) return explicitUrl;
-        Long userId = getCurrentUserId();
-        String lang = resolveLanguage(userId);
-        String path = "/" + lang + "/payment/success";
-        String dynamic = extractUrlFromRequest(path);
-        String finalUrl = dynamic != null ? dynamic : properties.getSuccessRedirectUrl();
-        log.info("[Redirection] Resolved success URL: {} (userId: {}, lang: {})", finalUrl, userId, lang);
-        return finalUrl;
+    private String getDynamicSuccessUrl(String explicitUrl, String key) {
+        String targetUrl = explicitUrl;
+        if (targetUrl == null) {
+            Long userId = getCurrentUserId();
+            String lang = resolveLanguage(userId);
+            String path = "/" + lang + "/payment/success";
+            String dynamic = extractUrlFromRequest(path);
+            targetUrl = dynamic != null ? dynamic : properties.getSuccessRedirectUrl();
+            log.info("[Redirection] Resolved target success URL: {} (userId: {}, lang: {})", targetUrl, userId, lang);
+        }
+
+        if (key != null && !key.isBlank()) {
+            String redisKey = "payment-redirect:success:" + key;
+            try {
+                redisTemplate.opsForValue().set(redisKey, targetUrl, 1, java.util.concurrent.TimeUnit.HOURS);
+                log.info("[Redirection] Cached success URL under key: {}", redisKey);
+            } catch (Exception e) {
+                log.error("[Redirection] Failed to cache success URL in Redis", e);
+            }
+
+            String apiBaseUrl = getApiBaseUrl();
+            if (!apiBaseUrl.isBlank()) {
+                return apiBaseUrl + "/payment/redirect/success/" + key;
+            }
+        }
+        return targetUrl;
     }
 
     /**
      * Error redirect URL-i dinamik həll edir.
-     * fillPublicKey zamanı bank kodu bilinmir — buna görə kod əlavə edilmir.
-     * Base URL: https://fitnest.az/payment/error
-     *
-     * Kod əlavə etmək lazım olduqda EpointProperties.getErrorRedirectUrlWithCode(code)
-     * metodundan istifadə et — o, callback-dən sonra çağırılmalıdır.
      */
-    private String getDynamicErrorUrl(String explicitUrl) {
-        if (explicitUrl != null) return explicitUrl;
-        Long userId = getCurrentUserId();
-        String lang = resolveLanguage(userId);
-        String path = "/" + lang + "/payment/error";
-        String dynamic = extractUrlFromRequest(path);
-        String finalUrl = dynamic != null ? dynamic : properties.getErrorRedirectUrl();
-        log.info("[Redirection] Resolved error URL: {} (userId: {}, lang: {})", finalUrl, userId, lang);
-        return finalUrl;
+    private String getDynamicErrorUrl(String explicitUrl, String key) {
+        String targetUrl = explicitUrl;
+        if (targetUrl == null) {
+            Long userId = getCurrentUserId();
+            String lang = resolveLanguage(userId);
+            String path = "/" + lang + "/payment/error";
+            String dynamic = extractUrlFromRequest(path);
+            targetUrl = dynamic != null ? dynamic : properties.getErrorRedirectUrl();
+            log.info("[Redirection] Resolved target error URL: {} (userId: {}, lang: {})", targetUrl, userId, lang);
+        }
+
+        if (key != null && !key.isBlank()) {
+            String redisKey = "payment-redirect:error:" + key;
+            try {
+                redisTemplate.opsForValue().set(redisKey, targetUrl, 1, java.util.concurrent.TimeUnit.HOURS);
+                log.info("[Redirection] Cached error URL under key: {}", redisKey);
+            } catch (Exception e) {
+                log.error("[Redirection] Failed to cache error URL in Redis", e);
+            }
+
+            String apiBaseUrl = getApiBaseUrl();
+            if (!apiBaseUrl.isBlank()) {
+                return apiBaseUrl + "/payment/redirect/error/" + key;
+            }
+        }
+        return targetUrl;
     }
 
     /**

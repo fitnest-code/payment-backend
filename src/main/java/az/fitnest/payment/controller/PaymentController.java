@@ -278,6 +278,40 @@ public class PaymentController {
         }
     }
 
+    @Operation(summary = "Uğurlu ödənişdən sonra yönləndirmə", description = "İstifadəçini Epoint-dən uğurlu səhifəsinə yönləndirir")
+    @GetMapping("/redirect/success/{id}")
+    public ResponseEntity<Void> redirectSuccess(@PathVariable("id") String id) {
+        log.info("[Redirection] Redirecting success for id: {}", id);
+        try {
+            String targetUrl = integrationService.getSuccessRedirectUrl(id);
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(java.net.URI.create(targetUrl))
+                    .build();
+        } catch (Exception e) {
+            log.error("[Redirection] Error resolving success redirect URL for id: {}", id, e);
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(java.net.URI.create(integrationService.getSuccessRedirectUrl()))
+                    .build();
+        }
+    }
+
+    @Operation(summary = "Uğursuz ödənişdən sonra yönləndirmə", description = "İstifadəçini Epoint-dən uğursuz səhifəsinə yönləndirir")
+    @GetMapping("/redirect/error/{id}")
+    public ResponseEntity<Void> redirectError(@PathVariable("id") String id) {
+        log.info("[Redirection] Redirecting error for id: {}", id);
+        try {
+            String targetUrl = integrationService.getErrorRedirectUrl(id);
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(java.net.URI.create(targetUrl))
+                    .build();
+        } catch (Exception e) {
+            log.error("[Redirection] Error resolving error redirect URL for id: {}", id, e);
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(java.net.URI.create(integrationService.getErrorRedirectUrl()))
+                    .build();
+        }
+    }
+
     @Operation(summary = "Callback probe", description = "Epoint-in GET yoxlaması üçün")
     @GetMapping(value = {"/result", "/callback", "/epoint/callback"})
     public ResponseEntity<String> handleCallbackGet() {
