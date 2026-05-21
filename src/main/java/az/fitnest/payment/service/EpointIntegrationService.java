@@ -110,8 +110,17 @@ public class EpointIntegrationService {
             log.info("Returning cached card registration response for idempotency key: {}", idempotencyKey);
             return cachedResponse.get();
         }
-        EpointResponse response = epointService.cardRegistration(request);
-        log.info("Epoint cardRegistration response: status={}, message={}, cardId={}", response.status(), response.message(), response.cardId());
+        String registrationId = java.util.UUID.randomUUID().toString();
+        EpointResponse response = epointService.cardRegistration(request, registrationId);
+        log.info("Epoint cardRegistration response: status={}, message={}, cardId={}, transaction={}",
+                response.status(), response.message(), response.cardId(), response.transaction());
+        
+        if (response.transaction() != null && !response.transaction().isBlank()) {
+            String regTxKey = "registration-tx:" + registrationId;
+            redisTemplate.opsForValue().set(regTxKey, response.transaction(), 1, java.util.concurrent.TimeUnit.HOURS);
+            log.info("Cached registration transaction mapping: {} -> {}", regTxKey, response.transaction());
+        }
+
         if ("success".equalsIgnoreCase(response.status()) && response.cardId() != null) {
             String redisKey = "card-reg:" + response.cardId();
             redisTemplate.opsForValue().set(redisKey, String.valueOf(userId), 30, java.util.concurrent.TimeUnit.MINUTES);
@@ -690,8 +699,112 @@ public class EpointIntegrationService {
         return epointProperties.getSuccessRedirectUrl();
     }
 
+    public String getSuccessRedirectUrl(String id) {
+        String redisKey = "payment-redirect:success:" + id;
+        String targetUrl = redisTemplate.opsForValue().get(redisKey);
+        if (targetUrl != null) {
+            redisTemplate.delete(redisKey);
+            log.info("[Redirection] Found cached success URL for key {}: {}", redisKey, targetUrl);
+            return targetUrl;
+        }
+        log.warn("[Redirection] No cached success URL for key {}, falling back to default", redisKey);
+        return epointProperties.getSuccessRedirectUrl();
+    }
+
     public String getErrorRedirectUrl() {
         return epointProperties.getErrorRedirectUrl();
+    }
+
+    public String getErrorRedirectUrl(String id) {
+        String redisKey = "payment-redirect:error:" + id;
+        String targetUrl = redisTemplate.opsForValue().get(redisKey);
+        if (targetUrl == null) {
+            targetUrl = epointProperties.getErrorRedirectUrl();
+        } else {
+            redisTemplate.delete(redisKey);
+        }
+
+        String transactionId = null;
+        String bankCode = null;
+
+        // Try to find in database by orderId or transactionId
+        Optional<Payment> optionalPayment = paymentRepository.findByOrderId(id);
+        if (optionalPayment.isEmpty()) {
+            optionalPayment = paymentRepository.findByTransactionId(id);
+        }
+
+        if (optionalPayment.isPresent()) {
+            Payment payment = optionalPayment.get();
+            transactionId = payment.getTransactionId();
+            bankCode = extractBankCode(payment.getBankResponse(), payment.getCode());
+        }
+
+        // If not found in DB or if it's a card registration
+        if (transactionId == null) {
+            String regTxKey = "registration-tx:" + id;
+            transactionId = redisTemplate.opsForValue().get(regTxKey);
+            if (transactionId != null) {
+                redisTemplate.delete(regTxKey);
+            }
+        }
+
+        // If we have a transaction ID but don't have a bank code yet (or need live check)
+        if (bankCode == null && transactionId != null && !transactionId.isBlank()) {
+            try {
+                log.info("[Redirection] Querying Epoint getStatus for transactionId: {}", transactionId);
+                EpointResponse statusResponse = epointService.getStatus(transactionId);
+                if (statusResponse != null) {
+                    bankCode = extractBankCode(statusResponse.bankResponse(), statusResponse.code());
+                    log.info("[Redirection] Epoint status query returned bankCode: {}", bankCode);
+                    
+                    // Also update payment in DB if it exists
+                    if (optionalPayment.isPresent()) {
+                        Payment payment = optionalPayment.get();
+                        updatePaymentFromEpointResponse(payment, statusResponse);
+                        paymentRepository.save(payment);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("[Redirection] Failed to query Epoint getStatus for transactionId: {}", transactionId, e);
+            }
+        }
+
+        String azMessage = az.fitnest.payment.util.EpointBankResponseCodes.getMessage(bankCode);
+        log.info("[Redirection] Resolved bankCode: {} -> {}", bankCode, azMessage);
+
+        try {
+            String encodedReason = java.net.URLEncoder.encode(azMessage, java.nio.charset.StandardCharsets.UTF_8.toString());
+            if (targetUrl.contains("?")) {
+                targetUrl = targetUrl + "&reason=" + encodedReason;
+            } else {
+                targetUrl = targetUrl + "?reason=" + encodedReason;
+            }
+        } catch (Exception e) {
+            log.error("[Redirection] Failed to url-encode error reason: {}", azMessage, e);
+        }
+
+        log.info("[Redirection] Final error redirect URL: {}", targetUrl);
+        return targetUrl;
+    }
+
+    private String extractBankCode(String bankResponseRaw, String code) {
+        if (bankResponseRaw != null && !bankResponseRaw.isBlank()) {
+            String[] lines = bankResponseRaw.split("[\\r\\n]+");
+            for (String line : lines) {
+                int idx = line.indexOf(":");
+                if (idx > 0) {
+                    String key = line.substring(0, idx).trim();
+                    String value = line.substring(idx + 1).trim();
+                    if ("RESP_CODE".equalsIgnoreCase(key)) {
+                        return value;
+                    }
+                }
+            }
+        }
+        if (code != null && !code.isBlank()) {
+            return code;
+        }
+        return null;
     }
 
     public String getPublicKey() {

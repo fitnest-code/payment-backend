@@ -44,6 +44,7 @@ public class SecurityConfig {
                         .requestMatchers("/epoint/result").permitAll()
                         .requestMatchers("/payment/callback").permitAll()
                         .requestMatchers("/payment/epoint/callback").permitAll()
+                        .requestMatchers("/payment/redirect/**").permitAll()
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/swagger-ui.html").permitAll()
