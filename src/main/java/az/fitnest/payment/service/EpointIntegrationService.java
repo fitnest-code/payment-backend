@@ -1009,6 +1009,7 @@ public class EpointIntegrationService {
                 .paymentToken(base64Token)
                 .billingContact(contact)
                 .currency(payment.getCurrency() != null ? payment.getCurrency() : "AZN")
+                .language("az")
                 .build();
 
         // 4. Send signed request to Epoint /token/payment
@@ -1178,6 +1179,7 @@ public class EpointIntegrationService {
                 .paymentToken(base64Token)
                 .billingContact(contact)
                 .currency(payment.getCurrency() != null ? payment.getCurrency() : "AZN")
+                .language("az")
                 .build();
 
         // 4. Send signed request to Epoint /token/payment
