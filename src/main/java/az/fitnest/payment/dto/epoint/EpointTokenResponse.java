@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 public record EpointTokenResponse(
     String status,
+    Object id,
     String transaction,
     String message,
     String code,
@@ -14,6 +15,9 @@ public record EpointTokenResponse(
     ) {}
 
     public String getPaymentId() {
+        if (id != null) {
+            return String.valueOf(id);
+        }
         if (payment != null && payment.id() != null) {
             return payment.id();
         }

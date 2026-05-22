@@ -904,16 +904,19 @@ public class EpointIntegrationService {
                 .publicKey(epointProperties.getPublicKey())
                 .amount(amount)
                 .currency(currency != null ? currency : "AZN")
+                .language("az")
                 .orderId(orderId)
                 .description(description)
                 .build();
 
-        // Call Epoint's /token endpoint using the overloaded generic postSigned
-        EpointTokenResponse tokenResponse = httpClient.postSigned("/token", tokenRequest, EpointTokenResponse.class);
-        log.info("[GooglePayCreate] (SERVICE) Epoint token response: status={}, transaction={}, message={}",
-                tokenResponse.status(), tokenResponse.transaction(), tokenResponse.message());
+        // Call Epoint's /token/payment endpoint using the overloaded generic postSigned
+        EpointTokenResponse tokenResponse = httpClient.postSigned("/token/payment", tokenRequest, EpointTokenResponse.class);
+        log.info("[GooglePayCreate] (SERVICE) Epoint token response: status={}, transaction={}, id={}, message={}",
+                tokenResponse.status(), tokenResponse.transaction(), tokenResponse.id(), tokenResponse.message());
 
-        if (!"success".equalsIgnoreCase(tokenResponse.status()) || tokenResponse.getPaymentId() == null) {
+        boolean isSuccess = "success".equalsIgnoreCase(tokenResponse.status())
+                || (tokenResponse.status() == null && tokenResponse.getPaymentId() != null);
+        if (!isSuccess) {
             log.error("[GooglePayCreate] Failed to create payment token. Status: {}, Message: {}", tokenResponse.status(), tokenResponse.message());
             throw new RuntimeException("Epoint token creation failed: " + tokenResponse.message());
         }
