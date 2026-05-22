@@ -11,7 +11,8 @@ public record EpointTokenPaymentRequest(
     @JsonProperty("payment_token")
     String paymentToken,
     @JsonProperty("billing_contact")
-    BillingContact billingContact
+    BillingContact billingContact,
+    String currency
 ) {
     public record BillingContact(
         String email,
