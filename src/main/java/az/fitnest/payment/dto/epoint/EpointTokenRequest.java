@@ -9,6 +9,7 @@ public record EpointTokenRequest(
     String publicKey,
     Double amount,
     String currency,
+    String language,
     @JsonProperty("order_id")
     String orderId,
     String description
