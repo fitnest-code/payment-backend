@@ -7,10 +7,11 @@ import lombok.Builder;
 public record EpointTokenPaymentRequest(
     @JsonProperty("public_key")
     String publicKey,
-    String transaction,
-    @JsonProperty("payment_token")
-    String paymentToken,
-    @JsonProperty("billing_contact")
+    @JsonProperty("id")
+    String id,
+    @JsonProperty("token")
+    String token,
+    @JsonProperty("billingContact")
     BillingContact billingContact,
     String currency,
     String language

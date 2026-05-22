@@ -1002,18 +1002,18 @@ public class EpointIntegrationService {
         // 2. Base64 encode the Google Pay token string
         String base64Token = java.util.Base64.getEncoder().encodeToString(request.token().getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-        // 3. Prepare payload for Epoint /token/payment endpoint
+        // 3. Prepare payload for Epoint /token/google/pay endpoint
         EpointTokenPaymentRequest epointReq = EpointTokenPaymentRequest.builder()
                 .publicKey(epointProperties.getPublicKey())
-                .transaction(request.paymentId())
-                .paymentToken(base64Token)
+                .id(request.paymentId())
+                .token(base64Token)
                 .billingContact(contact)
                 .currency(payment.getCurrency() != null ? payment.getCurrency() : "AZN")
                 .language("az")
                 .build();
 
-        // 4. Send signed request to Epoint /token/payment
-        EpointResponse response = httpClient.postSigned("/token/payment", epointReq);
+        // 4. Send signed request to Epoint /token/google/pay
+        EpointResponse response = httpClient.postSigned("/token/google/pay", epointReq);
         log.info("[GooglePaySubmit] (SERVICE) Epoint response: status={}, transaction={}, redirectUrl={}",
                 response.status(), response.transaction(), response.redirectUrl());
 
@@ -1172,18 +1172,18 @@ public class EpointIntegrationService {
         // 2. Base64 encode the Apple Pay token string
         String base64Token = java.util.Base64.getEncoder().encodeToString(request.token().getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-        // 3. Prepare payload for Epoint /token/payment endpoint
+        // 3. Prepare payload for Epoint /token/apple/pay endpoint
         EpointTokenPaymentRequest epointReq = EpointTokenPaymentRequest.builder()
                 .publicKey(epointProperties.getPublicKey())
-                .transaction(request.paymentId())
-                .paymentToken(base64Token)
+                .id(request.paymentId())
+                .token(base64Token)
                 .billingContact(contact)
                 .currency(payment.getCurrency() != null ? payment.getCurrency() : "AZN")
                 .language("az")
                 .build();
 
-        // 4. Send signed request to Epoint /token/payment
-        EpointResponse response = httpClient.postSigned("/token/payment", epointReq);
+        // 4. Send signed request to Epoint /token/apple/pay
+        EpointResponse response = httpClient.postSigned("/token/apple/pay", epointReq);
         log.info("[ApplePaySubmit] (SERVICE) Epoint response: status={}, transaction={}, redirectUrl={}",
                 response.status(), response.transaction(), response.redirectUrl());
 
@@ -1215,5 +1215,14 @@ public class EpointIntegrationService {
 
             return new ApplePaySubmitResponse("error", null);
         }
+    }
+
+    public Object getApplePaySession(String origin) {
+        log.info("[ApplePaySession] Fetching session from Epoint for origin={}", origin);
+        EpointAppleSessionRequest sessionRequest = EpointAppleSessionRequest.builder()
+                .publicKey(epointProperties.getPublicKey())
+                .origin(origin)
+                .build();
+        return httpClient.postSigned("/token/apple/session", sessionRequest, Object.class);
     }
 }
