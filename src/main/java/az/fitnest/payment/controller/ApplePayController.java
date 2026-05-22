@@ -94,5 +94,43 @@ public class ApplePayController {
         }
     }
 
+    @Operation(summary = "Apple Pay Merchant Session", description = "Apple Pay merchant session məlumatlarını əldə edir.")
+    @PostMapping("/session")
+    public ResponseEntity<?> getSession(
+            @RequestHeader(value = "Origin", required = false) String originHeader,
+            @RequestBody(required = false) ApplePaySessionRequest request,
+            @AuthenticationPrincipal Principal user) {
+        Long userId = UserContext.getCurrentUserId();
+        log.info("[ApplePaySession] (CONTROLLER ENTRY) userId={}, originHeader={}", userId, originHeader);
+
+        if (userId == null) {
+            log.warn("[ApplePaySession] Unauthorized: User ID not found");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        String origin = originHeader;
+        if (origin == null || origin.isBlank()) {
+            if (request != null) {
+                origin = request.origin();
+            }
+        }
+
+        if (origin == null || origin.isBlank()) {
+            log.warn("[ApplePaySession] Bad request: origin is empty");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse("Origin domain is required"));
+        }
+
+        try {
+            Object session = integrationService.getApplePaySession(origin);
+            log.info("[ApplePaySession] (CONTROLLER EXIT) successfully retrieved session for origin={}", origin);
+            return ResponseEntity.ok(session);
+        } catch (Exception e) {
+            log.error("[ApplePaySession] Error retrieving Apple Pay session", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Internal server error: " + e.getMessage()));
+        }
+    }
+
     private record ErrorResponse(String message) {}
 }
