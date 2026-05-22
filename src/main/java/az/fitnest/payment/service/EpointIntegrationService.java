@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Optional;
 import az.fitnest.payment.dto.common.GooglePaySubmitRequest;
 import az.fitnest.payment.dto.common.GooglePaySubmitResponse;
+import az.fitnest.payment.dto.common.ApplePaySubmitRequest;
+import az.fitnest.payment.dto.common.ApplePaySubmitResponse;
 import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.client.epoint.EpointHttpClient;
 import az.fitnest.payment.client.UserSubscriptionGrpcClient;
@@ -1040,6 +1042,174 @@ public class EpointIntegrationService {
             paymentRepository.save(payment);
 
             return new GooglePaySubmitResponse("error", null);
+        }
+    }
+
+    @Transactional
+    public EpointTokenResponse createApplePayPayment(Long userId, Long packageId, Long optionId) {
+        log.info("[ApplePayCreate] (SERVICE) userId={}, packageId={}, optionId={}", userId, packageId, optionId);
+
+        // Fetch pricing via gRPC client
+        var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+        Double amount = priceCurrency.amount;
+        String currency = priceCurrency.currency;
+        validatePaymentRequest(amount, currency);
+
+        String orderId = java.util.UUID.randomUUID().toString();
+        String description = "packageId:" + packageId + ",optionId:" + optionId;
+
+        EpointTokenRequest tokenRequest = EpointTokenRequest.builder()
+                .publicKey(epointProperties.getPublicKey())
+                .amount(amount)
+                .currency(currency != null ? currency : "AZN")
+                .language("az")
+                .orderId(orderId)
+                .description(description)
+                .build();
+
+        // Call Epoint's /token/payment endpoint using the overloaded generic postSigned
+        EpointTokenResponse tokenResponse = httpClient.postSigned("/token/payment", tokenRequest, EpointTokenResponse.class);
+        log.info("[ApplePayCreate] (SERVICE) Epoint token response: status={}, transaction={}, id={}, message={}",
+                tokenResponse.status(), tokenResponse.transaction(), tokenResponse.id(), tokenResponse.message());
+
+        boolean isSuccess = "success".equalsIgnoreCase(tokenResponse.status())
+                || (tokenResponse.status() == null && tokenResponse.getPaymentId() != null);
+        if (!isSuccess) {
+            log.error("[ApplePayCreate] Failed to create payment token. Status: {}, Message: {}", tokenResponse.status(), tokenResponse.message());
+            throw new RuntimeException("Epoint token creation failed: " + tokenResponse.message());
+        }
+
+        // Store initial pending payment in local database
+        Payment payment = new Payment();
+        payment.setProvider("EPOINT");
+        payment.setOrderId(orderId);
+        payment.setTransactionId(tokenResponse.getPaymentId());
+        payment.setAmount(amount);
+        payment.setCurrency(currency);
+        payment.setStatus("PENDING");
+        payment.setUserId(userId);
+        payment.setDescription(description);
+        payment.setType("APPLE_PAY");
+        payment.setAutoPaymentEnabled(false);
+        paymentRepository.save(payment);
+        log.info("[ApplePayCreate] Saved pending payment orderId={}, transactionId={}", orderId, tokenResponse.getPaymentId());
+
+        return tokenResponse;
+    }
+
+    @Transactional
+    public ApplePaySubmitResponse submitApplePayPayment(Long userId, ApplePaySubmitRequest request) {
+        log.info("[ApplePaySubmit] (SERVICE) userId={}, paymentId={}, tokenLength={}",
+                userId, request.paymentId(), request.token() != null ? request.token().length() : 0);
+
+        Payment payment = paymentRepository.findByTransactionId(request.paymentId())
+                .orElseThrow(() -> new IllegalArgumentException("Payment not found for transaction/paymentId: " + request.paymentId()));
+
+        // Ensure user is the owner of the payment
+        if (payment.getUserId() != null && !payment.getUserId().equals(userId)) {
+            log.error("[ApplePaySubmit] User mismatch. Payment userId={}, Request userId={}", payment.getUserId(), userId);
+            throw new SecurityException("Unauthorized access to payment");
+        }
+
+        // Populate user ID if not set
+        if (payment.getUserId() == null) {
+            payment.setUserId(userId);
+        }
+
+        // 1. Build billing contact
+        String customerEmail = "";
+        if (userId != null) {
+            var userResp = userGrpcClient.getUser(userId);
+            if (userResp != null && userResp.getEmail() != null) {
+                customerEmail = userResp.getEmail();
+            }
+        }
+
+        String phone = "";
+        String name = "";
+        String fullAddress = "";
+
+        if (request.billingAddress() != null) {
+            ApplePaySubmitRequest.BillingAddress addr = request.billingAddress();
+            StringBuilder addressBuilder = new StringBuilder();
+            if (addr.address1() != null && !addr.address1().isBlank()) {
+                addressBuilder.append(addr.address1().trim());
+            }
+            if (addr.address2() != null && !addr.address2().isBlank()) {
+                if (addressBuilder.length() > 0) addressBuilder.append(", ");
+                addressBuilder.append(addr.address2().trim());
+            }
+            if (addr.locality() != null && !addr.locality().isBlank()) {
+                if (addressBuilder.length() > 0) addressBuilder.append(", ");
+                addressBuilder.append(addr.locality().trim());
+            }
+            if (addr.postalCode() != null && !addr.postalCode().isBlank()) {
+                if (addressBuilder.length() > 0) addressBuilder.append(", ");
+                addressBuilder.append(addr.postalCode().trim());
+            }
+            if (addr.countryCode() != null && !addr.countryCode().isBlank()) {
+                if (addressBuilder.length() > 0) addressBuilder.append(", ");
+                addressBuilder.append(addr.countryCode().trim());
+            }
+            fullAddress = addressBuilder.toString();
+            if (addr.phoneNumber() != null) {
+                phone = addr.phoneNumber();
+            }
+            if (addr.name() != null) {
+                name = addr.name();
+            }
+        }
+
+        EpointTokenPaymentRequest.BillingContact contact = new EpointTokenPaymentRequest.BillingContact(
+            customerEmail,
+            phone,
+            name,
+            fullAddress
+        );
+
+        // 2. Base64 encode the Apple Pay token string
+        String base64Token = java.util.Base64.getEncoder().encodeToString(request.token().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        // 3. Prepare payload for Epoint /token/payment endpoint
+        EpointTokenPaymentRequest epointReq = EpointTokenPaymentRequest.builder()
+                .publicKey(epointProperties.getPublicKey())
+                .transaction(request.paymentId())
+                .paymentToken(base64Token)
+                .billingContact(contact)
+                .build();
+
+        // 4. Send signed request to Epoint /token/payment
+        EpointResponse response = httpClient.postSigned("/token/payment", epointReq);
+        log.info("[ApplePaySubmit] (SERVICE) Epoint response: status={}, transaction={}, redirectUrl={}",
+                response.status(), response.transaction(), response.redirectUrl());
+
+        // 5. Update local payment status
+        updatePaymentFromEpointResponse(payment, response);
+
+        String responseStatus = response.status() != null ? response.status().toLowerCase() : "error";
+
+        if ("success".equals(responseStatus)) {
+            payment.setStatus("SUCCESS");
+            payment.setCallbackProcessed(true);
+            paymentRepository.save(payment);
+
+            // Assign subscription
+            assignSubscriptionIfPossible(payment, response, userId);
+
+            return new ApplePaySubmitResponse("success", null);
+
+        } else if ("3ds".equals(responseStatus)) {
+            payment.setStatus("PENDING_3DS");
+            payment.setRedirectUrl(response.redirectUrl());
+            paymentRepository.save(payment);
+
+            return new ApplePaySubmitResponse("3ds", response.redirectUrl());
+
+        } else {
+            payment.setStatus("FAILED");
+            paymentRepository.save(payment);
+
+            return new ApplePaySubmitResponse("error", null);
         }
     }
 }

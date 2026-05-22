@@ -77,7 +77,11 @@ public class UserPaymentService {
         return paymentRepository.findAllByUserId(userId).stream()
                 .map(payment -> {
                     String brand = CardBrandDetector.detectBrand(payment.getCardMask());
-                    if ("WIDGET_PAYMENT".equals(payment.getType()) && payment.getDescription() != null) {
+                    if ("GOOGLE_PAY".equals(payment.getType())) {
+                        brand = "Google Pay";
+                    } else if ("APPLE_PAY".equals(payment.getType())) {
+                        brand = "Apple Pay";
+                    } else if ("WIDGET_PAYMENT".equals(payment.getType()) && payment.getDescription() != null) {
                         if (payment.getDescription().contains("device:iOS")) {
                             brand = "Apple Pay";
                         } else if (payment.getDescription().contains("device:Android")) {
@@ -220,7 +224,11 @@ public class UserPaymentService {
         }
 
         String brand = CardBrandDetector.detectBrand(payment.getCardMask());
-        if ("WIDGET_PAYMENT".equals(payment.getType()) && payment.getDescription() != null) {
+        if ("GOOGLE_PAY".equals(payment.getType())) {
+            brand = "Google Pay";
+        } else if ("APPLE_PAY".equals(payment.getType())) {
+            brand = "Apple Pay";
+        } else if ("WIDGET_PAYMENT".equals(payment.getType()) && payment.getDescription() != null) {
             if (payment.getDescription().contains("device:iOS")) {
                 brand = "Apple Pay";
             } else if (payment.getDescription().contains("device:Android")) {
