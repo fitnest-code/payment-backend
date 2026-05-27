@@ -1118,66 +1118,15 @@ public class EpointIntegrationService {
             payment.setUserId(userId);
         }
 
-        // 1. Build billing contact
-        String customerEmail = "";
-        if (userId != null) {
-            var userResp = userGrpcClient.getUser(userId);
-            if (userResp != null && userResp.getEmail() != null) {
-                customerEmail = userResp.getEmail();
-            }
-        }
-
-        String phone = "";
-        String name = "";
-        String fullAddress = "";
-
-        if (request.billingAddress() != null) {
-            ApplePaySubmitRequest.BillingAddress addr = request.billingAddress();
-            StringBuilder addressBuilder = new StringBuilder();
-            if (addr.address1() != null && !addr.address1().isBlank()) {
-                addressBuilder.append(addr.address1().trim());
-            }
-            if (addr.address2() != null && !addr.address2().isBlank()) {
-                if (addressBuilder.length() > 0) addressBuilder.append(", ");
-                addressBuilder.append(addr.address2().trim());
-            }
-            if (addr.locality() != null && !addr.locality().isBlank()) {
-                if (addressBuilder.length() > 0) addressBuilder.append(", ");
-                addressBuilder.append(addr.locality().trim());
-            }
-            if (addr.postalCode() != null && !addr.postalCode().isBlank()) {
-                if (addressBuilder.length() > 0) addressBuilder.append(", ");
-                addressBuilder.append(addr.postalCode().trim());
-            }
-            if (addr.countryCode() != null && !addr.countryCode().isBlank()) {
-                if (addressBuilder.length() > 0) addressBuilder.append(", ");
-                addressBuilder.append(addr.countryCode().trim());
-            }
-            fullAddress = addressBuilder.toString();
-            if (addr.phoneNumber() != null) {
-                phone = addr.phoneNumber();
-            }
-            if (addr.name() != null) {
-                name = addr.name();
-            }
-        }
-
-        EpointTokenPaymentRequest.BillingContact contact = new EpointTokenPaymentRequest.BillingContact(
-            customerEmail,
-            phone,
-            name,
-            fullAddress
-        );
-
         // 2. Base64 encode the Apple Pay token string
         String base64Token = java.util.Base64.getEncoder().encodeToString(request.token().getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-        // 3. Prepare payload for Epoint /token/apple/pay endpoint
-        EpointTokenPaymentRequest epointReq = EpointTokenPaymentRequest.builder()
+        // 3. Prepare payload for Epoint /token/apple/pay endpoint using direct billingContact map
+        EpointAppleTokenPaymentRequest epointReq = EpointAppleTokenPaymentRequest.builder()
                 .publicKey(epointProperties.getPublicKey())
                 .id(request.paymentId())
                 .token(base64Token)
-                .billingContact(contact)
+                .billingContact(request.billingContact())
                 .currency(payment.getCurrency() != null ? payment.getCurrency() : "AZN")
                 .language("az")
                 .build();
