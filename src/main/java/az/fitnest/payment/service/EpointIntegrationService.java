@@ -63,7 +63,6 @@ public class EpointIntegrationService {
     private final UserGrpcClient userGrpcClient;
     private final EpointHttpClient httpClient;
 
-    @Transactional
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
         log.info("[PaymentInit] (SERVICE ENTRY) userId={}, orderId={}, amount={}, currency={}, description={}, otherAttr={}, publicKey={}",
                 userId, request.orderId(), request.amount(), request.currency(), request.description(), request.otherAttr(), request.publicKey());
@@ -98,7 +97,6 @@ public class EpointIntegrationService {
         }
     }
 
-    @Transactional
     public EpointResponse cardRegistration(Long userId) {
         EpointCardRegistrationRequest request = EpointCardRegistrationRequest.builder()
                 .language("az")
@@ -131,7 +129,6 @@ public class EpointIntegrationService {
         return response;
     }
 
-    @Transactional
     public EpointResponse executePay(EpointExecutePayRequest request, Long userId) {
         // successRedirectUrl / errorRedirectUrl are resolved dynamically in EpointService.fillPublicKey
         // based on the incoming request Origin/Referer headers, so no manual override is needed here.
@@ -158,7 +155,6 @@ public class EpointIntegrationService {
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
     }
 
-    @Transactional
     public EpointResponse cardRegistrationWithPay(Long userId, EpointPaymentRequest request) {
         String idempotencyKey = generateIdempotencyKey("card-reg-pay", request.orderId(), userId);
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
@@ -180,7 +176,6 @@ public class EpointIntegrationService {
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
     }
 
-    @Transactional
     public EpointResponse refundRequest(EpointRefundRequest request) {
         EpointResponse response = epointService.refundRequest(request);
         if (response.transaction() != null) {
@@ -192,7 +187,6 @@ public class EpointIntegrationService {
         return response;
     }
 
-    @Transactional
     public EpointResponse reverse(String transactionId, Double amount, String currency) {
         EpointResponse response = epointService.reverse(transactionId, amount, currency);
         paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
@@ -205,7 +199,6 @@ public class EpointIntegrationService {
         return response;
     }
 
-    @Transactional
     public EpointResponse splitRequest(EpointSplitPaymentRequest request, Long userId) {
         String idempotencyKey = generateIdempotencyKey("split-request", request.orderId(), userId);
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
@@ -218,7 +211,6 @@ public class EpointIntegrationService {
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
-    @Transactional
     public EpointResponse splitExecutePay(EpointSplitExecutePayRequest request, Long userId) {
         String idempotencyKey = generateIdempotencyKey("split-execute-pay", request.orderId(), userId);
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
@@ -231,7 +223,6 @@ public class EpointIntegrationService {
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
-    @Transactional
     public EpointResponse splitCardRegistrationWithPay(EpointSplitPaymentRequest request, Long userId) {
         String idempotencyKey = generateIdempotencyKey("split-card-reg-pay", request.orderId(), userId);
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
@@ -244,7 +235,6 @@ public class EpointIntegrationService {
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
-    @Transactional
     public EpointResponse preAuthRequest(EpointPaymentRequest request, Long userId) {
         String idempotencyKey = generateIdempotencyKey("pre-auth-request", request.orderId(), userId);
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
@@ -257,7 +247,6 @@ public class EpointIntegrationService {
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
-    @Transactional
     public EpointResponse walletPayment(EpointWalletPaymentRequest request, Long userId) {
         String idempotencyKey = generateIdempotencyKey("wallet-payment", request.orderId(), userId);
         Optional<EpointResponse> cachedResponse = idempotencyService.getCachedResponse(idempotencyKey);
@@ -382,7 +371,6 @@ public class EpointIntegrationService {
         }
     }
 
-    @Transactional
     public EpointResponse getStatus(String id) {
         String transactionId = paymentRepository.findByOrderId(id)
                 .map(Payment::getTransactionId)
@@ -398,12 +386,10 @@ public class EpointIntegrationService {
         return response;
     }
 
-    @Transactional
     public EpointResponse preAuthComplete(EpointPreAuthCompleteRequest request) {
         return epointService.preAuthComplete(request);
     }
 
-    @Transactional
     public EpointResponse createWidgetUrl(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled) {
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
         Double amount = priceCurrency.amount;
@@ -462,39 +448,30 @@ public class EpointIntegrationService {
         return response;
     }
 
-    @Transactional
     public EpointResponse createWidgetUrl(EpointWidgetRequest request) {
         return epointService.createWidgetUrl(request);
     }
-    @Transactional
     public EpointResponse walletStatus() {
         return epointService.walletStatus();
     }
-    @Transactional
     public EpointResponse createInvoice(EpointInvoiceCreateRequest request) {
         return epointService.createInvoice(request);
     }
-    @Transactional
     public EpointResponse updateInvoice(EpointInvoiceUpdateRequest request) {
         return epointService.updateInvoice(request);
     }
-    @Transactional
     public EpointResponse viewInvoice(Long id) {
         return epointService.viewInvoice(id);
     }
-    @Transactional
     public EpointResponse listInvoices(String type, String order) {
         return epointService.listInvoices(type, order);
     }
-    @Transactional
     public EpointResponse sendInvoiceSms(Long id, String phone) {
         return epointService.sendInvoiceSms(id, phone);
     }
-    @Transactional
     public EpointResponse sendInvoiceEmail(Long id, String email) {
         return epointService.sendInvoiceEmail(id, email);
     }
-    @Transactional
     public EpointResponse heartbeat() {
         return epointService.heartbeat();
     }
@@ -846,7 +823,6 @@ public class EpointIntegrationService {
         }
     }
 
-    @Transactional
     public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled) {
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
         Double amount = priceCurrency.amount;
@@ -872,7 +848,6 @@ public class EpointIntegrationService {
         return initiatePayment(request, userId);
     }
 
-    @Transactional
     public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId) {
         return initiatePayment(userId, packageId, optionId, false);
     }
@@ -889,7 +864,6 @@ public class EpointIntegrationService {
         return null;
     }
 
-    @Transactional
     public EpointTokenResponse createGooglePayPayment(Long userId, Long packageId, Long optionId) {
         log.info("[GooglePayCreate] (SERVICE) userId={}, packageId={}, optionId={}", userId, packageId, optionId);
 
@@ -941,7 +915,6 @@ public class EpointIntegrationService {
         return tokenResponse;
     }
 
-    @Transactional
     public GooglePaySubmitResponse submitGooglePayPayment(Long userId, GooglePaySubmitRequest request) {
         log.info("[GooglePaySubmit] (SERVICE) userId={}, paymentId={}, tokenLength={}",
                 userId, request.paymentId(), request.token() != null ? request.token().length() : 0);
@@ -1047,7 +1020,6 @@ public class EpointIntegrationService {
         }
     }
 
-    @Transactional
     public EpointTokenResponse createApplePayPayment(Long userId, Long packageId, Long optionId) {
         log.info("[ApplePayCreate] (SERVICE) userId={}, packageId={}, optionId={}", userId, packageId, optionId);
 
@@ -1099,7 +1071,6 @@ public class EpointIntegrationService {
         return tokenResponse;
     }
 
-    @Transactional
     public ApplePaySubmitResponse submitApplePayPayment(Long userId, ApplePaySubmitRequest request) {
         log.info("[ApplePaySubmit] (SERVICE) userId={}, paymentId={}, tokenLength={}",
                 userId, request.paymentId(), request.token() != null ? request.token().length() : 0);
