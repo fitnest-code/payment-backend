@@ -64,9 +64,10 @@ public class UserPaymentService {
 
     public List<PaymentResponse> getUserPayments(Long userId) {
         log.info("Fetching all payments for user: {}", userId);
+        String userLanguage = resolveUserLanguage();
         return paymentRepository.findAllByUserId(userId)
                 .stream()
-                .map(this::mapToPaymentResponse)
+                .map(payment -> mapToPaymentResponse(payment, userLanguage))
                 .collect(Collectors.toList());
     }
 
@@ -115,7 +116,7 @@ public class UserPaymentService {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with id: " + paymentId));
         verifyOwnership(payment, userId);
-        return mapToPaymentResponse(payment);
+        return mapToPaymentResponse(payment, resolveUserLanguage());
     }
 
     public PaymentResponse getPaymentByOrderId(String orderId, Long userId) {
@@ -123,7 +124,7 @@ public class UserPaymentService {
         Payment payment = paymentRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
         verifyOwnership(payment, userId);
-        return mapToPaymentResponse(payment);
+        return mapToPaymentResponse(payment, resolveUserLanguage());
     }
 
     public PaymentResponse getPaymentByTransactionId(String transactionId, Long userId) {
@@ -132,7 +133,7 @@ public class UserPaymentService {
                 .or(() -> paymentRepository.findByOrderId(transactionId))
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction/order id: " + transactionId));
         verifyOwnership(payment, userId);
-        return mapToPaymentResponse(payment);
+        return mapToPaymentResponse(payment, resolveUserLanguage());
     }
 
     public List<PaymentResponse> getAllPayments() {
@@ -145,7 +146,7 @@ public class UserPaymentService {
                     payment.getId(), payment.getProvider(), payment.getStatus(), payment.getOrderId(), payment.getTransactionId(), payment.getAmount(), payment.getCurrency(), payment.getCardMask(), payment.getCardName(), payment.getUserId(), payment.getDescription(), payment.getCode(), payment.getBankResponse(), payment.getOperationCode(), payment.getCreatedDate(), payment.getLastModifiedDate());
             }
             return payments.stream()
-                    .map(this::mapToPaymentResponse)
+                    .map(payment -> mapToPaymentResponse(payment, "AZ"))
                     .collect(Collectors.toList());
         } catch (Exception e) {
             log.error("Admin: error fetching payments", e);
@@ -156,21 +157,21 @@ public class UserPaymentService {
     public PaymentResponse getPaymentByIdAdmin(Long paymentId) {
         log.info("Admin: fetching payment with id: {}", paymentId);
         return paymentRepository.findById(paymentId)
-                .map(this::mapToPaymentResponse)
+                .map(payment -> mapToPaymentResponse(payment, "AZ"))
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with id: " + paymentId));
     }
 
     public PaymentResponse getPaymentByOrderIdAdmin(String orderId) {
         log.info("Admin: fetching payment with order id: {}", orderId);
         return paymentRepository.findByOrderId(orderId)
-                .map(this::mapToPaymentResponse)
+                .map(payment -> mapToPaymentResponse(payment, "AZ"))
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
     }
 
     public PaymentResponse getPaymentByTransactionIdAdmin(String transactionId) {
         log.info("Admin: fetching payment with transaction id: {}", transactionId);
         return paymentRepository.findByTransactionId(transactionId)
-                .map(this::mapToPaymentResponse)
+                .map(payment -> mapToPaymentResponse(payment, "AZ"))
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction id: " + transactionId));
     }
 
@@ -194,7 +195,8 @@ public class UserPaymentService {
             .toList();
         int startIdx = (int) pageable.getOffset();
         int endIdx = Math.min((startIdx + pageable.getPageSize()), filtered.size());
-        List<PaymentResponse> responses = filtered.stream().map(this::mapToPaymentResponse).toList();
+        String userLanguage = resolveUserLanguage();
+        List<PaymentResponse> responses = filtered.stream().map(p -> mapToPaymentResponse(p, userLanguage)).toList();
         List<PaymentResponse> pageContent = responses.subList(Math.min(startIdx, responses.size()), Math.min(endIdx, responses.size()));
         Page<PaymentResponse> page = new PageImpl<>(pageContent, pageable, responses.size());
         return PaginatedResponse.of(page);
@@ -218,10 +220,127 @@ public class UserPaymentService {
     }
 
     private PaymentResponse mapToPaymentResponse(Payment payment) {
-        String formattedStatus = payment.getStatus();
-        if (formattedStatus != null && !formattedStatus.isEmpty()) {
-            formattedStatus = formattedStatus.substring(0, 1).toUpperCase() + formattedStatus.substring(1).toLowerCase();
+        return mapToPaymentResponse(payment, "AZ");
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private az.fitnest.payment.client.UserGrpcClient userGrpcClient;
+
+    private String resolveUserLanguage() {
+        // 1. First priority: Authenticated users (from UserContext / Database lookup via gRPC)
+        Long userId = az.fitnest.payment.util.UserContext.getCurrentUserId();
+        if (userId != null) {
+            try {
+                String lang = userGrpcClient.getUserLanguage(userId);
+                if (lang != null && !lang.trim().isEmpty()) {
+                    return lang.toUpperCase();
+                }
+            } catch (Exception ignored) {
+            }
         }
+
+        // 2. Second priority: Anonymous users (Accept-Language header)
+        try {
+            org.springframework.web.context.request.RequestAttributes requestAttributes = 
+                    org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (requestAttributes instanceof org.springframework.web.context.request.ServletRequestAttributes) {
+                jakarta.servlet.http.HttpServletRequest request = 
+                        ((org.springframework.web.context.request.ServletRequestAttributes) requestAttributes).getRequest();
+                String acceptLanguage = request.getHeader("Accept-Language");
+                if (acceptLanguage != null && !acceptLanguage.trim().isEmpty()) {
+                    String localeLang = org.springframework.context.i18n.LocaleContextHolder.getLocale().getLanguage()
+                            .toUpperCase();
+                    if (localeLang.equals("EN") || localeLang.equals("RU") || localeLang.equals("AZ")) {
+                        return localeLang;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        return "AZ";
+    }
+
+    private String translateStatus(String status, String lang) {
+        if (status == null || status.isEmpty()) return status;
+        String upperStatus = status.toUpperCase().trim();
+        if ("AZ".equalsIgnoreCase(lang)) {
+            if ("SUCCESS".equals(upperStatus) || "UĞURLU".equals(upperStatus)) return "Uğurlu";
+            if ("FAILED".equals(upperStatus) || "UĞURSUZ".equals(upperStatus)) return "Uğursuz";
+            if ("PENDING".equals(upperStatus) || "GÖZLƏMƏDƏ".equals(upperStatus)) return "Gözləmədə";
+        } else if ("RU".equalsIgnoreCase(lang)) {
+            if ("SUCCESS".equals(upperStatus) || "UĞURLU".equals(upperStatus)) return "Успешно";
+            if ("FAILED".equals(upperStatus) || "UĞURSUZ".equals(upperStatus)) return "Неуспешно";
+            if ("PENDING".equals(upperStatus) || "GÖZLƏMƏDƏ".equals(upperStatus)) return "В ожидании";
+        } else { // EN
+            if ("SUCCESS".equals(upperStatus) || "UĞURLU".equals(upperStatus)) return "Success";
+            if ("FAILED".equals(upperStatus) || "UĞURSUZ".equals(upperStatus)) return "Failed";
+            if ("PENDING".equals(upperStatus) || "GÖZLƏMƏDƏ".equals(upperStatus)) return "Pending";
+        }
+        try {
+            return translateWithGoogle(status, lang);
+        } catch (Exception e) {
+            return status;
+        }
+    }
+
+    private String translatePaymentType(String type, String lang) {
+        if (type == null || type.isEmpty()) return type;
+        String upperType = type.toUpperCase().trim();
+        if ("AZ".equalsIgnoreCase(lang)) {
+            if ("AUTO_RENEWAL".equals(upperType)) return "Avtomatik uzadılma";
+            if ("ONE_TIME".equals(upperType)) return "Birdəfəlik";
+        } else if ("RU".equalsIgnoreCase(lang)) {
+            if ("AUTO_RENEWAL".equals(upperType)) return "Автопродление";
+            if ("ONE_TIME".equals(upperType)) return "Разовый";
+        } else { // EN
+            if ("AUTO_RENEWAL".equals(upperType)) return "Auto renewal";
+            if ("ONE_TIME".equals(upperType)) return "One time";
+        }
+        try {
+            return translateWithGoogle(type, lang);
+        } catch (Exception e) {
+            return type;
+        }
+    }
+
+    private String translateWithGoogle(String text, String targetLanguage) {
+        try {
+            org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+            restTemplate.getMessageConverters().add(0, new org.springframework.http.converter.StringHttpMessageConverter(java.nio.charset.StandardCharsets.UTF_8));
+            java.net.URI uri = org.springframework.web.util.UriComponentsBuilder
+                .fromUriString("https://translate.googleapis.com/translate_a/single")
+                .queryParam("client", "gtx")
+                .queryParam("sl", "auto")
+                .queryParam("tl", targetLanguage.toLowerCase())
+                .queryParam("dt", "t")
+                .queryParam("q", text)
+                .build()
+                .toUri();
+
+            String response = restTemplate.getForObject(uri, String.class);
+            if (response != null) {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                com.fasterxml.jackson.databind.JsonNode rootNode = mapper.readTree(response);
+                if (rootNode.isArray() && rootNode.size() > 0) {
+                    com.fasterxml.jackson.databind.JsonNode firstArray = rootNode.get(0);
+                    if (firstArray.isArray() && firstArray.size() > 0) {
+                        com.fasterxml.jackson.databind.JsonNode translationPair = firstArray.get(0);
+                        if (translationPair.isArray() && translationPair.size() > 0) {
+                            return translationPair.get(0).asText();
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Google Translation API failed for text '{}' to '{}': {}", text, targetLanguage, e.getMessage());
+        }
+        return text;
+    }
+
+    private PaymentResponse mapToPaymentResponse(Payment payment, String userLanguage) {
+        String formattedStatus = payment.getStatus();
+        formattedStatus = translateStatus(formattedStatus, userLanguage);
 
         String brand = CardBrandDetector.detectBrand(payment.getCardMask());
         if ("GOOGLE_PAY".equals(payment.getType())) {
@@ -236,7 +355,8 @@ public class UserPaymentService {
             }
         }
 
-        String actualType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
+        String rawType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
+        String actualType = translatePaymentType(rawType, userLanguage);
 
         return new PaymentResponse(
             payment.getId(),
