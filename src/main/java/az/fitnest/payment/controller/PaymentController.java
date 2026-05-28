@@ -2,6 +2,8 @@ package az.fitnest.payment.controller;
 
 import az.fitnest.payment.service.EpointIntegrationService;
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
+import az.fitnest.payment.dto.common.ApiResponse;
+import az.fitnest.payment.dto.common.ApiError;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -23,7 +25,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 @RestController
-@RequestMapping("/payment")
 @RequiredArgsConstructor
 @Tag(name = "Ödənişlər", description = "Ödəniş inteqrasiyası üçün ucluqlar")
 public class PaymentController {
@@ -34,7 +35,7 @@ public class PaymentController {
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
 
     @Operation(summary = "Geri çağırışı emal edin", description = "Epoint-dən ödəniş nəticələrini qəbul edir.")
-    @PostMapping(value = {"/result", "/callback", "/epoint/callback"})
+    @PostMapping(value = {"/payment/result", "/payment/callback", "/payment/epoint/callback"})
     public ResponseEntity<String> handleCallback(
             @RequestParam("data") String data,
             @RequestParam("signature") String signature) {
@@ -57,7 +58,7 @@ public class PaymentController {
     }
 
     @Operation(summary = "Ödənişi başladın", description = "Yeni bir ödəniş sorğusu yaradır. Yalnız packageId və optionId göndərilir, məbləğ və valyuta serverdə müəyyən edilir.")
-    @PostMapping("/payment/init")
+    @PostMapping("/payment/payment/init")
     public ResponseEntity<EpointResponse> initiatePayment(
             @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
@@ -103,7 +104,7 @@ public class PaymentController {
     }
 
     @Operation(summary = "Kartın qeydiyyatı", description = "Yeni bir kartı sistemdə qeydiyyatdan keçirir.")
-    @PostMapping("/card/save-init")
+    @PostMapping("/payment/card/save-init")
     public ResponseEntity<EpointResponse> cardRegistration(Authentication authentication) {
         Long userId = (Long) authentication.getPrincipal();
         EpointResponse response = integrationService.cardRegistration(userId);
@@ -123,7 +124,7 @@ public class PaymentController {
     }
 
     @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir. Yalnız məbləğ və valyuta göndərilir, digər sahələr serverdə doldurulur.")
-    @PostMapping("/payment/save-and-pay")
+    @PostMapping("/payment/payment/save-and-pay")
     public ResponseEntity<EpointResponse> cardRegistrationWithPay(
             @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
@@ -180,31 +181,50 @@ public class PaymentController {
     }
 
     @Operation(summary = "Yadda saxlanmış kartla ödəniş", description = "Yadda saxlanmış kartla ödəniş edir. CardId, packageId və optionId göndərilir, məbləğ və valyuta serverdə müəyyən edilir.")
-    @PostMapping("/payment/with-card")
-    public ResponseEntity<EpointResponse> executePayWithCard(
+    @PostMapping("/api/v1/payment/with-card")
+    public ResponseEntity<ApiResponse<EpointResponse>> executePayWithCard(
             @RequestBody WithCardRequest withCardRequest,
-            Authentication authentication) {
+            Authentication authentication,
+            jakarta.servlet.http.HttpServletRequest httpRequest) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
         boolean hasPackageId = withCardRequest.packageId() != null;
         boolean hasOptionId = withCardRequest.optionId() != null;
         boolean hasCardId = withCardRequest.cardId() != null && !withCardRequest.cardId().isBlank();
         if (!hasPackageId || !hasOptionId || !hasCardId) {
             log.warn("[WithCard] (ERROR) cardId, packageId and optionId must be provided. cardId={}, packageId={}, optionId={}", withCardRequest.cardId(), withCardRequest.packageId(), withCardRequest.optionId());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(EpointResponse.builder().status("error").message("cardId, packageId and optionId must be provided").build());
+            ApiError apiError = ApiError.builder()
+                    .code("error.payment.invalid_request")
+                    .message("cardId, packageId and optionId must be provided")
+                    .status(HttpStatus.BAD_REQUEST.value())
+                    .path(httpRequest.getRequestURI())
+                    .timestamp(java.time.OffsetDateTime.now())
+                    .build();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(apiError));
         }
         boolean valid = subscriptionPackageGrpcClient.checkOptionInPackageExists(withCardRequest.packageId(), withCardRequest.optionId());
         if (!valid) {
             log.warn("[WithCard] (ERROR) Invalid packageId or optionId. packageId={}, optionId={}", withCardRequest.packageId(), withCardRequest.optionId());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(EpointResponse.builder().status("error").message("Invalid packageId or optionId").build());
+            ApiError apiError = ApiError.builder()
+                    .code("error.payment.invalid_request")
+                    .message("Invalid packageId or optionId")
+                    .status(HttpStatus.BAD_REQUEST.value())
+                    .path(httpRequest.getRequestURI())
+                    .timestamp(java.time.OffsetDateTime.now())
+                    .build();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(apiError));
         }
         try {
             var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(withCardRequest.packageId(), withCardRequest.optionId());
             if (Boolean.TRUE.equals(withCardRequest.autoPaymentEnabled()) && priceCurrency.durationMonths != 1) {
                 log.warn("[WithCard] (ERROR) Auto-payment is only acceptable for 1-month duration. packageId={}, optionId={}, duration={}", withCardRequest.packageId(), withCardRequest.optionId(), priceCurrency.durationMonths);
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(EpointResponse.builder().status("error").message("Avtomatik ödəniş yalnız 1 aylıq paketlər üçün keçərlidir").build());
+                ApiError apiError = ApiError.builder()
+                    .code("error.payment.invalid_request")
+                    .message("Avtomatik ödəniş yalnız 1 aylıq paketlər üçün keçərlidir")
+                    .status(HttpStatus.BAD_REQUEST.value())
+                    .path(httpRequest.getRequestURI())
+                    .timestamp(java.time.OffsetDateTime.now())
+                    .build();
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(apiError));
             }
             Double amount = priceCurrency.amount;
             String currency = priceCurrency.currency;
@@ -217,7 +237,7 @@ public class PaymentController {
             String language = "az";
             String paymentTypeDescription = Boolean.TRUE.equals(withCardRequest.autoPaymentEnabled()) ? "Monthly payment" : "One-time payment";
             String description = "packageId:" + withCardRequest.packageId() + ",optionId:" + withCardRequest.optionId() + ",type:" + paymentTypeDescription;
-            EpointExecutePayRequest request = EpointExecutePayRequest.builder()
+            EpointExecutePayRequest epointRequest = EpointExecutePayRequest.builder()
                     .publicKey(publicKey)
                     .language(language)
                     .cardId(withCardRequest.cardId())
@@ -228,18 +248,38 @@ public class PaymentController {
                     .isInstallment(0)
                     .autoPaymentEnabled(withCardRequest.autoPaymentEnabled())
                     .build();
-            EpointResponse response = integrationService.executePay(request, userId);
+            EpointResponse response = integrationService.executePay(epointRequest, userId);
             log.info("[WithCard] (EXIT) userId={}, cardId={}, packageId={}, optionId={}, autoPay={}, status={}, message={}", userId, withCardRequest.cardId(), withCardRequest.packageId(), withCardRequest.optionId(), withCardRequest.autoPaymentEnabled(), response.status(), response.message());
-            return ResponseEntity.ok(response);
+            
+            if (!"success".equalsIgnoreCase(response.status())) {
+                String errorCode = response.code() != null ? response.code() : "error.payment.failed";
+                String errorMessage = response.message() != null ? response.message() : "Payment failed";
+                ApiError apiError = ApiError.builder()
+                        .code(errorCode)
+                        .message(errorMessage)
+                        .status(HttpStatus.BAD_REQUEST.value())
+                        .path(httpRequest.getRequestURI())
+                        .timestamp(java.time.OffsetDateTime.now())
+                        .build();
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(apiError));
+            }
+            
+            return ResponseEntity.ok(ApiResponse.success(response));
         } catch (Exception e) {
             log.error("[WithCard] (ERROR) Exception occurred: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(EpointResponse.builder().status("error").message("Internal server error").build());
+            ApiError apiError = ApiError.builder()
+                    .code("error.payment.internal_error")
+                    .message("Internal server error")
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                    .path(httpRequest.getRequestURI())
+                    .timestamp(java.time.OffsetDateTime.now())
+                    .build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse.error(apiError));
         }
     }
 
     @Operation(summary = "Vidcet URL-i yaradın", description = "Apple Pay və Google Pay üçün ödəniş vidceti linki yaradır.")
-    @PostMapping("/widget-url")
+    @PostMapping("/payment/widget-url")
     public ResponseEntity<EpointResponse> createWidgetUrl(
             @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
@@ -279,7 +319,7 @@ public class PaymentController {
     }
 
     @Operation(summary = "Uğurlu ödənişdən sonra yönləndirmə", description = "İstifadəçini Epoint-dən uğurlu səhifəsinə yönləndirir")
-    @GetMapping("/redirect/success/{id}")
+    @GetMapping("/payment/redirect/success/{id}")
     public ResponseEntity<Void> redirectSuccess(@PathVariable("id") String id) {
         log.info("[Redirection] Redirecting success for id: {}", id);
         try {
@@ -296,7 +336,7 @@ public class PaymentController {
     }
 
     @Operation(summary = "Uğursuz ödənişdən sonra yönləndirmə", description = "İstifadəçini Epoint-dən uğursuz səhifəsinə yönləndirir")
-    @GetMapping("/redirect/error/{id}")
+    @GetMapping("/payment/redirect/error/{id}")
     public ResponseEntity<Void> redirectError(@PathVariable("id") String id) {
         log.info("[Redirection] Redirecting error for id: {}", id);
         try {
@@ -313,7 +353,7 @@ public class PaymentController {
     }
 
     @Operation(summary = "Callback probe", description = "Epoint-in GET yoxlaması üçün")
-    @GetMapping(value = {"/result", "/callback", "/epoint/callback"})
+    @GetMapping(value = {"/payment/result", "/payment/callback", "/payment/epoint/callback"})
     public ResponseEntity<String> handleCallbackGet() {
         log.info("[Callback] GET probe received — returning OK");
         return ResponseEntity.ok("OK");
