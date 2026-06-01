@@ -313,6 +313,7 @@ public class EpointService {
                 .description(request.description())
                 .successRedirectUrl(getDynamicSuccessUrl(request.successRedirectUrl(), key))
                 .errorRedirectUrl(getDynamicErrorUrl(request.errorRedirectUrl(), key))
+                .resultUrl(properties.getResultUrl())
                 .autoPaymentEnabled(request.autoPaymentEnabled())
                 .build();
     }

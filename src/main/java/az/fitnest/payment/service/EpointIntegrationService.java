@@ -278,6 +278,21 @@ public class EpointIntegrationService {
         }
         EpointResponse callbackData = signer.decodeData(base64Data, EpointResponse.class);
         log.info("[Callback] Decoded callbackData: {}", callbackData);
+
+        try {
+            CallbackLog logEntity = CallbackLog.builder()
+                    .orderId(callbackData != null ? callbackData.orderId() : null)
+                    .transactionId(callbackData != null ? callbackData.transaction() : null)
+                    .rawJson(objectMapper.writeValueAsString(callbackData))
+                    .signature(signature)
+                    .receivedAt(java.time.Instant.now())
+                    .build();
+            callbackLogRepository.save(logEntity);
+            log.info("[Callback] Saved callback log entity ID: {}", logEntity.getId());
+        } catch (Exception e) {
+            log.warn("[Callback] Failed to save callback log: {}", e.getMessage());
+        }
+
         log.info("[Callback] Processing callback for bankTransaction: {}, bankResponse: {}, rrn: {}, approvalCode: {}",
                 callbackData.bankTransaction(), callbackData.bankResponse(), callbackData.rrn(), callbackData.approvalCode());
 

@@ -18,12 +18,15 @@ public record EpointWidgetRequest(
     String successRedirectUrl,
     @JsonProperty("error_redirect_url")
     String errorRedirectUrl,
+    @Schema(hidden = true)
+    @JsonProperty("result_url")
+    String resultUrl,
     @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     @com.fasterxml.jackson.annotation.JsonIgnore
     Boolean autoPaymentEnabled
 ) {
     public EpointWidgetRequest setPublicKey(String publicKey) {
-        return new EpointWidgetRequest(publicKey, amount, currency, orderId, description, successRedirectUrl, errorRedirectUrl, autoPaymentEnabled);
+        return new EpointWidgetRequest(publicKey, amount, currency, orderId, description, successRedirectUrl, errorRedirectUrl, resultUrl, autoPaymentEnabled);
     }
 
     public String getPublicKey() {
