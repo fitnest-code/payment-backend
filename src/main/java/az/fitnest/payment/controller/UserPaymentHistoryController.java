@@ -185,4 +185,26 @@ public class UserPaymentHistoryController {
         PaymentResponse response = userPaymentService.getPaymentByTransactionId(transactionId, userId);
         return ResponseEntity.ok(response);
     }
+
+    @Operation(
+            summary = "Xüsusi ödənişin statusu (orderId ilə)",
+            description = "Bu endpoint autentifikasiya olunmuş istifadəçinin orderId-ə əsasən konkret ödənişin statusunu (SUCCESS, FAILED, CANCELLED, PENDING) qaytarır."
+    )
+    @GetMapping("/order/{orderId}")
+    public ResponseEntity<java.util.Map<String, String>> getPaymentStatusByOrderId(
+            @Parameter(
+                    hidden = true,
+                    description = "Spring Security tərəfindən inject olunan istifadəçi məlumatı"
+            )
+            @AuthenticationPrincipal Principal user,
+            @PathVariable String orderId
+    ) {
+        Long userId = UserContext.getCurrentUserId();
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        String status = userPaymentService.getRawPaymentStatusByOrderId(orderId, userId);
+        return ResponseEntity.ok(java.util.Map.of("status", status));
+    }
 }

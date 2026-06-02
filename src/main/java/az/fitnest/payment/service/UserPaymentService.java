@@ -136,6 +136,22 @@ public class UserPaymentService {
         return mapToPaymentResponse(payment, resolveUserLanguage());
     }
 
+    public String getRawPaymentStatusByOrderId(String orderId, Long userId) {
+        log.info("Fetching raw payment status with order id: {} for user: {}", orderId, userId);
+        Payment payment = paymentRepository.findByOrderId(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
+        verifyOwnership(payment, userId);
+        String status = payment.getStatus() != null ? payment.getStatus().toUpperCase() : "PENDING";
+        
+        return switch (status) {
+            case "SUCCESS" -> "SUCCESS";
+            case "FAILED", "ERROR", "SERVER_ERROR" -> "FAILED";
+            case "PENDING_USER_ACTION", "NEW", "PENDING", "PENDING_3DS" -> "PENDING";
+            case "REVERSED", "REFUNDED", "RETURNED", "CANCELLED" -> "CANCELLED";
+            default -> "PENDING";
+        };
+    }
+
     public List<PaymentResponse> getAllPayments() {
         log.info("Admin: fetching all payments");
         try {

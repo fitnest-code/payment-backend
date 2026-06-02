@@ -49,4 +49,13 @@ public record EpointResponse(
             otherAttr, approvalCode, cardNumber, reccPmntId
         );
     }
+
+    public EpointResponse withOrderId(String orderId) {
+        return new EpointResponse(
+            status, transaction, orderId, redirectUrl, bankTransaction,
+            bankResponse, operationCode, rrn, cardName, cardMask,
+            amount, splitAmount, cardId, widgetUrl, message, code,
+            otherAttr, approvalCode, cardNumber, reccPmntId
+        );
+    }
 }

@@ -90,7 +90,7 @@ public class EpointIntegrationService {
                 redisTemplate.opsForValue().set(redisKey, String.valueOf(userId), 1, java.util.concurrent.TimeUnit.DAYS);
             }
             log.info("[PaymentInit] (SERVICE) Payment entity saved. paymentId={}, userId={}, orderId={}", payment != null ? payment.getId() : null, userId, request.orderId());
-            return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
+            return idempotencyService.persistIdempotentResponse(idempotencyKey, response.withOrderId(request.orderId()), payment);
         } catch (Exception e) {
             log.error("[PaymentInit] (SERVICE ERROR) Exception occurred: {}", e.getMessage(), e);
             throw e;
@@ -152,7 +152,7 @@ public class EpointIntegrationService {
         if ("success".equalsIgnoreCase(response.status()) && payment != null) {
             assignSubscriptionIfPossible(payment, response, userId);
         }
-        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response.withOrderId(request.orderId()), payment);
     }
 
     public EpointResponse cardRegistrationWithPay(Long userId, EpointPaymentRequest request) {
@@ -173,7 +173,7 @@ public class EpointIntegrationService {
 
         EpointResponse response = epointService.cardRegistrationWithPay(request);
         Payment payment = saveRedirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description(), request.autoPaymentEnabled());
-        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, payment);
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response.withOrderId(request.orderId()), payment);
     }
 
     public EpointResponse refundRequest(EpointRefundRequest request) {
