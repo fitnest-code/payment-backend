@@ -35,6 +35,7 @@ public class UserPaymentService {
 
     private final UserCardRepository userCardRepository;
     private final PaymentRepository paymentRepository;
+    private final EpointIntegrationService integrationService;
     @Autowired
     private MessageSource messageSource;
 
@@ -141,7 +142,22 @@ public class UserPaymentService {
         Payment payment = paymentRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
         verifyOwnership(payment, userId);
+        
         String status = payment.getStatus() != null ? payment.getStatus().toUpperCase() : "PENDING";
+        
+        // If status is pending, actively query Epoint to sync status
+        if ("PENDING".equals(status) || "PENDING_USER_ACTION".equals(status) || "PENDING_3DS".equals(status) || "NEW".equals(status)) {
+            try {
+                log.info("[StatusSync] Actively querying status from Epoint for orderId: {}", orderId);
+                EpointResponse response = integrationService.getStatus(orderId);
+                if (response != null && response.status() != null) {
+                    status = response.status().toUpperCase();
+                    log.info("[StatusSync] Epoint returned status: {} for orderId: {}", status, orderId);
+                }
+            } catch (Exception e) {
+                log.error("[StatusSync] Failed to actively sync status for orderId: {}", orderId, e);
+            }
+        }
         
         return switch (status) {
             case "SUCCESS" -> "SUCCESS";

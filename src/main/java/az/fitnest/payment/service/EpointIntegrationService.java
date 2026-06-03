@@ -297,14 +297,12 @@ public class EpointIntegrationService {
                 callbackData.bankTransaction(), callbackData.bankResponse(), callbackData.rrn(), callbackData.approvalCode());
 
         if (callbackData.bankTransaction() == null || callbackData.bankTransaction().isBlank()) {
-            log.error("[Callback] Missing bankTransaction");
-            throw new IllegalArgumentException("error.missing_field");
+            log.warn("[Callback] Missing bankTransaction for callbackData: {}", callbackData);
         }
 
         if ("success".equalsIgnoreCase(callbackData.status())
                 && (callbackData.rrn() == null || callbackData.rrn().isBlank())) {
-            log.error("[Callback] Missing rrn for successful callback");
-            throw new IllegalArgumentException("error.missing_field");
+            log.warn("[Callback] Missing rrn for successful callback orderId={}", callbackData.orderId());
         }
 
         try {
@@ -394,8 +392,16 @@ public class EpointIntegrationService {
         EpointResponse response = epointService.getStatus(transactionId);
 
         paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
+            String oldStatus = payment.getStatus();
             updatePaymentFromEpointResponse(payment, response);
-            paymentRepository.save(payment);
+            
+            if ("SUCCESS".equalsIgnoreCase(payment.getStatus()) && !"SUCCESS".equalsIgnoreCase(oldStatus)) {
+                payment.setCallbackProcessed(true);
+                paymentRepository.save(payment);
+                assignSubscriptionIfPossible(payment, response, payment.getUserId());
+            } else {
+                paymentRepository.save(payment);
+            }
         });
 
         return response;
