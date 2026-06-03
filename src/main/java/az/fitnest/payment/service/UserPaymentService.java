@@ -149,11 +149,11 @@ public class UserPaymentService {
         if ("PENDING".equals(status) || "PENDING_USER_ACTION".equals(status) || "PENDING_3DS".equals(status) || "NEW".equals(status)) {
             try {
                 log.info("[StatusSync] Actively querying status from Epoint for orderId: {}", orderId);
-                EpointResponse response = integrationService.getStatus(orderId);
-                if (response != null && response.status() != null) {
-                    status = response.status().toUpperCase();
-                    log.info("[StatusSync] Epoint returned status: {} for orderId: {}", status, orderId);
-                }
+                integrationService.getStatus(orderId);
+                // Re-fetch payment from database to get the synchronized status
+                payment = paymentRepository.findByOrderId(orderId).orElse(payment);
+                status = payment.getStatus() != null ? payment.getStatus().toUpperCase() : "PENDING";
+                log.info("[StatusSync] Synchronized status from database: {}", status);
             } catch (Exception e) {
                 log.error("[StatusSync] Failed to actively sync status for orderId: {}", orderId, e);
             }

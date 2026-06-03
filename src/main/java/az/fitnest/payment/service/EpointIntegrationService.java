@@ -498,7 +498,23 @@ public class EpointIntegrationService {
     }
 
     private void updatePaymentFromEpointResponse(Payment payment, EpointResponse response) {
-        payment.setStatus(response.status() != null ? response.status().toUpperCase() : payment.getStatus());
+        String newStatus = response.status() != null ? response.status().toUpperCase() : payment.getStatus();
+
+        if (("FAILED".equalsIgnoreCase(newStatus) || "ERROR".equalsIgnoreCase(newStatus))
+                && ("PENDING".equals(payment.getStatus()) || "PENDING_USER_ACTION".equals(payment.getStatus()) || "PENDING_3DS".equals(payment.getStatus()) || "NEW".equals(payment.getStatus()))) {
+
+            boolean hasAttempt = (response.cardMask() != null && !response.cardMask().isBlank())
+                    || (response.bankTransaction() != null && !response.bankTransaction().isBlank())
+                    || (response.bankResponse() != null && !response.bankResponse().isBlank())
+                    || (response.code() != null && !response.code().isBlank() && !"500".equals(response.code()) && !"ERROR".equalsIgnoreCase(response.code()));
+
+            if (!hasAttempt) {
+                log.info("[StatusSync] Epoint returned error/failed status but no transaction attempt detected. Retaining pending status: {}", payment.getStatus());
+                newStatus = payment.getStatus();
+            }
+        }
+
+        payment.setStatus(newStatus);
         payment.setTransactionId(response.transaction() != null ? response.transaction() : payment.getTransactionId());
         payment.setBankTransaction(response.bankTransaction());
         payment.setRrn(response.rrn());
