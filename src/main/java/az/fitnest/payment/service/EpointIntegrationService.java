@@ -385,13 +385,18 @@ public class EpointIntegrationService {
     }
 
     public EpointResponse getStatus(String id) {
-        String transactionId = paymentRepository.findByOrderId(id)
-                .map(Payment::getTransactionId)
-                .orElse(id);
+        Optional<Payment> paymentOpt = paymentRepository.findByOrderId(id)
+                .or(() -> paymentRepository.findByTransactionId(id));
 
-        EpointResponse response = epointService.getStatus(transactionId);
+        String queryId = paymentOpt.map(Payment::getTransactionId).orElse(id);
+        if (queryId == null || queryId.isBlank()) {
+            queryId = id;
+        }
 
-        paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
+        EpointResponse response = epointService.getStatus(queryId);
+
+        if (paymentOpt.isPresent()) {
+            Payment payment = paymentOpt.get();
             String oldStatus = payment.getStatus();
             updatePaymentFromEpointResponse(payment, response);
             
@@ -402,7 +407,7 @@ public class EpointIntegrationService {
             } else {
                 paymentRepository.save(payment);
             }
-        });
+        }
 
         return response;
     }
@@ -442,10 +447,39 @@ public class EpointIntegrationService {
         EpointResponse response = epointService.createWidgetUrl(request);
 
         if ("success".equalsIgnoreCase(response.status())) {
+            String widgetUrl = response.widgetUrl();
+            String transactionId = response.transaction();
+            if (widgetUrl != null && !widgetUrl.isBlank()) {
+                int widgetIdx = widgetUrl.indexOf("/widget/");
+                if (widgetIdx != -1) {
+                    String token = widgetUrl.substring(widgetIdx + "/widget/".length()).trim();
+                    int questionIdx = token.indexOf('?');
+                    if (questionIdx != -1) {
+                        token = token.substring(0, questionIdx);
+                    }
+                    int hashIdx = token.indexOf('#');
+                    if (hashIdx != -1) {
+                        token = token.substring(0, hashIdx);
+                    }
+                    if (token.endsWith("/")) {
+                        token = token.substring(0, token.length() - 1);
+                    }
+                    if (!token.isBlank() && token.matches("\\d+")) {
+                        try {
+                            String paddedToken = String.format("%010d", Long.parseLong(token));
+                            transactionId = "tw" + paddedToken;
+                            log.info("[WidgetUrl] Extracted widget token: {}, formatted transactionId: {}", token, transactionId);
+                        } catch (Exception e) {
+                            log.warn("[WidgetUrl] Failed to format widget token: {}", token, e);
+                        }
+                    }
+                }
+            }
+
             Payment payment = new Payment();
             payment.setProvider("EPOINT");
             payment.setOrderId(orderId);
-            payment.setTransactionId(response.transaction());
+            payment.setTransactionId(transactionId);
             payment.setAmount(amount);
             payment.setCurrency(currency);
             payment.setStatus("PENDING_USER_ACTION");
@@ -453,14 +487,15 @@ public class EpointIntegrationService {
             payment.setDescription(description);
             payment.setType("WIDGET_PAYMENT");
             payment.setAutoPaymentEnabled(autoPaymentEnabled != null ? autoPaymentEnabled : false);
+            payment.setRedirectUrl(widgetUrl);
             paymentRepository.save(payment);
-            log.info("[WidgetUrl] (SERVICE) Pending payment saved. orderId={}, transactionId={}", orderId, response.transaction());
+            log.info("[WidgetUrl] (SERVICE) Pending payment saved. orderId={}, transactionId={}", orderId, transactionId);
 
             return EpointResponse.builder()
                     .status(response.status())
-                    .transaction(response.transaction() != null ? response.transaction() : null)
+                    .transaction(transactionId)
                     .orderId(orderId)
-                    .widgetUrl(response.widgetUrl())
+                    .widgetUrl(widgetUrl)
                     .message(response.message())
                     .code(response.code())
                     .build();
