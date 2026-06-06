@@ -5,8 +5,9 @@ import lombok.Builder;
 
 @Builder
 public record EpointRefundRequest(
-    @Schema(hidden = true)
+    @com.fasterxml.jackson.annotation.JsonProperty("public_key")
     String publicKey,
+    @com.fasterxml.jackson.annotation.JsonProperty("transaction")
     String transactionId,
     Double amount,
     String currency,

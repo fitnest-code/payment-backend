@@ -6,6 +6,7 @@ import lombok.Builder;
 @Builder
 public record EpointReverseRequest(
     @Schema(hidden = true)
+    @com.fasterxml.jackson.annotation.JsonProperty("public_key")
     String publicKey,
     String language,
     String transaction,

@@ -4,6 +4,7 @@ import lombok.Builder;
 
 @Builder
 public record EpointInvoiceActionRequest(
+    @com.fasterxml.jackson.annotation.JsonProperty("public_key")
     String publicKey,
     Long id,
     String phone,
