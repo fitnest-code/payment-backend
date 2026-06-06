@@ -30,6 +30,7 @@ public record EpointResponse(
     String cardId,
     @JsonProperty("widget_url")
     String widgetUrl,
+    @com.fasterxml.jackson.databind.annotation.JsonDeserialize(using = EpointMessageDeserializer.class)
     String message,
     String code,
     @JsonProperty("other_attr")
