@@ -22,4 +22,5 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findByTransactionIdForUpdate(@Param("transactionId") String transactionId);
 
     List<Payment> findAllByUserId(Long userId);
+    List<Payment> findByStatusAndCreatedDateBetween(String status, java.time.LocalDateTime start, java.time.LocalDateTime end);
 }

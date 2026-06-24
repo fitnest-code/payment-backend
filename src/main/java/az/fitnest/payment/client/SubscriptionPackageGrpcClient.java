@@ -29,6 +29,14 @@ public class SubscriptionPackageGrpcClient {
         return new OptionPriceCurrency(response.getAmount(), response.getCurrency(), response.getDurationMonths());
     }
 
+    public java.util.List<az.fitnest.order.grpc.PackageNameInfo> getPackageNamesByIds(java.util.List<Long> packageIds) {
+        az.fitnest.order.grpc.GetPackageNamesByIdsRequest request = az.fitnest.order.grpc.GetPackageNamesByIdsRequest.newBuilder()
+                .addAllPackageIds(packageIds)
+                .build();
+        az.fitnest.order.grpc.GetPackageNamesByIdsResponse response = stub.getPackageNamesByIds(request);
+        return response.getPackagesList();
+    }
+
     public static class OptionPriceCurrency {
         public final double amount;
         public final String currency;
