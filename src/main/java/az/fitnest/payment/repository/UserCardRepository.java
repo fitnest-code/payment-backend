@@ -14,4 +14,6 @@ public interface UserCardRepository extends JpaRepository<UserCard, Long> {
     Optional<UserCard> findByUserIdAndCardId(Long userId, String cardId);
 
     Optional<UserCard> findByCardNumberAndReccPmntId(String cardNumber, String reccPmntId);
+
+    void deleteByUserId(Long userId);
 }
