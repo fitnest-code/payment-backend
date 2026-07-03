@@ -40,3 +40,10 @@ Thumbs.db
 application-local.yml
 application-dev.yml
 application-prod.yml
+
+# -----------------------------
+# ABB / Azericard RSA Keys (NEVER commit these!)
+# -----------------------------
+abb-keys/
+*.pem
+*_base64.txt

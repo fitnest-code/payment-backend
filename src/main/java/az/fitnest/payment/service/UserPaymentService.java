@@ -83,6 +83,10 @@ public class UserPaymentService {
                         brand = "Google Pay";
                     } else if ("APPLE_PAY".equals(payment.getType())) {
                         brand = "Apple Pay";
+                    } else if ("ABB_INSTALLMENT".equals(payment.getType())) {
+                        brand = "ABB Taksit";
+                    } else if ("ABB_PAYMENT".equals(payment.getType())) {
+                        brand = "ABB";
                     } else if ("WIDGET_PAYMENT".equals(payment.getType()) && payment.getDescription() != null) {
                         if (payment.getDescription().contains("device:iOS")) {
                             brand = "Apple Pay";
@@ -96,6 +100,9 @@ public class UserPaymentService {
                     if ("SUCCESS".equalsIgnoreCase(status)) status = "Uğurlu";
                     else if ("FAILED".equalsIgnoreCase(status)) status = "Uğursuz";
                     else if ("PENDING".equalsIgnoreCase(status)) status = "Gözləmədə";
+                    else if ("PENDING_USER_ACTION".equalsIgnoreCase(status)) status = "Gözləmədə";
+                    else if ("REVERSED".equalsIgnoreCase(status)) status = "Geri qaytarıldı";
+                    else if ("REFUNDED".equalsIgnoreCase(status)) status = "İadə edildi";
                     else if (status != null) {
                         status = status.substring(0, 1).toUpperCase() + status.substring(1).toLowerCase();
                     }
@@ -379,6 +386,10 @@ public class UserPaymentService {
             brand = "Google Pay";
         } else if ("APPLE_PAY".equals(payment.getType())) {
             brand = "Apple Pay";
+        } else if ("ABB_INSTALLMENT".equals(payment.getType())) {
+            brand = "ABB Taksit";
+        } else if ("ABB_PAYMENT".equals(payment.getType())) {
+            brand = "ABB";
         } else if ("WIDGET_PAYMENT".equals(payment.getType()) && payment.getDescription() != null) {
             if (payment.getDescription().contains("device:iOS")) {
                 brand = "Apple Pay";

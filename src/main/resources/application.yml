@@ -154,6 +154,27 @@ epoint:
   success-redirect-url: ${EPOINT_SUCCESS_REDIRECT_URL:https://fitnest.az/payment/success}
   error-redirect-url: ${EPOINT_ERROR_REDIRECT_URL:https://fitnest.az/payment/error}
 
+# ABB (Azericard) E-Commerce Gateway Configuration
+abb:
+  # Sandbox: https://testmpi.3dsecure.az/cgi-bin/cgi_link
+  # Production: https://mpi.3dsecure.az/cgi-bin/cgi_link
+  gateway-url: ${ABB_GATEWAY_URL:https://testmpi.3dsecure.az/cgi-bin/cgi_link}
+  terminal-id: ${ABB_TERMINAL_ID:}
+  merchant-name: ${ABB_MERCHANT_NAME:FitNest}
+  merchant-url: ${ABB_MERCHANT_URL:https://fitnest.az}
+  merchant-email: ${ABB_MERCHANT_EMAIL:payment@fitnest.az}
+  country-code: ${ABB_COUNTRY_CODE:AZ}
+  merchant-gmt: ${ABB_MERCHANT_GMT:+4}
+  # RSA private key (PKCS#8, Base64, PEM headers optional)
+  private-key: ${ABB_PRIVATE_KEY:}
+  # Azericard public key for P_SIGN verification (AZERICARDpublic.pem, Base64)
+  public-key: ${ABB_PUBLIC_KEY:}
+  callback-url: ${ABB_CALLBACK_URL:https://dev-api.fitnest.az/payment/abb/callback}
+  success-redirect-url: ${ABB_SUCCESS_REDIRECT_URL:https://fitnest.az/payment/success}
+  error-redirect-url: ${ABB_ERROR_REDIRECT_URL:https://fitnest.az/payment/error}
+  default-currency: ${ABB_DEFAULT_CURRENCY:AZN}
+  default-language: ${ABB_DEFAULT_LANGUAGE:AZ}
+
 # Idempotency Key Configuration
 payment:
   idempotency:
