@@ -81,8 +81,21 @@ public class AbbPaymentController {
 
     @Operation(
             summary = "ABB taksit ödənişi başlat",
-            description = "Müəyyən taksit sayı ilə Azericard ödəniş səhifəsinə yönləndirilmə URL-i qaytarır. " +
-                    "installmentMonths: 3, 6, 9, 12, 18, 24, 27, 30 (null = taksitsiz)"
+            description = """
+                    Müəyyən taksit sayı ilə Azericard ödəniş səhifəsinə yönləndirilmə URL-i qaytarır.
+
+                    installmentMonths dəyərləri:
+                    - Test terminal aktiv dövrlər: 2, 3, 6, 9, 12
+                    - Production terminal: bank konfiqurasiyasına əsasən
+                    - null və ya 0: taksitsiz ödəniş (ACQ_INST_PAYIN=X)
+
+                    Xəta kodları (taksit konfiqurasiya səhvləri):
+                    U1=boş konfiqurasiya, U3=kart BIN tapılmadı, U4=BIN üçün taksit yoxdur,
+                    U5=terminal üçün taksit yoxdur, U6=terminal üçün həmin dövr yoxdur,
+                    U7=kart BIN üçün həmin dövr yoxdur.
+
+                    Taksit kartı: 4127214121630724 (test).
+                    """
     )
     @PostMapping("/installment")
     public ResponseEntity<AbbInitiateResponse> initiateInstallmentPayment(
@@ -324,6 +337,10 @@ public class AbbPaymentController {
         if (months == null || months <= 0) {
             return AbbInstallmentOption.NONE;
         }
-        return AbbInstallmentOption.fromMonths(months);
+        AbbInstallmentOption option = AbbInstallmentOption.fromMonths(months);
+        if (option == AbbInstallmentOption.NONE) {
+            log.warn("[ABB][Controller] Unrecognized installmentMonths={}, falling back to NONE (ACQ_INST_PAYIN=X)", months);
+        }
+        return option;
     }
 }

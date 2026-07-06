@@ -24,5 +24,14 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     List<Payment> findAllByUserId(Long userId);
     List<Payment> findByStatusAndCreatedDateBetween(String status, java.time.LocalDateTime start, java.time.LocalDateTime end);
 
+    /** Provider-ə görə ödənişlər (məs: "ABB", "EPOINT") */
+    List<Payment> findAllByProvider(String provider);
+
+    /** Provider + status kombinasiyasına görə ödənişlər */
+    List<Payment> findAllByProviderAndStatus(String provider, String status);
+
+    /** İstifadəçi + provider kombinasiyasına görə ödənişlər */
+    List<Payment> findAllByUserIdAndProvider(Long userId, String provider);
+
     void deleteByUserId(Long userId);
 }

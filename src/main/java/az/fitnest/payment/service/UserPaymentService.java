@@ -36,6 +36,7 @@ public class UserPaymentService {
     private final UserCardRepository userCardRepository;
     private final PaymentRepository paymentRepository;
     private final EpointIntegrationService integrationService;
+    private final AbbIntegrationService abbIntegrationService;
     @Autowired
     private MessageSource messageSource;
 
@@ -155,12 +156,18 @@ public class UserPaymentService {
         // If status is pending, actively query Epoint to sync status
         if ("PENDING".equals(status) || "PENDING_USER_ACTION".equals(status) || "PENDING_3DS".equals(status) || "NEW".equals(status)) {
             try {
-                log.info("[StatusSync] Actively querying status from Epoint for orderId: {}", orderId);
-                integrationService.getStatus(orderId);
-                // Re-fetch payment from database to get the synchronized status
+                boolean isAbb = "ABB".equalsIgnoreCase(payment.getProvider())
+                        || (payment.getType() != null && payment.getType().startsWith("ABB"));
+                if (isAbb) {
+                    log.info("[StatusSync] Actively querying ABB status for orderId: {}", orderId);
+                    abbIntegrationService.getTransactionStatus(orderId, "1");
+                } else {
+                    log.info("[StatusSync] Actively querying Epoint status for orderId: {}", orderId);
+                    integrationService.getStatus(orderId);
+                }
                 payment = paymentRepository.findByOrderId(orderId).orElse(payment);
                 status = payment.getStatus() != null ? payment.getStatus().toUpperCase() : "PENDING";
-                log.info("[StatusSync] Synchronized status from database: {}", status);
+                log.info("[StatusSync] Synchronized status: {} for orderId: {}", status, orderId);
             } catch (Exception e) {
                 log.error("[StatusSync] Failed to actively sync status for orderId: {}", orderId, e);
             }
@@ -225,7 +232,13 @@ public class UserPaymentService {
             startDate = java.time.LocalDate.of(currentYear, 1, 1);
         }
         List<Payment> filtered = allPayments.stream()
-            .filter(p -> "PAYMENT".equalsIgnoreCase(p.getType()) || "WIDGET_PAYMENT".equalsIgnoreCase(p.getType()))
+            .filter(p -> {
+                String t = p.getType();
+                return "PAYMENT".equalsIgnoreCase(t)
+                    || "WIDGET_PAYMENT".equalsIgnoreCase(t)
+                    || "ABB_PAYMENT".equalsIgnoreCase(t)
+                    || "ABB_INSTALLMENT".equalsIgnoreCase(t);
+            })
             .filter(p -> {
                 if (p.getCreatedDate() == null) return false;
                 java.time.LocalDate date = p.getCreatedDate().toLocalDate();

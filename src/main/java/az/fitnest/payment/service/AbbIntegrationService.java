@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.net.URLEncoder;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -64,6 +65,15 @@ public class AbbIntegrationService {
     private final StringRedisTemplate redisTemplate;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final UserSubscriptionGrpcClient userSubscriptionGrpcClient;
+
+    /** Paylaşılan HTTP client instance (thread-safe, yenidən istifadə edilir) */
+    private static final java.net.http.HttpClient HTTP_CLIENT =
+            java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(10))
+                    .build();
+
+    /** OrderId üçün SecureRandom instance (thread-safe) */
+    private static final SecureRandom ORDER_RANDOM = new SecureRandom();
 
     // ══════════════════════════════════════════════════════════════════════════
     // İctimai metodlar – Ödəniş başlatma
@@ -653,12 +663,15 @@ public class AbbIntegrationService {
     }
 
     /**
-     * Unikal orderId yaradır.
-     * Format: epoch milliseconds-ın son 12 rəqəmi (spec: 6-32 rəqəm, terminal üzrə gündə unikal).
+     * Collision-proof unikal orderId yaradır.
+     *
+     * <p>Format: {@code epochMs + 4 rəqəmli random suffix} (17 simvol).
+     * Spec tələbi: 6-32 rəqəm, terminal üzərə gündə unikal.</p>
      */
     private String generateOrderId() {
-        // Epoch ms → 13 rəqəm, spec tələbini ödəyir; collision riski çox aşağıdır
-        return String.valueOf(Instant.now().toEpochMilli());
+        long epochMs = Instant.now().toEpochMilli();      // 13 rəqəm
+        int randomSuffix = ORDER_RANDOM.nextInt(9000) + 1000; // 1000-9999
+        return epochMs + String.valueOf(randomSuffix);    // 17 rəqəm, spec: max 32
     }
 
     /**
@@ -723,15 +736,15 @@ public class AbbIntegrationService {
 
             log.info("[ABB][{}] Sending to gateway. orderId={}", logContext, request.orderId());
 
-            java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
             java.net.http.HttpRequest httpRequest = java.net.http.HttpRequest.newBuilder()
                     .uri(java.net.URI.create(abbProperties.getGatewayUrl()))
                     .header("Content-Type", "application/x-www-form-urlencoded")
+                    .timeout(java.time.Duration.ofSeconds(30))
                     .POST(java.net.http.HttpRequest.BodyPublishers.ofString(formBody))
                     .build();
 
             java.net.http.HttpResponse<String> httpResponse =
-                    httpClient.send(httpRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
+                    HTTP_CLIENT.send(httpRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
 
             log.info("[ABB][{}] Gateway response: httpStatus={}, body={}",
                     logContext, httpResponse.statusCode(), httpResponse.body());

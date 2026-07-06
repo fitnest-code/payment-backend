@@ -8,8 +8,15 @@ package az.fitnest.payment.dto.abb;
  */
 public enum AbbInstallmentOption {
 
-    /** Taksitsiz ödəniş */
-    NONE("INST_ALLX"),
+    /**
+     * Taksitsiz ödəniş.
+     * Azericard spec-ə görə ACQ_INST_PAYIN=X göndərilir.
+     * Qeyd: "INST_ALLX" deyil, məhz "X" göndərilməlidir.
+     */
+    NONE("X"),
+
+    /** 2 aylıq taksit (test terminal konfiqurasiyanın dəstəklənən dövrü) */
+    MONTHS_2("INST_ALL2"),
 
     /** 3 aylıq taksit */
     MONTHS_3("INST_ALL3"),
@@ -58,11 +65,12 @@ public enum AbbInstallmentOption {
     /**
      * Taksit sayından enum dəyərini tapır.
      *
-     * @param months taksit sayı (3, 6, 9, 12, 18, 24, 27, 30)
+     * @param months taksit sayı (2, 3, 6, 9, 12, 18, 24, 27, 30)
      * @return uyğun enum dəyəri, tapılmazsa {@link #NONE}
      */
     public static AbbInstallmentOption fromMonths(int months) {
         return switch (months) {
+            case 2  -> MONTHS_2;
             case 3  -> MONTHS_3;
             case 6  -> MONTHS_6;
             case 9  -> MONTHS_9;
