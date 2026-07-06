@@ -425,29 +425,68 @@ public class AbbIntegrationService {
 
             log.info("[ABB][TRTYPE=90] Sending status request to gateway for orderId={}", orderId);
 
-            java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
             java.net.http.HttpRequest httpRequest = java.net.http.HttpRequest.newBuilder()
                     .uri(java.net.URI.create(abbProperties.getGatewayUrl()))
                     .header("Content-Type", "application/x-www-form-urlencoded")
+                    .timeout(java.time.Duration.ofSeconds(30))
                     .POST(java.net.http.HttpRequest.BodyPublishers.ofString(formBody))
                     .build();
 
             java.net.http.HttpResponse<String> httpResponse =
-                    httpClient.send(httpRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
+                    HTTP_CLIENT.send(httpRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
 
             log.info("[ABB][TRTYPE=90] Gateway response status={}, body={}",
                     httpResponse.statusCode(), httpResponse.body());
 
-            // Status cavabını Payment entity-sinə yansıt (əgər mövcuddursa)
-            paymentRepository.findByOrderId(orderId).ifPresent(payment ->
-                    log.info("[ABB][TRTYPE=90] Payment found in DB: id={}, currentStatus={}",
-                            payment.getId(), payment.getStatus())
-            );
+            String body = httpResponse.body();
+            String action   = extractTagValue(body, "action");
+            String rc       = extractTagValue(body, "rc");
+            String approval = extractTagValue(body, "approval");
+            String rrn      = extractTagValue(body, "rrn");
+            String intRef   = extractTagValue(body, "int_ref");
 
-            return AbbTransactionActionResponse.builder()
-                    .status("success")
-                    .message(httpResponse.body())
-                    .build();
+            boolean responseSuccess = ACTION_SUCCESS.equals(action) && RC_APPROVED.equals(rc);
+
+            paymentRepository.findByOrderId(orderId).ifPresent(payment -> {
+                if (Boolean.TRUE.equals(payment.getCallbackProcessed())) {
+                    log.info("[ABB][TRTYPE=90] Payment for orderId={} was already processed.", orderId);
+                    return;
+                }
+                if (responseSuccess) {
+                    log.info("[ABB][TRTYPE=90] Sync: Payment successful for orderId={}", orderId);
+                    payment.setStatus("SUCCESS");
+                    if (rrn != null && !rrn.isBlank()) {
+                        payment.setRrn(rrn);
+                        payment.setBankTransaction(rrn);
+                    }
+                    if (intRef != null && !intRef.isBlank()) {
+                        payment.setTransactionId(intRef);
+                    }
+                    if (approval != null && !approval.isBlank()) {
+                        payment.setOperationCode(approval);
+                        payment.setBankResponse("APPROVAL=" + approval + "\nRC=" + rc + "\nACTION=" + action + "\n(Via Status Sync)");
+                    }
+                    payment.setCode(rc);
+                    payment.setCallbackProcessed(true);
+                    paymentRepository.save(payment);
+                    assignSubscriptionIfPossible(payment);
+                } else if (action != null && rc != null) {
+                    log.info("[ABB][TRTYPE=90] Sync: Payment failed/declined for orderId={}, action={}, rc={}", orderId, action, rc);
+                    payment.setStatus("FAILED");
+                    payment.setCode(rc);
+                    payment.setCallbackProcessed(true);
+                    paymentRepository.save(payment);
+                } else {
+                    log.warn("[ABB][TRTYPE=90] Sync: Status unresolved for orderId={}", orderId);
+                }
+            });
+
+            if (responseSuccess) {
+                return AbbTransactionActionResponse.success(action, rc, approval, rrn, intRef);
+            } else {
+                return AbbTransactionActionResponse.error(
+                        String.format("Bank status sorğusu mənfi: action=%s, rc=%s. %s", action, rc, body));
+            }
 
         } catch (Exception e) {
             log.error("[ABB][TRTYPE=90] Status inquiry failed for orderId={}", orderId, e);
