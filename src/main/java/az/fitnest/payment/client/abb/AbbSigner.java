@@ -87,7 +87,20 @@ public class AbbSigner {
      */
     public String sign(String macSource, String privateKeyBase64) {
         try {
-            byte[] keyBytes = Base64.getDecoder().decode(stripPemHeaders(privateKeyBase64));
+            if (privateKeyBase64 == null) {
+                log.error("[AbbSigner] Private key is null");
+                throw new IllegalArgumentException("Private key is null");
+            }
+            String stripped = stripPemHeaders(privateKeyBase64);
+            log.info("[AbbSigner] Private key base64 length: {}, stripped length: {}", privateKeyBase64.length(), stripped.length());
+            if (stripped.length() > 20) {
+                log.info("[AbbSigner] Key preview: {}...{}", stripped.substring(0, 10), stripped.substring(stripped.length() - 10));
+            } else {
+                log.info("[AbbSigner] Key preview: {}", stripped);
+            }
+
+            byte[] keyBytes = Base64.getDecoder().decode(stripped);
+            log.info("[AbbSigner] Decoded key bytes length: {}", keyBytes.length);
             PrivateKey privateKey = getPrivateKeyFromBytes(keyBytes);
 
             Signature signature = Signature.getInstance(SIGNATURE_ALGORITHM);
@@ -201,14 +214,14 @@ public class AbbSigner {
             KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
             return keyFactory.generatePrivate(keySpec);
         } catch (Exception e) {
-            log.warn("[AbbSigner] Key loading as PKCS#8 failed. Trying PKCS#1 fallback...");
+            log.warn("[AbbSigner] Key loading as PKCS#8 failed. Trying PKCS#1 fallback... Error: {}", e.getMessage());
             try {
                 byte[] pkcs8Bytes = wrapPkcs1ToPkcs8(keyBytes);
                 PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(pkcs8Bytes);
                 KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
                 return keyFactory.generatePrivate(keySpec);
             } catch (Exception ex) {
-                log.error("[AbbSigner] Failed to load key as both PKCS#8 and PKCS#1");
+                log.error("[AbbSigner] Failed to load key as both PKCS#8 and PKCS#1. PKCS#1 error: {}", ex.getMessage(), ex);
                 throw e; // throw the original PKCS#8 parsing exception
             }
         }
