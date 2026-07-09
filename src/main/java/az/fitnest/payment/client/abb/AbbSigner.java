@@ -88,9 +88,7 @@ public class AbbSigner {
     public String sign(String macSource, String privateKeyBase64) {
         try {
             byte[] keyBytes = Base64.getDecoder().decode(stripPemHeaders(privateKeyBase64));
-            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
-            PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
+            PrivateKey privateKey = getPrivateKeyFromBytes(keyBytes);
 
             Signature signature = Signature.getInstance(SIGNATURE_ALGORITHM);
             signature.initSign(privateKey);
@@ -192,5 +190,76 @@ public class AbbSigner {
                 .replaceAll("-----BEGIN [A-Z ]+-----", "")
                 .replaceAll("-----END [A-Z ]+-----", "")
                 .replaceAll("\\s+", "");
+    }
+
+    /**
+     * Base64-dən oxunmuş açar baytlarını əvvəlcə PKCS#8, alınmadıqda isə PKCS#1 formatında parses edir.
+     */
+    private PrivateKey getPrivateKeyFromBytes(byte[] keyBytes) throws Exception {
+        try {
+            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
+            KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
+            return keyFactory.generatePrivate(keySpec);
+        } catch (Exception e) {
+            log.warn("[AbbSigner] Key loading as PKCS#8 failed. Trying PKCS#1 fallback...");
+            try {
+                byte[] pkcs8Bytes = wrapPkcs1ToPkcs8(keyBytes);
+                PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(pkcs8Bytes);
+                KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
+                return keyFactory.generatePrivate(keySpec);
+            } catch (Exception ex) {
+                log.error("[AbbSigner] Failed to load key as both PKCS#8 and PKCS#1");
+                throw e; // throw the original PKCS#8 parsing exception
+            }
+        }
+    }
+
+    /**
+     * PKCS#1 formatındakı RSA private key baytlarını dinamik olaraq PKCS#8 formatına bükür (wrap).
+     */
+    private byte[] wrapPkcs1ToPkcs8(byte[] pkcs1Bytes) {
+        // AlgorithmIdentifier SEQUENCE for RSA (1.2.840.113549.1.1.1) and NULL parameters
+        byte[] algId = new byte[] {
+            0x30, 0x0d,
+            0x06, 0x09,
+            0x2a, (byte) 0x86, 0x48, (byte) 0x86, (byte) 0xf7, 0x0d, 0x01, 0x01, 0x01,
+            0x05, 0x00
+        };
+
+        byte[] octetString = encodeAsn1Length(0x04, pkcs1Bytes);
+
+        byte[] inner = new byte[3 + algId.length + octetString.length];
+        inner[0] = 0x02; // INTEGER
+        inner[1] = 0x01; // Length
+        inner[2] = 0x00; // Version 0
+
+        System.arraycopy(algId, 0, inner, 3, algId.length);
+        System.arraycopy(octetString, 0, inner, 3 + algId.length, octetString.length);
+
+        return encodeAsn1Length(0x30, inner);
+    }
+
+    /**
+     * ASN.1 formatına uyğun tag və uzunluq baytlarını əlavə edir.
+     */
+    private byte[] encodeAsn1Length(int tag, byte[] content) {
+        int length = content.length;
+        byte[] header;
+        if (length < 128) {
+            header = new byte[] { (byte) tag, (byte) length };
+        } else if (length < 256) {
+            header = new byte[] { (byte) tag, (byte) 0x81, (byte) length };
+        } else if (length < 65536) {
+            header = new byte[] { (byte) tag, (byte) 0x82, (byte) (length >> 8), (byte) (length & 0xff) };
+        } else {
+            header = new byte[] {
+                (byte) tag, (byte) 0x83,
+                (byte) (length >> 16), (byte) ((length >> 8) & 0xff), (byte) (length & 0xff)
+            };
+        }
+        byte[] result = new byte[header.length + content.length];
+        System.arraycopy(header, 0, result, 0, header.length);
+        System.arraycopy(content, 0, result, header.length, content.length);
+        return result;
     }
 }
