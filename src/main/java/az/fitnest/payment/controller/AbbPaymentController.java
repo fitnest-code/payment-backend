@@ -12,7 +12,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -144,7 +146,7 @@ public class AbbPaymentController {
                     "Bu endpoint JWT autentifikasiyasından muafdır."
     )
     @PostMapping(value = "/callback", consumes = {"application/x-www-form-urlencoded", "*/*"})
-    public ResponseEntity<Void> handleCallback(
+    public ResponseEntity<String> handleCallback(
             @RequestParam(value = "TERMINAL",  required = false) String terminal,
             @RequestParam(value = "TRTYPE",    required = false) String trtype,
             @RequestParam(value = "ORDER",     required = false) String order,
@@ -190,32 +192,50 @@ public class AbbPaymentController {
                     ? abbIntegrationService.getSuccessRedirectUrl()
                     : abbIntegrationService.getErrorRedirectUrl();
 
-            log.info("[ABB][Callback] Redirecting browser to: {}", targetUrl);
-            return ResponseEntity.status(HttpStatus.SEE_OTHER)
-                    .location(URI.create(targetUrl))
-                    .build();
+            log.info("[ABB][Callback] Returning HTML redirect to: {}", targetUrl);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + ";charset=UTF-8")
+                    .body(buildHtmlRedirect(targetUrl));
 
         } catch (IllegalArgumentException e) {
             log.warn("[ABB][Callback] Invalid callback data for order={}: {}", order, e.getMessage());
             String targetUrl = abbIntegrationService.getErrorRedirectUrl();
-            return ResponseEntity.status(HttpStatus.SEE_OTHER)
-                    .location(URI.create(targetUrl))
-                    .build();
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + ";charset=UTF-8")
+                    .body(buildHtmlRedirect(targetUrl));
 
         } catch (SecurityException e) {
             log.error("[ABB][Callback] Signature verification failed for order={}", order);
             String targetUrl = abbIntegrationService.getErrorRedirectUrl();
-            return ResponseEntity.status(HttpStatus.SEE_OTHER)
-                    .location(URI.create(targetUrl))
-                    .build();
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + ";charset=UTF-8")
+                    .body(buildHtmlRedirect(targetUrl));
 
         } catch (Exception e) {
             log.error("[ABB][Callback] Unexpected error for order={}", order, e);
             String targetUrl = abbIntegrationService.getErrorRedirectUrl();
-            return ResponseEntity.status(HttpStatus.SEE_OTHER)
-                    .location(URI.create(targetUrl))
-                    .build();
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + ";charset=UTF-8")
+                    .body(buildHtmlRedirect(targetUrl));
         }
+    }
+
+    private String buildHtmlRedirect(String targetUrl) {
+        return "<!DOCTYPE html>\n" +
+                "<html>\n" +
+                "<head>\n" +
+                "    <meta charset=\"UTF-8\">\n" +
+                "    <meta http-equiv=\"refresh\" content=\"0;url=" + targetUrl + "\">\n" +
+                "    <script type=\"text/javascript\">\n" +
+                "        window.location.replace(\"" + targetUrl + "\");\n" +
+                "    </script>\n" +
+                "</head>\n" +
+                "<body>\n" +
+                "    <div style=\"text-align: center; margin-top: 50px; font-family: sans-serif;\">\n" +
+                "        <p>Yönləndirilirsiniz, zəhmət olmasa gözləyin...</p>\n" +
+                "    </div>\n" +
+                "</body>\n" +
+                "</html>";
     }
 
     /**
