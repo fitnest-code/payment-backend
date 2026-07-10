@@ -139,7 +139,20 @@ public class AbbSigner {
      */
     public boolean verify(String macSource, String hexSignature, String publicKeyBase64) {
         try {
+            if (publicKeyBase64 == null) {
+                log.error("[AbbSigner] Public key is null");
+                return false;
+            }
             byte[] keyBytes = Base64.getDecoder().decode(stripPemHeaders(publicKeyBase64));
+
+            // Check if the decoded bytes represent an ASCII/UTF-8 PEM string
+            String keyStr = new String(keyBytes, StandardCharsets.UTF_8).trim();
+            if (keyStr.contains("-----BEGIN")) {
+                log.info("[AbbSigner] Public key was wrapped as PEM inside Base64. Decoding inner PEM...");
+                String cleanPem = stripPemHeaders(keyStr);
+                keyBytes = Base64.getDecoder().decode(cleanPem);
+            }
+
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
             KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
             PublicKey publicKey = keyFactory.generatePublic(keySpec);
