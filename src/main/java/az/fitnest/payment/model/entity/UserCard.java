@@ -34,7 +34,7 @@ public class UserCard extends BaseAuditableEntity {
     @Column(name = "bank_transaction")
     private String bankTransaction;
 
-    @Column(name = "bank_response")
+    @Column(name = "bank_response", columnDefinition = "TEXT")
     private String bankResponse;
 
     @Column(name = "operation_code")

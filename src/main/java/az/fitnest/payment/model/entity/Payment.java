@@ -69,7 +69,7 @@ public class Payment extends BaseAuditableEntity {
     @Column(name = "code")
     private String code;
 
-    @Column(name = "bank_response")
+    @Column(name = "bank_response", columnDefinition = "TEXT")
     private String bankResponse;
 
     @Column(name = "operation_code")
