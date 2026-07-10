@@ -144,7 +144,7 @@ public class AbbPaymentController {
                     "Bu endpoint JWT autentifikasiyasından muafdır."
     )
     @PostMapping(value = "/callback", consumes = {"application/x-www-form-urlencoded", "*/*"})
-    public ResponseEntity<String> handleCallback(
+    public ResponseEntity<Void> handleCallback(
             @RequestParam(value = "TERMINAL",  required = false) String terminal,
             @RequestParam(value = "TRTYPE",    required = false) String trtype,
             @RequestParam(value = "ORDER",     required = false) String order,
@@ -185,19 +185,36 @@ public class AbbPaymentController {
         try {
             abbIntegrationService.processCallback(callback);
             log.info("[ABB][Callback] Successfully processed for order={}", order);
-            return ResponseEntity.ok("OK");
+
+            String targetUrl = callback.isSuccessful()
+                    ? abbIntegrationService.getSuccessRedirectUrl()
+                    : abbIntegrationService.getErrorRedirectUrl();
+
+            log.info("[ABB][Callback] Redirecting browser to: {}", targetUrl);
+            return ResponseEntity.status(HttpStatus.SEE_OTHER)
+                    .location(URI.create(targetUrl))
+                    .build();
 
         } catch (IllegalArgumentException e) {
             log.warn("[ABB][Callback] Invalid callback data for order={}: {}", order, e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid request");
+            String targetUrl = abbIntegrationService.getErrorRedirectUrl();
+            return ResponseEntity.status(HttpStatus.SEE_OTHER)
+                    .location(URI.create(targetUrl))
+                    .build();
 
         } catch (SecurityException e) {
             log.error("[ABB][Callback] Signature verification failed for order={}", order);
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
+            String targetUrl = abbIntegrationService.getErrorRedirectUrl();
+            return ResponseEntity.status(HttpStatus.SEE_OTHER)
+                    .location(URI.create(targetUrl))
+                    .build();
 
         } catch (Exception e) {
             log.error("[ABB][Callback] Unexpected error for order={}", order, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Internal server error");
+            String targetUrl = abbIntegrationService.getErrorRedirectUrl();
+            return ResponseEntity.status(HttpStatus.SEE_OTHER)
+                    .location(URI.create(targetUrl))
+                    .build();
         }
     }
 
