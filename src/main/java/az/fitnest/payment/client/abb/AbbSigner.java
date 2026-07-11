@@ -52,7 +52,7 @@ public class AbbSigner {
      */
     public String formatField(String value) {
         if (value == null || value.isEmpty()) {
-            return "1" + EMPTY_FIELD_PLACEHOLDER;
+            return EMPTY_FIELD_PLACEHOLDER;
         }
         return value.length() + value;
     }
