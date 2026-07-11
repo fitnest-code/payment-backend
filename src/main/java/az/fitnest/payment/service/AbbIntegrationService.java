@@ -512,6 +512,28 @@ public class AbbIntegrationService {
         return abbProperties.getErrorRedirectUrl();
     }
 
+    /**
+     * Uğurlu ödənişdən sonra yönləndiriləcək mütləq local uğur endpoint-i.
+     */
+    public String getAbsoluteLocalSuccessRedirectUrl() {
+        String callback = abbProperties.getCallbackUrl();
+        if (callback != null && callback.endsWith("/callback")) {
+            return callback.replace("/callback", "/redirect/success");
+        }
+        return "https://api.fitnest.az/payment/abb/redirect/success";
+    }
+
+    /**
+     * Uğursuz ödənişdən sonra yönləndiriləcək mütləq local xəta endpoint-i.
+     */
+    public String getAbsoluteLocalErrorRedirectUrl() {
+        String callback = abbProperties.getCallbackUrl();
+        if (callback != null && callback.endsWith("/callback")) {
+            return callback.replace("/callback", "/redirect/error");
+        }
+        return "https://api.fitnest.az/payment/abb/redirect/error";
+    }
+
 
     // ══════════════════════════════════════════════════════════════════════════
     // Xüsusi köməkçi metodlar

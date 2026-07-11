@@ -187,10 +187,10 @@ public class AbbPaymentController {
             log.info("[ABB][Callback] Successfully processed for order={}", order);
 
             String targetUrl = callback.isSuccessful()
-                    ? abbIntegrationService.getSuccessRedirectUrl()
-                    : abbIntegrationService.getErrorRedirectUrl();
+                    ? abbIntegrationService.getAbsoluteLocalSuccessRedirectUrl()
+                    : abbIntegrationService.getAbsoluteLocalErrorRedirectUrl();
 
-            log.info("[ABB][Callback] Redirecting (303 SEE_OTHER) directly to final URL: {}", targetUrl);
+            log.info("[ABB][Callback] Redirecting (303 SEE_OTHER) to absolute local URL: {}", targetUrl);
             return ResponseEntity.status(HttpStatus.SEE_OTHER)
                     .location(URI.create(targetUrl))
                     .build();
@@ -198,19 +198,19 @@ public class AbbPaymentController {
         } catch (IllegalArgumentException e) {
             log.warn("[ABB][Callback] Invalid callback data for order={}: {}", order, e.getMessage());
             return ResponseEntity.status(HttpStatus.SEE_OTHER)
-                    .location(URI.create(abbIntegrationService.getErrorRedirectUrl()))
+                    .location(URI.create(abbIntegrationService.getAbsoluteLocalErrorRedirectUrl()))
                     .build();
 
         } catch (SecurityException e) {
             log.error("[ABB][Callback] Signature verification failed for order={}", order);
             return ResponseEntity.status(HttpStatus.SEE_OTHER)
-                    .location(URI.create(abbIntegrationService.getErrorRedirectUrl()))
+                    .location(URI.create(abbIntegrationService.getAbsoluteLocalErrorRedirectUrl()))
                     .build();
 
         } catch (Exception e) {
             log.error("[ABB][Callback] Unexpected error for order={}", order, e);
             return ResponseEntity.status(HttpStatus.SEE_OTHER)
-                    .location(URI.create(abbIntegrationService.getErrorRedirectUrl()))
+                    .location(URI.create(abbIntegrationService.getAbsoluteLocalErrorRedirectUrl()))
                     .build();
         }
     }
