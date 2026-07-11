@@ -169,7 +169,7 @@ abb:
   private-key: ${ABB_PRIVATE_KEY:}
   # Azericard public key for P_SIGN verification (AZERICARDpublic.pem, Base64)
   public-key: ${ABB_PUBLIC_KEY:}
-  callback-url: ${ABB_CALLBACK_URL:https://dev-api.fitnest.az/payment/abb/callback}
+  callback-url: ${ABB_CALLBACK_URL:https://api.fitnest.az/payment/abb/callback}
   success-redirect-url: ${ABB_SUCCESS_REDIRECT_URL:https://fitnest.az/payment/success}
   error-redirect-url: ${ABB_ERROR_REDIRECT_URL:https://fitnest.az/payment/error}
   default-currency: ${ABB_DEFAULT_CURRENCY:AZN}
