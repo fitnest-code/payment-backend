@@ -128,9 +128,9 @@ public class AbbPaymentController {
             summary = "Dəstəklənən ABB taksit ayları",
             description = "Sistemdə aktiv olan və bank tərəfindən dəstəklənən taksit aylarının siyahısını qaytarır."
     )
-    @GetMapping("/installments")
+    @GetMapping("/installment")
     public ResponseEntity<java.util.List<Integer>> getSupportedInstallments() {
-        log.info("[ABB][Controller] /installments called");
+        log.info("[ABB][Controller] /installment GET called");
         return ResponseEntity.ok(abbIntegrationService.getSupportedInstallments());
     }
 
