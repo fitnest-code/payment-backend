@@ -174,7 +174,7 @@ abb:
   error-redirect-url: ${ABB_ERROR_REDIRECT_URL:https://fitnest.az/payment/error}
   default-currency: ${ABB_DEFAULT_CURRENCY:AZN}
   default-language: ${ABB_DEFAULT_LANGUAGE:AZ}
-  active-installment-months: ${ABB_ACTIVE_INSTALLMENT_MONTHS:2,3,6,9,12}
+  active-installment-months: ${ABB_ACTIVE_INSTALLMENT_MONTHS:2,3,6,9,12,18,24,27,30}
 
 # Idempotency Key Configuration
 payment:
