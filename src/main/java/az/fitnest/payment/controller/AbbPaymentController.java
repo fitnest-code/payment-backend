@@ -124,6 +124,16 @@ public class AbbPaymentController {
         }
     }
 
+    @Operation(
+            summary = "Dəstəklənən ABB taksit ayları",
+            description = "Sistemdə aktiv olan və bank tərəfindən dəstəklənən taksit aylarının siyahısını qaytarır."
+    )
+    @GetMapping("/installments")
+    public ResponseEntity<java.util.List<Integer>> getSupportedInstallments() {
+        log.info("[ABB][Controller] /installments called");
+        return ResponseEntity.ok(abbIntegrationService.getSupportedInstallments());
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // Callback endpoint
     // ══════════════════════════════════════════════════════════════════════════

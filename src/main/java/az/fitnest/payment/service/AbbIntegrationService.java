@@ -860,6 +860,13 @@ public class AbbIntegrationService {
     }
 
     /**
+     * Dəstəklənən taksit müddətlərini (ay saylarını) qaytarır.
+     */
+    public java.util.List<Integer> getSupportedInstallments() {
+        return abbProperties.getActiveInstallmentMonths();
+    }
+
+    /**
      * XML/HTML body-dən teq dəyərini çıxarır.
      * Azericard cavabları adətən sadə XML teqləri ilə gəlir.
      * Məs: {@code <action>0</action>} → {@code "0"}
