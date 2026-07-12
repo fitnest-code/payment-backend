@@ -397,6 +397,28 @@ public class AbbIntegrationService {
     public AbbTransactionActionResponse getTransactionStatus(String orderId, String originalTrtype) {
         log.info("[ABB][TRTYPE=90] Status inquiry: orderId={}, originalTrtype={}", orderId, originalTrtype);
 
+        Optional<Payment> paymentOpt = paymentRepository.findByOrderId(orderId);
+        if (paymentOpt.isPresent()) {
+            Payment payment = paymentOpt.get();
+            if (Boolean.TRUE.equals(payment.getCallbackProcessed()) || "SUCCESS".equals(payment.getStatus())) {
+                if ("SUCCESS".equals(payment.getStatus())) {
+                    log.info("[ABB][TRTYPE=90] Payment for orderId={} was already processed locally as SUCCESS.", orderId);
+                    return AbbTransactionActionResponse.success(
+                            "0", // action = 0
+                            payment.getCode() != null ? payment.getCode() : "00", // rc
+                            payment.getOperationCode(), // approval
+                            payment.getRrn(), // rrn
+                            payment.getTransactionId() // intRef
+                    );
+                } else {
+                    log.info("[ABB][TRTYPE=90] Payment for orderId={} was already processed locally as FAILED.", orderId);
+                    return AbbTransactionActionResponse.error(
+                            "Ödəniş uğursuz olub (Status: " + payment.getStatus() + ")"
+                    );
+                }
+            }
+        }
+
         String timestamp = abbSigner.generateTimestamp();
         String nonce     = abbSigner.generateNonce();
 
