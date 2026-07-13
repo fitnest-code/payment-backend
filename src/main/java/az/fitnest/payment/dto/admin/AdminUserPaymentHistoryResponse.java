@@ -9,6 +9,9 @@ public record AdminUserPaymentHistoryResponse(
     @Schema(description = "Tranzaksiya ID-si", example = "TRANS-12345")
     String transactionId,
 
+    @Schema(description = "Sifariş ID-si (Order ID)", example = "ORD-12345")
+    String orderId,
+
     @Schema(description = "Tarix və saat", example = "25.10.2023 14:30")
     String dateTime,
 
