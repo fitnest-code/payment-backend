@@ -110,6 +110,7 @@ public class UserPaymentService {
 
                     return az.fitnest.payment.dto.admin.AdminUserPaymentHistoryResponse.builder()
                             .transactionId(payment.getTransactionId())
+                            .orderId(payment.getOrderId())
                             .dateTime(payment.getCreatedDate() != null ? payment.getCreatedDate().format(formatter) : "N/A")
                             .amount(payment.getAmount() + " " + (payment.getCurrency() != null ? payment.getCurrency() : "AZN"))
                             .paymentMethod(brand)
