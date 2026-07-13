@@ -833,12 +833,32 @@ public class AbbIntegrationService {
                     logContext, httpResponse.statusCode(), httpResponse.body());
 
             // Bank cavabını parse et — cavab XML, JSON, və ya HTML ola bilər
-            String body = httpResponse.body();
-            String action   = extractTagValue(body, "action");
-            String rc       = extractTagValue(body, "rc");
-            String approval = extractTagValue(body, "approval");
-            String rrn      = extractTagValue(body, "rrn");
-            String intRef   = extractTagValue(body, "int_ref");
+            String body = httpResponse.body() != null ? httpResponse.body().trim() : "";
+            String action;
+            String rc;
+            String approval;
+            String rrn;
+            String intRef;
+
+            if ("0".equals(body)) {
+                action = ACTION_SUCCESS;
+                rc = RC_APPROVED;
+                approval = "";
+                rrn = request.rrn();
+                intRef = request.intRef();
+            } else if ("1".equals(body) || "2".equals(body) || "3".equals(body)) {
+                action = body;
+                rc = "96";
+                approval = "";
+                rrn = "";
+                intRef = "";
+            } else {
+                action   = extractTagValue(body, "action");
+                rc       = extractTagValue(body, "rc");
+                approval = extractTagValue(body, "approval");
+                rrn      = extractTagValue(body, "rrn");
+                intRef   = extractTagValue(body, "int_ref");
+            }
 
             boolean responseSuccess = ACTION_SUCCESS.equals(action) && RC_APPROVED.equals(rc);
 
