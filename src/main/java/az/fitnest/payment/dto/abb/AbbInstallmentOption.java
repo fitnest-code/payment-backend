@@ -28,19 +28,7 @@ public enum AbbInstallmentOption {
     MONTHS_9("INST_ALL9"),
 
     /** 12 aylıq taksit */
-    MONTHS_12("INST_ALL12"),
-
-    /** 18 aylıq taksit */
-    MONTHS_18("INST_ALL18"),
-
-    /** 24 aylıq taksit */
-    MONTHS_24("INST_ALL24"),
-
-    /** 27 aylıq taksit */
-    MONTHS_27("INST_ALL27"),
-
-    /** 30 aylıq taksit */
-    MONTHS_30("INST_ALL30");
+    MONTHS_12("INST_ALL12");
 
     private final String paramValue;
 
@@ -65,7 +53,7 @@ public enum AbbInstallmentOption {
     /**
      * Taksit sayından enum dəyərini tapır.
      *
-     * @param months taksit sayı (2, 3, 6, 9, 12, 18, 24, 27, 30)
+     * @param months taksit sayı (2, 3, 6, 9, 12)
      * @return uyğun enum dəyəri, tapılmazsa {@link #NONE}
      */
     public static AbbInstallmentOption fromMonths(int months) {
@@ -75,10 +63,6 @@ public enum AbbInstallmentOption {
             case 6  -> MONTHS_6;
             case 9  -> MONTHS_9;
             case 12 -> MONTHS_12;
-            case 18 -> MONTHS_18;
-            case 24 -> MONTHS_24;
-            case 27 -> MONTHS_27;
-            case 30 -> MONTHS_30;
             default -> NONE;
         };
     }
