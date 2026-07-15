@@ -7,6 +7,7 @@ import az.fitnest.payment.dto.abb.AbbInstallmentInitRequest;
 import az.fitnest.payment.dto.abb.AbbInstallmentOption;
 import az.fitnest.payment.dto.abb.AbbTransactionActionRequest;
 import az.fitnest.payment.dto.abb.AbbTransactionActionResponse;
+import az.fitnest.payment.exception.ResourceNotFoundException;
 import az.fitnest.payment.service.AbbIntegrationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -50,6 +51,18 @@ public class AbbPaymentController {
     private static final String MAINTENANCE_MESSAGE =
             "Hazırda texniki işlər aparılır. Xidmət tezliklə istifadəyə veriləcək";
 
+    /** Maintenance rejimi aktiv olduqda ResourceNotFoundException throw edir.
+     * GlobalExceptionHandler bunu: { "error": { "code": "NOT_FOUND", "message": "...", "status": 404 } }
+     * formatına çevirir — mobile artıq bu formatı tanıyır.
+     */
+    private void checkMaintenance(String endpoint) {
+        if (abbProperties.isMaintenanceMode()) {
+            log.info("[ABB][Controller] {} blocked — maintenance mode active", endpoint);
+            throw new ResourceNotFoundException(MAINTENANCE_MESSAGE);
+        }
+    }
+
+
     // ══════════════════════════════════════════════════════════════════════════
     // Ödəniş başlatma endpoint-ləri
     // ══════════════════════════════════════════════════════════════════════════
@@ -63,11 +76,7 @@ public class AbbPaymentController {
             @RequestBody AbbInstallmentInitRequest request,
             Authentication authentication) {
 
-        if (abbProperties.isMaintenanceMode()) {
-            log.info("[ABB][Controller] /init blocked — maintenance mode active");
-            return ResponseEntity.ok(
-                    AbbInitiateResponse.error(MAINTENANCE_MESSAGE));
-        }
+        checkMaintenance("/init");
 
         Long userId = extractUserId(authentication);
         log.info("[ABB][Controller] /init called: userId={}, packageId={}, optionId={}",
@@ -112,11 +121,7 @@ public class AbbPaymentController {
             @RequestBody AbbInstallmentInitRequest request,
             Authentication authentication) {
 
-        if (abbProperties.isMaintenanceMode()) {
-            log.info("[ABB][Controller] /installment blocked — maintenance mode active");
-            return ResponseEntity.ok(
-                    AbbInitiateResponse.error(MAINTENANCE_MESSAGE));
-        }
+        checkMaintenance("/installment POST");
 
         Long userId = extractUserId(authentication);
         log.info("[ABB][Controller] /installment called: userId={}, packageId={}, optionId={}, months={}",
@@ -146,6 +151,7 @@ public class AbbPaymentController {
     )
     @GetMapping("/installment")
     public ResponseEntity<java.util.List<Integer>> getSupportedInstallments() {
+        checkMaintenance("/installment GET");
         log.info("[ABB][Controller] /installment GET called");
         return ResponseEntity.ok(abbIntegrationService.getSupportedInstallments());
     }
