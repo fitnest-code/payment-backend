@@ -175,6 +175,9 @@ abb:
   default-currency: ${ABB_DEFAULT_CURRENCY:AZN}
   default-language: ${ABB_DEFAULT_LANGUAGE:AZ}
   active-installment-months: ${ABB_ACTIVE_INSTALLMENT_MONTHS:2,3,6,9,12}
+  # Texniki işlər rejimi: true = bütün ABB endpoint-ləri maintenance mesajı qaytarır
+  # Inteqrasiya tamamlandıqdan sonra ABB_MAINTENANCE_MODE=false set edin
+  maintenance-mode: ${ABB_MAINTENANCE_MODE:true}
 
 # Idempotency Key Configuration
 payment:

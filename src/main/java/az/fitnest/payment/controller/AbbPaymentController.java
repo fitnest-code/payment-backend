@@ -45,6 +45,10 @@ public class AbbPaymentController {
 
     private final AbbIntegrationService abbIntegrationService;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
+    private final az.fitnest.payment.client.abb.AbbProperties abbProperties;
+
+    private static final String MAINTENANCE_MESSAGE =
+            "Hazırda texniki işlər aparılır. Xidmət tezliklə istifadəyə veriləcək";
 
     // ══════════════════════════════════════════════════════════════════════════
     // Ödəniş başlatma endpoint-ləri
@@ -58,6 +62,12 @@ public class AbbPaymentController {
     public ResponseEntity<AbbInitiateResponse> initiatePayment(
             @RequestBody AbbInstallmentInitRequest request,
             Authentication authentication) {
+
+        if (abbProperties.isMaintenanceMode()) {
+            log.info("[ABB][Controller] /init blocked — maintenance mode active");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(AbbInitiateResponse.error(MAINTENANCE_MESSAGE));
+        }
 
         Long userId = extractUserId(authentication);
         log.info("[ABB][Controller] /init called: userId={}, packageId={}, optionId={}",
@@ -101,6 +111,12 @@ public class AbbPaymentController {
     public ResponseEntity<AbbInitiateResponse> initiateInstallmentPayment(
             @RequestBody AbbInstallmentInitRequest request,
             Authentication authentication) {
+
+        if (abbProperties.isMaintenanceMode()) {
+            log.info("[ABB][Controller] /installment blocked — maintenance mode active");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(AbbInitiateResponse.error(MAINTENANCE_MESSAGE));
+        }
 
         Long userId = extractUserId(authentication);
         log.info("[ABB][Controller] /installment called: userId={}, packageId={}, optionId={}, months={}",

@@ -86,6 +86,14 @@ public class AbbProperties {
     private String defaultCurrency = "AZN";
 
     /**
+     * Müvəqqəti texniki işlər rejimi.
+     * {@code true} olduqda bütün istifadəçiyə açıq ABB endpoint-ləri
+     * texniki işlər mesajı ilə cavab verir.
+     * ENV: {@code ABB_MAINTENANCE_MODE=true/false}
+     */
+    private boolean maintenanceMode = true;
+
+    /**
      * Dil kodu. Default: AZ
      */
     private String defaultLanguage = "AZ";
