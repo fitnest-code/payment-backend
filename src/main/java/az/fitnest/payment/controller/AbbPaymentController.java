@@ -7,7 +7,7 @@ import az.fitnest.payment.dto.abb.AbbInstallmentInitRequest;
 import az.fitnest.payment.dto.abb.AbbInstallmentOption;
 import az.fitnest.payment.dto.abb.AbbTransactionActionRequest;
 import az.fitnest.payment.dto.abb.AbbTransactionActionResponse;
-import az.fitnest.payment.exception.ResourceNotFoundException;
+import az.fitnest.payment.exception.AbbMaintenanceException;
 import az.fitnest.payment.service.AbbIntegrationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -58,7 +58,7 @@ public class AbbPaymentController {
     private void checkMaintenance(String endpoint) {
         if (abbProperties.isMaintenanceMode()) {
             log.info("[ABB][Controller] {} blocked — maintenance mode active", endpoint);
-            throw new ResourceNotFoundException(MAINTENANCE_MESSAGE);
+            throw new AbbMaintenanceException(MAINTENANCE_MESSAGE);
         }
     }
 
