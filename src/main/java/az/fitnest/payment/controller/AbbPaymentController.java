@@ -65,8 +65,8 @@ public class AbbPaymentController {
 
         if (abbProperties.isMaintenanceMode()) {
             log.info("[ABB][Controller] /init blocked — maintenance mode active");
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(AbbInitiateResponse.error(MAINTENANCE_MESSAGE));
+            return ResponseEntity.ok(
+                    AbbInitiateResponse.error(MAINTENANCE_MESSAGE));
         }
 
         Long userId = extractUserId(authentication);
@@ -114,8 +114,8 @@ public class AbbPaymentController {
 
         if (abbProperties.isMaintenanceMode()) {
             log.info("[ABB][Controller] /installment blocked — maintenance mode active");
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(AbbInitiateResponse.error(MAINTENANCE_MESSAGE));
+            return ResponseEntity.ok(
+                    AbbInitiateResponse.error(MAINTENANCE_MESSAGE));
         }
 
         Long userId = extractUserId(authentication);
