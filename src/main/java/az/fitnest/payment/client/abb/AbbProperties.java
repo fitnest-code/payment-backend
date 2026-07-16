@@ -100,7 +100,7 @@ public class AbbProperties {
 
     /**
      * Dəstəklənən taksit ayları siyahısı.
-     * Default olaraq test terminalın aktiv ayları: 2, 3, 6, 9, 12
+     * Default olaraq test terminalın aktiv ayları: 3, 6, 12
      */
-    private java.util.List<Integer> activeInstallmentMonths = java.util.List.of(2, 3, 6, 9, 12);
+    private java.util.List<Integer> activeInstallmentMonths = java.util.List.of(3, 6, 12);
 }
