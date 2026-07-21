@@ -64,11 +64,31 @@ public class UserPaymentService {
         userCardRepository.delete(card);
     }
 
+    private List<Payment> deduplicatePayments(List<Payment> payments) {
+        List<Payment> deduplicated = new java.util.ArrayList<>();
+        for (Payment p : payments) {
+            if ("WIDGET_PAYMENT".equalsIgnoreCase(p.getType())) {
+                boolean hasSpecificPayment = payments.stream()
+                    .anyMatch(other -> !other.getId().equals(p.getId())
+                        && !"WIDGET_PAYMENT".equalsIgnoreCase(other.getType())
+                        && p.getAmount() != null && p.getAmount().equals(other.getAmount())
+                        && other.getCreatedDate() != null && p.getCreatedDate() != null
+                        && Math.abs(java.time.Duration.between(p.getCreatedDate(), other.getCreatedDate()).toMinutes()) <= 5);
+                if (hasSpecificPayment) {
+                    continue;
+                }
+            }
+            deduplicated.add(p);
+        }
+        return deduplicated;
+    }
+
     public List<PaymentResponse> getUserPayments(Long userId) {
         log.info("Fetching all payments for user: {}", userId);
         String userLanguage = resolveUserLanguage();
-        return paymentRepository.findAllByUserId(userId)
-                .stream()
+        List<Payment> allPayments = paymentRepository.findAllByUserId(userId);
+        List<Payment> deduplicated = deduplicatePayments(allPayments);
+        return deduplicated.stream()
                 .map(payment -> mapToPaymentResponse(payment, userLanguage))
                 .collect(Collectors.toList());
     }
@@ -77,23 +97,21 @@ public class UserPaymentService {
         log.info("Admin: Fetching payment history for user: {}", userId);
         java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
         
-        return paymentRepository.findAllByUserId(userId).stream()
+        List<Payment> allPayments = paymentRepository.findAllByUserId(userId);
+        List<Payment> deduplicated = deduplicatePayments(allPayments);
+        return deduplicated.stream()
                 .map(payment -> {
-                    String brand = CardBrandDetector.detectBrand(payment.getCardMask());
+                    String brand;
                     if ("GOOGLE_PAY".equals(payment.getType())) {
                         brand = "Google Pay";
                     } else if ("APPLE_PAY".equals(payment.getType())) {
                         brand = "Apple Pay";
                     } else if ("ABB_INSTALLMENT".equals(payment.getType())) {
-                        brand = "ABB Taksit";
+                        brand = "ABB installment";
                     } else if ("ABB_PAYMENT".equals(payment.getType())) {
                         brand = "ABB";
-                    } else if ("WIDGET_PAYMENT".equals(payment.getType()) && payment.getDescription() != null) {
-                        if (payment.getDescription().contains("device:iOS")) {
-                            brand = "Apple Pay";
-                        } else if (payment.getDescription().contains("device:Android")) {
-                            brand = "Google Pay";
-                        }
+                    } else {
+                        brand = CardBrandDetector.detectBrand(payment.getCardMask());
                     }
                     if (brand == null || brand.isEmpty()) brand = "N/A";
 
@@ -246,10 +264,11 @@ public class UserPaymentService {
                 return !date.isBefore(startDate) && !date.isAfter(endDate) && date.getYear() == currentYear;
             })
             .toList();
+        List<Payment> deduplicated = deduplicatePayments(filtered);
         int startIdx = (int) pageable.getOffset();
-        int endIdx = Math.min((startIdx + pageable.getPageSize()), filtered.size());
+        int endIdx = Math.min((startIdx + pageable.getPageSize()), deduplicated.size());
         String userLanguage = resolveUserLanguage();
-        List<PaymentResponse> responses = filtered.stream().map(p -> mapToPaymentResponse(p, userLanguage)).toList();
+        List<PaymentResponse> responses = deduplicated.stream().map(p -> mapToPaymentResponse(p, userLanguage)).toList();
         List<PaymentResponse> pageContent = responses.subList(Math.min(startIdx, responses.size()), Math.min(endIdx, responses.size()));
         Page<PaymentResponse> page = new PageImpl<>(pageContent, pageable, responses.size());
         return PaginatedResponse.of(page);
@@ -395,21 +414,17 @@ public class UserPaymentService {
         String formattedStatus = payment.getStatus();
         formattedStatus = translateStatus(formattedStatus, userLanguage);
 
-        String brand = CardBrandDetector.detectBrand(payment.getCardMask());
+        String brand;
         if ("GOOGLE_PAY".equals(payment.getType())) {
             brand = "Google Pay";
         } else if ("APPLE_PAY".equals(payment.getType())) {
             brand = "Apple Pay";
         } else if ("ABB_INSTALLMENT".equals(payment.getType())) {
-            brand = "ABB Taksit";
+            brand = "ABB installment";
         } else if ("ABB_PAYMENT".equals(payment.getType())) {
             brand = "ABB";
-        } else if ("WIDGET_PAYMENT".equals(payment.getType()) && payment.getDescription() != null) {
-            if (payment.getDescription().contains("device:iOS")) {
-                brand = "Apple Pay";
-            } else if (payment.getDescription().contains("device:Android")) {
-                brand = "Google Pay";
-            }
+        } else {
+            brand = CardBrandDetector.detectBrand(payment.getCardMask());
         }
 
         String rawType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
