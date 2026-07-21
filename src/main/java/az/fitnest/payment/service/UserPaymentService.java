@@ -436,12 +436,23 @@ public class UserPaymentService {
             payment.getCurrency(),
             payment.getCreatedDate() != null ? payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
             brand,
-            payment.getCardMask(),
+            maskCardToLast4(payment.getCardMask()),
             actualType,
             formattedStatus,
             payment.getCode(),
             payment.getTransactionId()
         );
+    }
+
+    private String maskCardToLast4(String cardMask) {
+        if (cardMask == null || cardMask.isBlank()) {
+            return cardMask;
+        }
+        String clean = cardMask.replaceAll("\\s+", "");
+        if (clean.length() < 4) {
+            return clean;
+        }
+        return "************" + clean.substring(clean.length() - 4);
     }
 
     private void upsertCardFromCallback(Long userId, EpointResponse callbackData) {
