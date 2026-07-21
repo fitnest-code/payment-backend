@@ -403,12 +403,14 @@ public class AbbIntegrationService {
             if (Boolean.TRUE.equals(payment.getCallbackProcessed()) || "SUCCESS".equals(payment.getStatus())) {
                 if ("SUCCESS".equals(payment.getStatus())) {
                     log.info("[ABB][TRTYPE=90] Payment for orderId={} was already processed locally as SUCCESS.", orderId);
+                    String maskedCard = maskCardToLast4(payment.getCardMask());
                     return AbbTransactionActionResponse.success(
                             "0", // action = 0
                             payment.getCode() != null ? payment.getCode() : "00", // rc
                             payment.getOperationCode(), // approval
                             payment.getRrn(), // rrn
-                            payment.getTransactionId() // intRef
+                            payment.getTransactionId(), // intRef
+                            maskedCard // card
                     );
                 } else {
                     log.info("[ABB][TRTYPE=90] Payment for orderId={} was already processed locally as FAILED.", orderId);
@@ -504,7 +506,8 @@ public class AbbIntegrationService {
             });
 
             if (responseSuccess) {
-                return AbbTransactionActionResponse.success(action, rc, approval, rrn, intRef);
+                String masked = paymentOpt.map(p -> maskCardToLast4(p.getCardMask())).orElse(null);
+                return AbbTransactionActionResponse.success(action, rc, approval, rrn, intRef, masked);
             } else {
                 return AbbTransactionActionResponse.error(
                         String.format("Bank status sorğusu mənfi: action=%s, rc=%s. %s", action, rc, body));
@@ -910,5 +913,16 @@ public class AbbIntegrationService {
         int end = lBody.indexOf(close, start);
         if (end < 0) return null;
         return body.substring(start + open.length(), end).trim();
+    }
+
+    private String maskCardToLast4(String cardMask) {
+        if (cardMask == null || cardMask.isBlank()) {
+            return cardMask;
+        }
+        String clean = cardMask.replaceAll("\\s+", "");
+        if (clean.length() < 4) {
+            return clean;
+        }
+        return "************" + clean.substring(clean.length() - 4);
     }
 }

@@ -26,13 +26,21 @@ public record AbbTransactionActionResponse(
         String intRef,
 
         /** Xəta izahatı */
-        String message
+        String message,
+
+        /** Maskalanmış kart nömrəsi (məs: ************0724) */
+        String card
 ) {
     public static AbbTransactionActionResponse success(String action, String rc,
                                                         String approval, String rrn, String intRef) {
+        return success(action, rc, approval, rrn, intRef, null);
+    }
+
+    public static AbbTransactionActionResponse success(String action, String rc,
+                                                        String approval, String rrn, String intRef, String card) {
         return AbbTransactionActionResponse.builder()
                 .status("success").action(action).rc(rc)
-                .approval(approval).rrn(rrn).intRef(intRef)
+                .approval(approval).rrn(rrn).intRef(intRef).card(card)
                 .build();
     }
 
