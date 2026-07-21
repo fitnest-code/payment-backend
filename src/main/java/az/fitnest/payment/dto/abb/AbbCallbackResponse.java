@@ -81,6 +81,9 @@ public class AbbCallbackResponse {
     /** Kart tokenizasiya zamanı qaytarılan token (28 simvol). */
     private String token;
 
+    /** E-Gateway-dən qayıdan maskalanmış kart nömrəsi (məs: 412721******0724). */
+    private String card;
+
     // ── Köməkçi metodlar ──────────────────────────────────────────────────
 
     /**

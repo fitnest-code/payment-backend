@@ -630,6 +630,11 @@ public class AbbIntegrationService {
 
         // Response code → code field-inə
         payment.setCode(callback.getRc());
+
+        // CARD → cardMask (maskalanmış kart məlumatı)
+        if (callback.getCard() != null && !callback.getCard().isBlank()) {
+            payment.setCardMask(callback.getCard());
+        }
     }
 
     /**

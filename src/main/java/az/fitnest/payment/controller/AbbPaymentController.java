@@ -191,10 +191,14 @@ public class AbbPaymentController {
             @RequestParam(value = "NONCE",     required = false) String nonce,
             @RequestParam(value = "P_SIGN",    required = false) String pSign,
             @RequestParam(value = "EXT_NET_REF", required = false) String extNetRef,
-            @RequestParam(value = "TOKEN",     required = false) String token) {
+            @RequestParam(value = "TOKEN",     required = false) String token,
+            @RequestParam(value = "CARD",      required = false) String cardUpper,
+            @RequestParam(value = "card",      required = false) String cardLower) {
 
         log.info("[ABB][Callback] Received: order={}, action={}, rc={}, terminal={}",
                 order, action, rc, terminal);
+
+        String card = (cardUpper != null && !cardUpper.isBlank()) ? cardUpper : cardLower;
 
         AbbCallbackResponse callback = AbbCallbackResponse.builder()
                 .terminal(terminal)
@@ -212,6 +216,7 @@ public class AbbPaymentController {
                 .pSign(pSign)
                 .extNetRef(extNetRef)
                 .token(token)
+                .card(card)
                 .build();
 
         try {
