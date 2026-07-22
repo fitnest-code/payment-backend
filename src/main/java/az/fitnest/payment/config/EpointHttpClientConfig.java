@@ -35,7 +35,7 @@ public class EpointHttpClientConfig {
         var circuitBreaker = CircuitBreakerRegistry.of(cbConfig).circuitBreaker("epoint-http");
 
         var timeLimiter = TimeLimiter.of(TimeLimiterConfig.custom()
-                .timeoutDuration(Duration.ofSeconds(4))
+                .timeoutDuration(Duration.ofSeconds(15))
                 .build());
 
         return new EpointHttpClient(restTemplate, signer, properties, retry, circuitBreaker, timeLimiter);
