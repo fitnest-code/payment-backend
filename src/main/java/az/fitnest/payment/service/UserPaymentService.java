@@ -336,78 +336,104 @@ public class UserPaymentService {
     private String translateStatus(String status, String lang) {
         if (status == null || status.isEmpty()) return status;
         String upperStatus = status.toUpperCase().trim();
-        if ("AZ".equalsIgnoreCase(lang)) {
-            if ("SUCCESS".equals(upperStatus) || "UĞURLU".equals(upperStatus)) return "Uğurlu";
-            if ("FAILED".equals(upperStatus) || "UĞURSUZ".equals(upperStatus)) return "Uğursuz";
-            if ("PENDING".equals(upperStatus) || "GÖZLƏMƏDƏ".equals(upperStatus)) return "Gözləmədə";
-        } else if ("RU".equalsIgnoreCase(lang)) {
-            if ("SUCCESS".equals(upperStatus) || "UĞURLU".equals(upperStatus)) return "Успешно";
-            if ("FAILED".equals(upperStatus) || "UĞURSUZ".equals(upperStatus)) return "Неуспешно";
-            if ("PENDING".equals(upperStatus) || "GÖZLƏMƏDƏ".equals(upperStatus)) return "В ожидании";
-        } else { // EN
-            if ("SUCCESS".equals(upperStatus) || "UĞURLU".equals(upperStatus)) return "Success";
-            if ("FAILED".equals(upperStatus) || "UĞURSUZ".equals(upperStatus)) return "Failed";
-            if ("PENDING".equals(upperStatus) || "GÖZLƏMƏDƏ".equals(upperStatus)) return "Pending";
-        }
-        try {
-            return translateWithGoogle(status, lang);
-        } catch (Exception e) {
-            return status;
+        String l = lang != null ? lang.toUpperCase() : "AZ";
+
+        switch (upperStatus) {
+            case "SUCCESS":
+            case "UĞURLU":
+            case "PAID":
+            case "APPROVED":
+                if ("RU".equals(l)) return "Успешно";
+                if ("EN".equals(l)) return "Success";
+                return "Uğurlu";
+
+            case "FAILED":
+            case "UĞURSUZ":
+            case "REJECTED":
+            case "DECLINED":
+                if ("RU".equals(l)) return "Неуспешно";
+                if ("EN".equals(l)) return "Failed";
+                return "Uğursuz";
+
+            case "PENDING":
+            case "GÖZLƏMƏDƏ":
+                if ("RU".equals(l)) return "В ожидании";
+                if ("EN".equals(l)) return "Pending";
+                return "Gözləmədə";
+
+            case "PENDING_USER_ACTION":
+                if ("RU".equals(l)) return "Ожидание действия пользователя";
+                if ("EN".equals(l)) return "Pending User Action";
+                return "İstifadəçi fəaliyyəti gözlənilir";
+
+            case "CANCELLED":
+            case "CANCELED":
+                if ("RU".equals(l)) return "Отменено";
+                if ("EN".equals(l)) return "Cancelled";
+                return "Ləğv edildi";
+
+            case "REFUNDED":
+            case "REVERSED":
+                if ("RU".equals(l)) return "Возвращено";
+                if ("EN".equals(l)) return "Refunded";
+                return "Geri qaytarıldı";
+
+            case "EXPIRED":
+                if ("RU".equals(l)) return "Истекло";
+                if ("EN".equals(l)) return "Expired";
+                return "Müddəti bitdi";
+
+            default:
+                return humanize(status);
         }
     }
 
     private String translatePaymentType(String type, String lang) {
         if (type == null || type.isEmpty()) return type;
         String upperType = type.toUpperCase().trim();
-        if ("AZ".equalsIgnoreCase(lang)) {
-            if ("AUTO_RENEWAL".equals(upperType)) return "Avtomatik uzadılma";
-            if ("ONE_TIME".equals(upperType)) return "Birdəfəlik";
-        } else if ("RU".equalsIgnoreCase(lang)) {
-            if ("AUTO_RENEWAL".equals(upperType)) return "Автопродление";
-            if ("ONE_TIME".equals(upperType)) return "Разовый";
-        } else { // EN
-            if ("AUTO_RENEWAL".equals(upperType)) return "Auto renewal";
-            if ("ONE_TIME".equals(upperType)) return "One time";
-        }
-        try {
-            return translateWithGoogle(type, lang);
-        } catch (Exception e) {
-            return type;
+        String l = lang != null ? lang.toUpperCase() : "AZ";
+
+        switch (upperType) {
+            case "AUTO_RENEWAL":
+                if ("RU".equals(l)) return "Автопродление";
+                if ("EN".equals(l)) return "Auto renewal";
+                return "Avtomatik uzadılma";
+
+            case "ONE_TIME":
+                if ("RU".equals(l)) return "Разовый";
+                if ("EN".equals(l)) return "One time";
+                return "Birdəfəlik";
+
+            case "WIDGET_PAYMENT":
+                if ("RU".equals(l)) return "Оплата виджетом";
+                if ("EN".equals(l)) return "Widget Payment";
+                return "Vidcet ödənişi";
+
+            case "APPLE_PAY":
+                return "Apple Pay";
+
+            case "GOOGLE_PAY":
+                return "Google Pay";
+
+            case "CARD_BIND":
+                if ("RU".equals(l)) return "Привязка карты";
+                if ("EN".equals(l)) return "Card Binding";
+                return "Kartın bağlanması";
+
+            case "SAVED_CARD":
+                if ("RU".equals(l)) return "Сохраненная карта";
+                if ("EN".equals(l)) return "Saved Card";
+                return "Yadda saxlanılmış kart";
+
+            default:
+                return humanize(type);
         }
     }
 
-    private String translateWithGoogle(String text, String targetLanguage) {
-        try {
-            org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
-            restTemplate.getMessageConverters().add(0, new org.springframework.http.converter.StringHttpMessageConverter(java.nio.charset.StandardCharsets.UTF_8));
-            java.net.URI uri = org.springframework.web.util.UriComponentsBuilder
-                .fromUriString("https://translate.googleapis.com/translate_a/single")
-                .queryParam("client", "gtx")
-                .queryParam("sl", "auto")
-                .queryParam("tl", targetLanguage.toLowerCase())
-                .queryParam("dt", "t")
-                .queryParam("q", text)
-                .build()
-                .toUri();
-
-            String response = restTemplate.getForObject(uri, String.class);
-            if (response != null) {
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                com.fasterxml.jackson.databind.JsonNode rootNode = mapper.readTree(response);
-                if (rootNode.isArray() && rootNode.size() > 0) {
-                    com.fasterxml.jackson.databind.JsonNode firstArray = rootNode.get(0);
-                    if (firstArray.isArray() && firstArray.size() > 0) {
-                        com.fasterxml.jackson.databind.JsonNode translationPair = firstArray.get(0);
-                        if (translationPair.isArray() && translationPair.size() > 0) {
-                            return translationPair.get(0).asText();
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("Google Translation API failed for text '{}' to '{}': {}", text, targetLanguage, e.getMessage());
-        }
-        return text;
+    private String humanize(String text) {
+        if (text == null || text.isBlank()) return text;
+        String formatted = text.replace('_', ' ').toLowerCase();
+        return Character.toUpperCase(formatted.charAt(0)) + formatted.substring(1);
     }
 
     private PaymentResponse mapToPaymentResponse(Payment payment, String userLanguage) {
