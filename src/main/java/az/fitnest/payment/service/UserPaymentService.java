@@ -206,8 +206,9 @@ public class UserPaymentService {
         try {
             List<Payment> payments = paymentRepository.findAll();
             log.info("Admin: found {} payments", payments.size());
+            var userNameCache = buildUserNameCache(payments);
             return payments.stream()
-                    .map(payment -> mapToPaymentResponse(payment, "AZ"))
+                    .map(payment -> mapToPaymentResponse(payment, "AZ", userNameCache))
                     .collect(Collectors.toList());
         } catch (Exception e) {
             log.error("Admin: error fetching payments", e);
@@ -218,8 +219,9 @@ public class UserPaymentService {
     public PaginatedResponse<PaymentResponse> getAllPaymentsPaginated(org.springframework.data.domain.Pageable pageable) {
         log.info("Admin: fetching paginated payments with pageable: {}", pageable);
         org.springframework.data.domain.Page<Payment> page = paymentRepository.findAll(pageable);
+        var userNameCache = buildUserNameCache(page.getContent());
         List<PaymentResponse> content = page.getContent().stream()
-                .map(payment -> mapToPaymentResponse(payment, "AZ"))
+                .map(payment -> mapToPaymentResponse(payment, "AZ", userNameCache))
                 .collect(Collectors.toList());
         org.springframework.data.domain.Page<PaymentResponse> responsePage = 
                 new org.springframework.data.domain.PageImpl<>(content, pageable, page.getTotalElements());
@@ -444,6 +446,10 @@ public class UserPaymentService {
     }
 
     private PaymentResponse mapToPaymentResponse(Payment payment, String userLanguage) {
+        return mapToPaymentResponse(payment, userLanguage, null);
+    }
+
+    private PaymentResponse mapToPaymentResponse(Payment payment, String userLanguage, java.util.Map<Long, String> userNameCache) {
         String formattedStatus = payment.getStatus();
         formattedStatus = translateStatus(formattedStatus, userLanguage);
 
@@ -463,6 +469,15 @@ public class UserPaymentService {
         String rawType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
         String actualType = translatePaymentType(rawType, userLanguage);
 
+        String ownerName = null;
+        if (payment.getUserId() != null) {
+            if (userNameCache != null) {
+                ownerName = userNameCache.get(payment.getUserId());
+            } else {
+                ownerName = resolveUserFullName(payment.getUserId());
+            }
+        }
+
         return new PaymentResponse(
             payment.getId(),
             payment.getAmount(),
@@ -473,8 +488,40 @@ public class UserPaymentService {
             actualType,
             formattedStatus,
             payment.getCode(),
-            payment.getTransactionId()
+            payment.getTransactionId(),
+            ownerName,
+            payment.getDescription()
         );
+    }
+
+    private String resolveUserFullName(Long userId) {
+        try {
+            var userResp = userGrpcClient.getUser(userId);
+            if (userResp != null) {
+                String first = userResp.getFirstName();
+                String last = userResp.getLastName();
+                String full = ((first != null ? first : "") + " " + (last != null ? last : "")).trim();
+                return full.isEmpty() ? null : full;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to resolve user name for userId={}: {}", userId, e.getMessage());
+        }
+        return null;
+    }
+
+    private java.util.Map<Long, String> buildUserNameCache(java.util.List<Payment> payments) {
+        java.util.Map<Long, String> cache = new java.util.HashMap<>();
+        java.util.Set<Long> userIds = payments.stream()
+                .map(Payment::getUserId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        for (Long uid : userIds) {
+            String name = resolveUserFullName(uid);
+            if (name != null) {
+                cache.put(uid, name);
+            }
+        }
+        return cache;
     }
 
     private String maskCardToLast4(String cardMask) {

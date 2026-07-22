@@ -15,5 +15,7 @@ public record PaymentResponse(
     String type,
     String status,
     String failureCode,
-    String transactionId
+    String transactionId,
+    String owner,
+    String description
 ) {}
