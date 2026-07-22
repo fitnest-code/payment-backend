@@ -175,7 +175,7 @@ public class PaymentReportController {
             pctChange = 100.0;
         }
 
-        double accumulatedAmount = currentSum > 0 ? currentSum : 0.88;
+        double accumulatedAmount = currentSum;
 
         return ResponseEntity.ok(new AnalyticsOverviewResponse(
             accumulatedAmount,
@@ -185,11 +185,11 @@ public class PaymentReportController {
             currentSum >= prevSum,
             0.0,
             0,
-            -100.0,
+            0.0,
             false,
-            5,
-            20.0,
-            true
+            0,
+            0.0,
+            false
         ));
     }
 
