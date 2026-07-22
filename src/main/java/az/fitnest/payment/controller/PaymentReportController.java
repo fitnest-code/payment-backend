@@ -146,7 +146,9 @@ public class PaymentReportController {
         boolean isTransfersPositive,
         long operationLogsCount,
         double operationLogsTrendPct,
-        boolean isOperationLogsPositive
+        boolean isOperationLogsPositive,
+        List<Double> paymentTrendPoints,
+        List<Double> operationLogsTrendPoints
     ) {}
 
     @Operation(summary = "Ödənişlər səhifəsi üçün ümumi analitika göstəricilərini gətir")
@@ -176,20 +178,43 @@ public class PaymentReportController {
         }
 
         double accumulatedAmount = currentSum;
+        long totalCount = currentPayments.size();
+
+        // Generate 6 time buckets across the selected period for dynamic chart curves
+        List<Double> paymentTrendPoints = new ArrayList<>();
+        List<Double> operationLogsTrendPoints = new ArrayList<>();
+
+        long totalNanos = java.time.Duration.between(start, end).toNanos();
+        long stepNanos = totalNanos > 0 ? totalNanos / 6 : 1;
+
+        for (int i = 0; i < 6; i++) {
+            LocalDateTime bStart = start.plusNanos(i * stepNanos);
+            LocalDateTime bEnd = (i == 5) ? end.plusNanos(1) : start.plusNanos((i + 1) * stepNanos);
+
+            List<Payment> bucketPayments = currentPayments.stream()
+                    .filter(p -> p.getCreatedDate() != null && !p.getCreatedDate().isBefore(bStart) && p.getCreatedDate().isBefore(bEnd))
+                    .collect(Collectors.toList());
+
+            double bucketSum = bucketPayments.stream().mapToDouble(p -> p.getAmount() != null ? p.getAmount() : 0.0).sum();
+            paymentTrendPoints.add(bucketSum);
+            operationLogsTrendPoints.add((double) bucketPayments.size());
+        }
 
         return ResponseEntity.ok(new AnalyticsOverviewResponse(
             accumulatedAmount,
             currentSum,
-            currentPayments.size(),
+            totalCount,
             pctChange,
             currentSum >= prevSum,
             0.0,
             0,
             0.0,
             false,
-            0,
-            0.0,
-            false
+            totalCount,
+            pctChange,
+            currentSum >= prevSum,
+            paymentTrendPoints,
+            operationLogsTrendPoints
         ));
     }
 
