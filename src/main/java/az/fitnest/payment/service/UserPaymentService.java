@@ -490,7 +490,8 @@ public class UserPaymentService {
             payment.getCode(),
             payment.getTransactionId(),
             ownerName,
-            payment.getDescription()
+            payment.getDescription(),
+            payment.getRrn()
         );
     }
 
