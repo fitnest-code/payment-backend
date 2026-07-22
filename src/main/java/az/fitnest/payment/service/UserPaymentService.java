@@ -206,10 +206,6 @@ public class UserPaymentService {
         try {
             List<Payment> payments = paymentRepository.findAll();
             log.info("Admin: found {} payments", payments.size());
-            for (Payment payment : payments) {
-                log.info("Admin: Payment: id={}, provider={}, status={}, orderId={}, transactionId={}, amount={}, currency={}, cardMask={}, cardName={}, userId={}, description={}, code={}, bankResponse={}, operationCode={}, createdDate={}, lastModifiedDate={}",
-                    payment.getId(), payment.getProvider(), payment.getStatus(), payment.getOrderId(), payment.getTransactionId(), payment.getAmount(), payment.getCurrency(), payment.getCardMask(), payment.getCardName(), payment.getUserId(), payment.getDescription(), payment.getCode(), payment.getBankResponse(), payment.getOperationCode(), payment.getCreatedDate(), payment.getLastModifiedDate());
-            }
             return payments.stream()
                     .map(payment -> mapToPaymentResponse(payment, "AZ"))
                     .collect(Collectors.toList());
@@ -217,6 +213,17 @@ public class UserPaymentService {
             log.error("Admin: error fetching payments", e);
             throw e;
         }
+    }
+
+    public PaginatedResponse<PaymentResponse> getAllPaymentsPaginated(org.springframework.data.domain.Pageable pageable) {
+        log.info("Admin: fetching paginated payments with pageable: {}", pageable);
+        org.springframework.data.domain.Page<Payment> page = paymentRepository.findAll(pageable);
+        List<PaymentResponse> content = page.getContent().stream()
+                .map(payment -> mapToPaymentResponse(payment, "AZ"))
+                .collect(Collectors.toList());
+        org.springframework.data.domain.Page<PaymentResponse> responsePage = 
+                new org.springframework.data.domain.PageImpl<>(content, pageable, page.getTotalElements());
+        return PaginatedResponse.of(responsePage);
     }
 
     public PaymentResponse getPaymentByIdAdmin(Long paymentId) {

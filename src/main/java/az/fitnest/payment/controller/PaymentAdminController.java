@@ -45,7 +45,16 @@ public class PaymentAdminController {
             @ApiResponse(responseCode = "403", description = "Admin icazəsi tələb olunur")
     })
     @GetMapping
-    public ResponseEntity<List<PaymentResponse>> getAllPayments() {
+    public ResponseEntity<?> getAllPayments(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size
+    ) {
+        if (page != null || size != null) {
+            int pageNum = page != null ? Math.max(0, page - 1) : 0;
+            int pageSize = size != null && size > 0 ? size : 10;
+            org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(pageNum, pageSize);
+            return ResponseEntity.ok(userPaymentService.getAllPaymentsPaginated(pageable));
+        }
         return ResponseEntity.ok(userPaymentService.getAllPayments());
     }
 
