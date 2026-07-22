@@ -292,22 +292,20 @@ public class PaymentController {
                     .body(EpointResponse.builder().status("error").message("Both packageId and optionId must be provided").build());
         }
 
-        boolean valid = subscriptionPackageGrpcClient.checkOptionInPackageExists(currencyRequest.packageId(), currencyRequest.optionId());
-        if (!valid) {
-            log.warn("[WidgetUrl] (ERROR) Invalid packageId or optionId. packageId={}, optionId={}", currencyRequest.packageId(), currencyRequest.optionId());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(EpointResponse.builder().status("error").message("Invalid packageId or optionId").build());
-        }
-
         try {
-            if (Boolean.TRUE.equals(currencyRequest.autoPaymentEnabled())) {
-                var details = subscriptionPackageGrpcClient.getOptionPriceCurrency(currencyRequest.packageId(), currencyRequest.optionId());
-                if (details.durationMonths != 1) {
-                    log.warn("[WidgetUrl] (ERROR) Auto-payment is only acceptable for 1-month duration. packageId={}, optionId={}, duration={}", currencyRequest.packageId(), currencyRequest.optionId(), details.durationMonths);
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                            .body(EpointResponse.builder().status("error").message("Avtomatik ödəniş yalnız 1 aylıq paketlər üçün keçərlidir").build());
-                }
+            var details = subscriptionPackageGrpcClient.getOptionPriceCurrency(currencyRequest.packageId(), currencyRequest.optionId());
+            if (details == null) {
+                log.warn("[WidgetUrl] (ERROR) Invalid packageId or optionId. packageId={}, optionId={}", currencyRequest.packageId(), currencyRequest.optionId());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(EpointResponse.builder().status("error").message("Invalid packageId or optionId").build());
             }
+
+            if (Boolean.TRUE.equals(currencyRequest.autoPaymentEnabled()) && details.durationMonths != 1) {
+                log.warn("[WidgetUrl] (ERROR) Auto-payment is only acceptable for 1-month duration. packageId={}, optionId={}, duration={}", currencyRequest.packageId(), currencyRequest.optionId(), details.durationMonths);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(EpointResponse.builder().status("error").message("Avtomatik ödəniş yalnız 1 aylıq paketlər üçün keçərlidir").build());
+            }
+
             EpointResponse response = integrationService.createWidgetUrl(userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled());
             log.info("[WidgetUrl] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, status={}, widgetUrl={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), response.status(), response.widgetUrl());
             return ResponseEntity.ok(response);

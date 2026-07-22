@@ -21,21 +21,21 @@ public class EpointHttpClientConfig {
     @Bean
     public EpointHttpClient epointHttpClient(RestTemplate restTemplate, EpointSigner signer, EpointProperties properties) {
         RetryConfig retryConfig = RetryConfig.custom()
-                .maxAttempts(3)
-                .waitDuration(Duration.ofSeconds(2))
+                .maxAttempts(2)
+                .waitDuration(Duration.ofMillis(200))
                 .retryExceptions(Exception.class)
                 .build();
         var retry = RetryRegistry.of(retryConfig).retry("epoint-http");
 
         CircuitBreakerConfig cbConfig = CircuitBreakerConfig.custom()
                 .failureRateThreshold(50)
-                .waitDurationInOpenState(Duration.ofSeconds(10))
+                .waitDurationInOpenState(Duration.ofSeconds(5))
                 .slidingWindowSize(10)
                 .build();
         var circuitBreaker = CircuitBreakerRegistry.of(cbConfig).circuitBreaker("epoint-http");
 
         var timeLimiter = TimeLimiter.of(TimeLimiterConfig.custom()
-                .timeoutDuration(Duration.ofSeconds(5))
+                .timeoutDuration(Duration.ofSeconds(4))
                 .build());
 
         return new EpointHttpClient(restTemplate, signer, properties, retry, circuitBreaker, timeLimiter);

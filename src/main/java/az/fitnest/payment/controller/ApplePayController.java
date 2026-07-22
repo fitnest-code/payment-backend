@@ -44,15 +44,14 @@ public class ApplePayController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        // Validate package & option exists
-        boolean valid = subscriptionPackageGrpcClient.checkOptionInPackageExists(request.packageId(), request.optionId());
-        if (!valid) {
-            log.warn("[ApplePayCreate] Invalid packageId or optionId. packageId={}, optionId={}", request.packageId(), request.optionId());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(new ErrorResponse("Invalid packageId or optionId"));
-        }
-
         try {
+            var details = subscriptionPackageGrpcClient.getOptionPriceCurrency(request.packageId(), request.optionId());
+            if (details == null) {
+                log.warn("[ApplePayCreate] Invalid packageId or optionId. packageId={}, optionId={}", request.packageId(), request.optionId());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ErrorResponse("Invalid packageId or optionId"));
+            }
+
             EpointTokenResponse tokenResponse = integrationService.createApplePayPayment(userId, request.packageId(), request.optionId());
             ApplePayCreateResponse createResponse = new ApplePayCreateResponse(tokenResponse.getPaymentId());
             log.info("[ApplePayCreate] (CONTROLLER EXIT) Created paymentId={} for userId={}", createResponse.paymentId(), userId);

@@ -1211,10 +1211,31 @@ public class EpointIntegrationService {
 
     public Object getApplePaySession(String origin) {
         log.info("[ApplePaySession] Fetching session from Epoint for origin={}", origin);
+        String redisKey = "applepay:session:" + origin;
+        try {
+            String cached = redisTemplate.opsForValue().get(redisKey);
+            if (cached != null && !cached.isBlank()) {
+                log.info("[ApplePaySession] (CACHE HIT) Returning cached Apple Pay session for origin={}", origin);
+                return objectMapper.readValue(cached, Object.class);
+            }
+        } catch (Exception e) {
+            log.warn("[ApplePaySession] Error reading session from Redis cache", e);
+        }
+
         EpointAppleSessionRequest sessionRequest = EpointAppleSessionRequest.builder()
                 .publicKey(epointProperties.getPublicKey())
                 .origin(origin)
                 .build();
-        return httpClient.postSigned("/token/apple/session", sessionRequest, Object.class);
+        Object session = httpClient.postSigned("/token/apple/session", sessionRequest, Object.class);
+
+        if (session != null) {
+            try {
+                redisTemplate.opsForValue().set(redisKey, objectMapper.writeValueAsString(session), 35, java.util.concurrent.TimeUnit.MINUTES);
+                log.info("[ApplePaySession] Cached Apple Pay session in Redis for 35m, origin={}", origin);
+            } catch (Exception e) {
+                log.warn("[ApplePaySession] Failed to cache Apple Pay session in Redis", e);
+            }
+        }
+        return session;
     }
 }
