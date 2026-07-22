@@ -414,8 +414,22 @@ public class AbbIntegrationService {
                     );
                 } else {
                     log.info("[ABB][TRTYPE=90] Payment for orderId={} was already processed locally as FAILED.", orderId);
-                    return AbbTransactionActionResponse.error(
-                            "Ödəniş uğursuz olub (Status: " + payment.getStatus() + ")"
+                    String maskedCard = maskCardToLast4(payment.getCardMask());
+                    String action = "3";
+                    if (payment.getBankResponse() != null && payment.getBankResponse().contains("ACTION=")) {
+                        for (String line : payment.getBankResponse().split("\n")) {
+                            if (line.trim().startsWith("ACTION=")) {
+                                action = line.replace("ACTION=", "").trim();
+                            }
+                        }
+                    }
+                    return AbbTransactionActionResponse.success(
+                            action,
+                            payment.getCode() != null ? payment.getCode() : "96", // rc
+                            payment.getOperationCode(), // approval
+                            payment.getRrn(), // rrn
+                            payment.getTransactionId(), // intRef
+                            maskedCard
                     );
                 }
             }
@@ -505,7 +519,7 @@ public class AbbIntegrationService {
                 }
             });
 
-            if (responseSuccess) {
+            if ((action != null && !action.isBlank()) || (rc != null && !rc.isBlank())) {
                 String masked = paymentOpt.map(p -> maskCardToLast4(p.getCardMask())).orElse(null);
                 return AbbTransactionActionResponse.success(action, rc, approval, rrn, intRef, masked);
             } else {
