@@ -147,12 +147,10 @@ public class AbbIntegrationService {
                 .desc(description)
                 .lang(abbProperties.getDefaultLanguage());
 
-        // 6. Taksit parametrini əlavə et (əgər seçilmişdirsə)
+        // 6. Taksit parametrini əlavə et
         AbbInstallmentOption inst = (installment != null) ? installment : AbbInstallmentOption.NONE;
-        if (inst.isInstallment()) {
-            reqBuilder.acqInstPayin(inst.getParamValue());
-            log.info("[ABB][Init] Installment enabled: {}", inst.getParamValue());
-        }
+        reqBuilder.acqInstPayin(inst.getParamValue());
+        log.info("[ABB][Init] Installment parameter (ACQ_INST_PAYIN) set to: {}", inst.getParamValue());
 
         AbbPaymentRequest request = reqBuilder.build();
 
