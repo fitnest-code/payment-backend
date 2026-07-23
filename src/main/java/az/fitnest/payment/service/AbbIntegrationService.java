@@ -519,7 +519,15 @@ public class AbbIntegrationService {
                     payment.setCallbackProcessed(true);
                     paymentRepository.save(payment);
                 } else {
-                    log.warn("[ABB][TRTYPE=90] Sync: Status unresolved for orderId={}", orderId);
+                    java.time.Instant thirtyMinutesAgo = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.MINUTES);
+                    if (payment.getCreatedDate() != null && payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant().isBefore(thirtyMinutesAgo)) {
+                        log.info("[ABB][TRTYPE=90] Sync: Payment is older than 30 minutes with no bank status. Marking as FAILED.");
+                        payment.setStatus("FAILED");
+                        payment.setCallbackProcessed(true);
+                        paymentRepository.save(payment);
+                    } else {
+                        log.warn("[ABB][TRTYPE=90] Sync: Status unresolved for orderId={}", orderId);
+                    }
                 }
             });
 
@@ -528,6 +536,11 @@ public class AbbIntegrationService {
                 Payment updatedPayment = paymentRepository.findByOrderId(orderId).orElse(null);
                 return buildSuccessResponse(action, rc, approval, rrn, intRef, masked, updatedPayment);
             } else {
+                Payment updatedPayment = paymentRepository.findByOrderId(orderId).orElse(null);
+                if (updatedPayment != null && "FAILED".equals(updatedPayment.getStatus())) {
+                    String masked = maskCardToLast4(updatedPayment.getCardMask());
+                    return buildSuccessResponse("3", "96", null, null, null, masked, updatedPayment);
+                }
                 return AbbTransactionActionResponse.error(
                         String.format("Bank status sorğusu mənfi: action=%s, rc=%s. %s", action, rc, body));
             }

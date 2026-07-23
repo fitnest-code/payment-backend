@@ -455,8 +455,21 @@ public class UserPaymentService {
     }
 
     private PaymentResponse mapToPaymentResponse(Payment payment, String userLanguage, java.util.Map<Long, String> userNameCache) {
-        String formattedStatus = payment.getStatus();
-        formattedStatus = translateStatus(formattedStatus, userLanguage);
+        String statusVal = payment.getStatus();
+        if (statusVal != null && (
+            "PENDING".equalsIgnoreCase(statusVal)
+            || "PENDING_USER_ACTION".equalsIgnoreCase(statusVal)
+            || "PENDING_3DS".equalsIgnoreCase(statusVal)
+            || "NEW".equalsIgnoreCase(statusVal)
+        )) {
+            if (payment.getCreatedDate() != null) {
+                java.time.Instant thirtyMinutesAgo = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.MINUTES);
+                if (payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant().isBefore(thirtyMinutesAgo)) {
+                    statusVal = "FAILED";
+                }
+            }
+        }
+        String formattedStatus = translateStatus(statusVal, userLanguage);
 
         String brand;
         if ("GOOGLE_PAY".equals(payment.getType())) {

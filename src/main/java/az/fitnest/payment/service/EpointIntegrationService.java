@@ -544,8 +544,14 @@ public class EpointIntegrationService {
                     || (response.code() != null && !response.code().isBlank() && !"500".equals(response.code()) && !"ERROR".equalsIgnoreCase(response.code()));
 
             if (!hasAttempt) {
-                log.info("[StatusSync] Epoint returned error/failed/server_error status but no transaction attempt detected. Retaining pending status: {}", payment.getStatus());
-                newStatus = payment.getStatus();
+                java.time.Instant thirtyMinutesAgo = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.MINUTES);
+                if (payment.getCreatedDate() != null && payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant().isBefore(thirtyMinutesAgo)) {
+                    log.info("[StatusSync] Epoint returned error/failed status and no attempt, but payment is older than 30 minutes. Marking as FAILED.");
+                    newStatus = "FAILED";
+                } else {
+                    log.info("[StatusSync] Epoint returned error/failed/server_error status but no transaction attempt detected. Retaining pending status: {}", payment.getStatus());
+                    newStatus = payment.getStatus();
+                }
             }
         }
 
