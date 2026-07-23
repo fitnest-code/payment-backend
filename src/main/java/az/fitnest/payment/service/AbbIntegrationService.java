@@ -2,11 +2,14 @@ package az.fitnest.payment.service;
 
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.client.UserSubscriptionGrpcClient;
+import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.client.abb.AbbProperties;
 import az.fitnest.payment.client.abb.AbbSigner;
 import az.fitnest.payment.dto.abb.*;
+import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.repository.PaymentRepository;
+import az.fitnest.payment.util.CardBrandDetector;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,6 +68,7 @@ public class AbbIntegrationService {
     private final StringRedisTemplate redisTemplate;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final UserSubscriptionGrpcClient userSubscriptionGrpcClient;
+    private final UserGrpcClient userGrpcClient;
 
     /** Paylaşılan HTTP client instance (thread-safe, yenidən istifadə edilir) */
     private static final java.net.http.HttpClient HTTP_CLIENT =
@@ -408,7 +412,8 @@ public class AbbIntegrationService {
                             payment.getOperationCode(), // approval
                             payment.getRrn(), // rrn
                             payment.getTransactionId(), // intRef
-                            maskedCard // card
+                            maskedCard, // card
+                            mapToPaymentResponse(payment)
                     );
                 } else {
                     log.info("[ABB][TRTYPE=90] Payment for orderId={} was already processed locally as FAILED.", orderId);
@@ -427,7 +432,8 @@ public class AbbIntegrationService {
                             payment.getOperationCode(), // approval
                             payment.getRrn(), // rrn
                             payment.getTransactionId(), // intRef
-                            maskedCard
+                            maskedCard,
+                            mapToPaymentResponse(payment)
                     );
                 }
             }
@@ -519,7 +525,10 @@ public class AbbIntegrationService {
 
             if ((action != null && !action.isBlank()) || (rc != null && !rc.isBlank())) {
                 String masked = paymentOpt.map(p -> maskCardToLast4(p.getCardMask())).orElse(null);
-                return AbbTransactionActionResponse.success(action, rc, approval, rrn, intRef, masked);
+                PaymentResponse payResp = paymentRepository.findByOrderId(orderId)
+                        .map(this::mapToPaymentResponse)
+                        .orElse(null);
+                return AbbTransactionActionResponse.success(action, rc, approval, rrn, intRef, masked, payResp);
             } else {
                 return AbbTransactionActionResponse.error(
                         String.format("Bank status sorğusu mənfi: action=%s, rc=%s. %s", action, rc, body));
@@ -936,5 +945,75 @@ public class AbbIntegrationService {
             return clean;
         }
         return "************" + clean.substring(clean.length() - 4);
+    }
+
+    private PaymentResponse mapToPaymentResponse(Payment payment) {
+        if (payment == null) return null;
+        String formattedStatus = translateStatus(payment.getStatus());
+
+        String brand;
+        if ("GOOGLE_PAY".equals(payment.getType())) {
+            brand = "Google Pay";
+        } else if ("APPLE_PAY".equals(payment.getType())) {
+            brand = "Apple Pay";
+        } else if ("ABB_INSTALLMENT".equals(payment.getType())) {
+            brand = "ABB installment";
+        } else if ("ABB_PAYMENT".equals(payment.getType())) {
+            brand = "ABB";
+        } else {
+            brand = CardBrandDetector.detectBrand(payment.getCardMask());
+        }
+
+        String rawType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
+        String actualType = "Birdəfəlik";
+        if ("AUTO_RENEWAL".equals(rawType)) {
+            actualType = "Avtomatik";
+        }
+
+        String ownerName = null;
+        if (payment.getUserId() != null) {
+            ownerName = resolveUserFullName(payment.getUserId());
+        }
+
+        return new PaymentResponse(
+            payment.getId(),
+            payment.getAmount(),
+            payment.getCurrency(),
+            payment.getCreatedDate() != null ? payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
+            brand,
+            maskCardToLast4(payment.getCardMask()),
+            actualType,
+            formattedStatus,
+            payment.getCode(),
+            payment.getTransactionId(),
+            ownerName,
+            payment.getDescription(),
+            payment.getRrn()
+        );
+    }
+
+    private String resolveUserFullName(Long userId) {
+        try {
+            var userResp = userGrpcClient.getUser(userId);
+            if (userResp != null) {
+                String first = userResp.getFirstName();
+                String last = userResp.getLastName();
+                String full = ((first != null ? first : "") + " " + (last != null ? last : "")).trim();
+                return full.isEmpty() ? null : full;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to resolve user name for userId={}: {}", userId, e.getMessage());
+        }
+        return null;
+    }
+
+    private String translateStatus(String status) {
+        if (status == null) return "";
+        return switch (status) {
+            case "SUCCESS" -> "Uğurlu";
+            case "FAILED" -> "Uğursuz";
+            case "PENDING", "PENDING_USER_ACTION" -> "Gözləmədə";
+            default -> status;
+        };
     }
 }

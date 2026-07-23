@@ -1,5 +1,6 @@
 package az.fitnest.payment.dto.abb;
 
+import az.fitnest.payment.dto.common.PaymentResponse;
 import lombok.Builder;
 
 /**
@@ -29,18 +30,27 @@ public record AbbTransactionActionResponse(
         String message,
 
         /** Maskalanmış kart nömrəsi (məs: ************0724) */
-        String card
+        String card,
+
+        /** Ödənişin tam detalları (PaymentResponse) */
+        PaymentResponse payment
 ) {
     public static AbbTransactionActionResponse success(String action, String rc,
                                                         String approval, String rrn, String intRef) {
-        return success(action, rc, approval, rrn, intRef, null);
+        return success(action, rc, approval, rrn, intRef, null, null);
     }
 
     public static AbbTransactionActionResponse success(String action, String rc,
                                                         String approval, String rrn, String intRef, String card) {
+        return success(action, rc, approval, rrn, intRef, card, null);
+    }
+
+    public static AbbTransactionActionResponse success(String action, String rc,
+                                                        String approval, String rrn, String intRef, String card, PaymentResponse payment) {
         return AbbTransactionActionResponse.builder()
                 .status("success").action(action).rc(rc)
                 .approval(approval).rrn(rrn).intRef(intRef).card(card)
+                .payment(payment)
                 .build();
     }
 
