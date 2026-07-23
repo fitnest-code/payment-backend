@@ -262,16 +262,21 @@ public class UserPaymentService {
         List<Payment> filtered = allPayments.stream()
             .filter(p -> {
                 String t = p.getType();
-                return "PAYMENT".equalsIgnoreCase(t)
+                return t != null && (
+                    "PAYMENT".equalsIgnoreCase(t)
                     || "WIDGET_PAYMENT".equalsIgnoreCase(t)
                     || "ABB_PAYMENT".equalsIgnoreCase(t)
-                    || "ABB_INSTALLMENT".equalsIgnoreCase(t);
+                    || "ABB_INSTALLMENT".equalsIgnoreCase(t)
+                    || "GOOGLE_PAY".equalsIgnoreCase(t)
+                    || "APPLE_PAY".equalsIgnoreCase(t)
+                );
             })
             .filter(p -> {
                 if (p.getCreatedDate() == null) return false;
                 java.time.LocalDate date = p.getCreatedDate().toLocalDate();
-                return !date.isBefore(startDate) && !date.isAfter(endDate) && date.getYear() == currentYear;
+                return !date.isBefore(startDate);
             })
+            .sorted(java.util.Comparator.comparing(Payment::getCreatedDate, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
             .toList();
         List<Payment> deduplicated = deduplicatePayments(filtered);
         int startIdx = (int) pageable.getOffset();
