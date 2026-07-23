@@ -948,7 +948,11 @@ public class AbbIntegrationService {
     private AbbTransactionActionResponse buildSuccessResponse(String action, String rc, String approval,
                                                               String rrn, String intRef, String maskedCard, Payment payment) {
         if (payment == null) {
-            return AbbTransactionActionResponse.success(action, rc, approval, rrn, intRef, maskedCard);
+            String paymentStatus = ("0".equals(action) && "00".equals(rc)) ? "Uğurlu" : "Uğursuz";
+            return AbbTransactionActionResponse.builder()
+                    .status(paymentStatus)
+                    .action(action).rc(rc).approval(approval).rrn(rrn).intRef(intRef).card(maskedCard)
+                    .build();
         }
 
         String brand;
@@ -982,17 +986,25 @@ public class AbbIntegrationService {
                     .format(payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant());
         }
 
-        return AbbTransactionActionResponse.success(
-                action, rc, approval, rrn, intRef, maskedCard,
-                payment.getId(),
-                payment.getAmount(),
-                payment.getCurrency(),
-                occurredAtStr,
-                brand,
-                actualType,
-                ownerName,
-                payment.getDescription()
-        );
+        String formattedStatus = translateStatus(payment.getStatus());
+
+        return AbbTransactionActionResponse.builder()
+                .status(formattedStatus)
+                .action(action)
+                .rc(rc)
+                .approval(approval)
+                .rrn(rrn)
+                .intRef(intRef)
+                .card(maskedCard)
+                .paymentId(payment.getId())
+                .amount(payment.getAmount())
+                .currency(payment.getCurrency())
+                .occurredAt(occurredAtStr)
+                .cardBrand(brand)
+                .type(actualType)
+                .owner(ownerName)
+                .description(payment.getDescription())
+                .build();
     }
 
     private PaymentResponse mapToPaymentResponse(Payment payment) {
