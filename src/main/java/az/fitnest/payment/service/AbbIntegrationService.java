@@ -406,14 +406,14 @@ public class AbbIntegrationService {
                 if ("SUCCESS".equals(payment.getStatus())) {
                     log.info("[ABB][TRTYPE=90] Payment for orderId={} was already processed locally as SUCCESS.", orderId);
                     String maskedCard = maskCardToLast4(payment.getCardMask());
-                    return AbbTransactionActionResponse.success(
+                    return buildSuccessResponse(
                             "0", // action = 0
                             payment.getCode() != null ? payment.getCode() : "00", // rc
                             payment.getOperationCode(), // approval
                             payment.getRrn(), // rrn
                             payment.getTransactionId(), // intRef
                             maskedCard, // card
-                            mapToPaymentResponse(payment)
+                            payment
                     );
                 } else {
                     log.info("[ABB][TRTYPE=90] Payment for orderId={} was already processed locally as FAILED.", orderId);
@@ -426,14 +426,14 @@ public class AbbIntegrationService {
                             }
                         }
                     }
-                    return AbbTransactionActionResponse.success(
+                    return buildSuccessResponse(
                             action,
                             payment.getCode() != null ? payment.getCode() : "96", // rc
                             payment.getOperationCode(), // approval
                             payment.getRrn(), // rrn
                             payment.getTransactionId(), // intRef
                             maskedCard,
-                            mapToPaymentResponse(payment)
+                            payment
                     );
                 }
             }
@@ -525,10 +525,8 @@ public class AbbIntegrationService {
 
             if ((action != null && !action.isBlank()) || (rc != null && !rc.isBlank())) {
                 String masked = paymentOpt.map(p -> maskCardToLast4(p.getCardMask())).orElse(null);
-                PaymentResponse payResp = paymentRepository.findByOrderId(orderId)
-                        .map(this::mapToPaymentResponse)
-                        .orElse(null);
-                return AbbTransactionActionResponse.success(action, rc, approval, rrn, intRef, masked, payResp);
+                Payment updatedPayment = paymentRepository.findByOrderId(orderId).orElse(null);
+                return buildSuccessResponse(action, rc, approval, rrn, intRef, masked, updatedPayment);
             } else {
                 return AbbTransactionActionResponse.error(
                         String.format("Bank status sorğusu mənfi: action=%s, rc=%s. %s", action, rc, body));
@@ -945,6 +943,56 @@ public class AbbIntegrationService {
             return clean;
         }
         return "************" + clean.substring(clean.length() - 4);
+    }
+
+    private AbbTransactionActionResponse buildSuccessResponse(String action, String rc, String approval,
+                                                              String rrn, String intRef, String maskedCard, Payment payment) {
+        if (payment == null) {
+            return AbbTransactionActionResponse.success(action, rc, approval, rrn, intRef, maskedCard);
+        }
+
+        String brand;
+        if ("GOOGLE_PAY".equals(payment.getType())) {
+            brand = "Google Pay";
+        } else if ("APPLE_PAY".equals(payment.getType())) {
+            brand = "Apple Pay";
+        } else if ("ABB_INSTALLMENT".equals(payment.getType())) {
+            brand = "ABB installment";
+        } else if ("ABB_PAYMENT".equals(payment.getType())) {
+            brand = "ABB";
+        } else {
+            brand = CardBrandDetector.detectBrand(payment.getCardMask());
+        }
+
+        String rawType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
+        String actualType = "Birdəfəlik";
+        if ("AUTO_RENEWAL".equals(rawType)) {
+            actualType = "Avtomatik";
+        }
+
+        String ownerName = null;
+        if (payment.getUserId() != null) {
+            ownerName = resolveUserFullName(payment.getUserId());
+        }
+
+        String occurredAtStr = null;
+        if (payment.getCreatedDate() != null) {
+            occurredAtStr = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+                    .withZone(java.time.ZoneId.systemDefault())
+                    .format(payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant());
+        }
+
+        return AbbTransactionActionResponse.success(
+                action, rc, approval, rrn, intRef, maskedCard,
+                payment.getId(),
+                payment.getAmount(),
+                payment.getCurrency(),
+                occurredAtStr,
+                brand,
+                actualType,
+                ownerName,
+                payment.getDescription()
+        );
     }
 
     private PaymentResponse mapToPaymentResponse(Payment payment) {

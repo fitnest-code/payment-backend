@@ -1,6 +1,5 @@
 package az.fitnest.payment.dto.abb;
 
-import az.fitnest.payment.dto.common.PaymentResponse;
 import lombok.Builder;
 
 /**
@@ -32,25 +31,47 @@ public record AbbTransactionActionResponse(
         /** Maskalanmış kart nömrəsi (məs: ************0724) */
         String card,
 
-        /** Ödənişin tam detalları (PaymentResponse) */
-        PaymentResponse payment
+        // Yastı ödəniş detalları:
+        Long paymentId,
+        Double amount,
+        String currency,
+        String occurredAt,
+        String cardBrand,
+        String type,
+        String owner,
+        String description
 ) {
     public static AbbTransactionActionResponse success(String action, String rc,
                                                         String approval, String rrn, String intRef) {
-        return success(action, rc, approval, rrn, intRef, null, null);
+        return AbbTransactionActionResponse.builder()
+                .status("success").action(action).rc(rc)
+                .approval(approval).rrn(rrn).intRef(intRef)
+                .build();
     }
 
     public static AbbTransactionActionResponse success(String action, String rc,
                                                         String approval, String rrn, String intRef, String card) {
-        return success(action, rc, approval, rrn, intRef, card, null);
-    }
-
-    public static AbbTransactionActionResponse success(String action, String rc,
-                                                        String approval, String rrn, String intRef, String card, PaymentResponse payment) {
         return AbbTransactionActionResponse.builder()
                 .status("success").action(action).rc(rc)
                 .approval(approval).rrn(rrn).intRef(intRef).card(card)
-                .payment(payment)
+                .build();
+    }
+
+    public static AbbTransactionActionResponse success(String action, String rc,
+                                                        String approval, String rrn, String intRef, String card,
+                                                        Long paymentId, Double amount, String currency, String occurredAt,
+                                                        String cardBrand, String type, String owner, String description) {
+        return AbbTransactionActionResponse.builder()
+                .status("success").action(action).rc(rc)
+                .approval(approval).rrn(rrn).intRef(intRef).card(card)
+                .paymentId(paymentId)
+                .amount(amount)
+                .currency(currency)
+                .occurredAt(occurredAt)
+                .cardBrand(cardBrand)
+                .type(type)
+                .owner(owner)
+                .description(description)
                 .build();
     }
 
