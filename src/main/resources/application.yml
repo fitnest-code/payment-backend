@@ -179,6 +179,21 @@ abb:
   # Inteqrasiya tamamlandıqdan sonra ABB_MAINTENANCE_MODE=false set edin
   maintenance-mode: ${ABB_MAINTENANCE_MODE:true}
 
+# Bank of Baku (SmartVista EPG) Configuration
+bob:
+  gateway-url: ${BOB_GATEWAY_URL:https://epg.bankofbaku.com/payment/rest}
+  username: ${BOB_USERNAME:}
+  password: ${BOB_PASSWORD:}
+  merchant-id: ${BOB_MERCHANT_ID:}
+  callback-url: ${BOB_CALLBACK_URL:https://api.fitnest.az/payment/bob/callback}
+  success-redirect-url: ${BOB_SUCCESS_REDIRECT_URL:https://fitnest.az/payment/success}
+  error-redirect-url: ${BOB_ERROR_REDIRECT_URL:https://fitnest.az/payment/error}
+  default-currency: ${BOB_DEFAULT_CURRENCY:AZN}
+  default-language: ${BOB_DEFAULT_LANGUAGE:az}
+  active-installment-months: ${BOB_ACTIVE_INSTALLMENT_MONTHS:2,3,6,9,12}
+  maintenance-mode: ${BOB_MAINTENANCE_MODE:true}
+  timeout-ms: ${BOB_TIMEOUT_MS:10000}
+
 # Idempotency Key Configuration
 payment:
   idempotency:
