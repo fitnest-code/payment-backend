@@ -23,9 +23,15 @@ public class BobOrderStatusResponse {
     private String actionCode;
     private String actionCodeDescription;
     private String rrn;
+    private String receiptNumber;
     private String approvalCode;
     private String pan;
     private String cardholderName;
     private String bindingId;
     private String ip;
+    private String date;
+    private String authDateTime;
+    private String formattedDate;
+    private String terminalId;
+    private String authRefNum;
 }

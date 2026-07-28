@@ -293,7 +293,46 @@ public class BobIntegrationService {
     @Transactional(readOnly = true)
     public BobOrderStatusResponse checkPaymentStatus(String orderId) {
         checkMaintenance();
-        return bobRestClient.getOrderStatusExtended(orderId);
+        BobOrderStatusResponse statusResponse = bobRestClient.getOrderStatusExtended(orderId);
+
+        Optional<Payment> paymentOpt = paymentRepository.findByOrderId(orderId);
+        if (paymentOpt.isEmpty()) {
+            paymentOpt = paymentRepository.findByTransactionId(orderId);
+        }
+
+        // Qəbz Nömrəsi (Receipt Number) təyin edilməsi: RRN -> AuthRefNum -> TransactionId
+        String receiptNumber = statusResponse.getRrn();
+        if (receiptNumber == null || receiptNumber.isBlank()) {
+            receiptNumber = statusResponse.getAuthRefNum();
+        }
+        if ((receiptNumber == null || receiptNumber.isBlank()) && paymentOpt.isPresent()) {
+            receiptNumber = paymentOpt.get().getTransactionId();
+        }
+        statusResponse.setReceiptNumber(receiptNumber);
+
+        // Tarix - Saat formatlanması
+        String formattedDate = null;
+        if (statusResponse.getAuthDateTime() != null && !statusResponse.getAuthDateTime().isBlank()) {
+            formattedDate = formatTimestampOrString(statusResponse.getAuthDateTime());
+        } else if (statusResponse.getDate() != null && !statusResponse.getDate().isBlank()) {
+            formattedDate = formatTimestampOrString(statusResponse.getDate());
+        } else if (paymentOpt.isPresent() && paymentOpt.get().getCreatedDate() != null) {
+            formattedDate = paymentOpt.get().getCreatedDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
+        }
+        statusResponse.setFormattedDate(formattedDate);
+
+        return statusResponse;
+    }
+
+    private String formatTimestampOrString(String rawDate) {
+        if (rawDate == null || rawDate.isBlank()) return null;
+        try {
+            long ts = Long.parseLong(rawDate.trim());
+            return java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ts), java.time.ZoneId.of("Asia/Baku"))
+                    .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
+        } catch (Exception e) {
+            return rawDate;
+        }
     }
 
     /**
