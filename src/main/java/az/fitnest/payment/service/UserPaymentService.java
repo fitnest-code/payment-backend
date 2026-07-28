@@ -37,6 +37,8 @@ public class UserPaymentService {
     private final PaymentRepository paymentRepository;
     private final EpointIntegrationService integrationService;
     private final AbbIntegrationService abbIntegrationService;
+    @Autowired(required = false)
+    private BobIntegrationService bobIntegrationService;
     @Autowired
     private MessageSource messageSource;
 
@@ -60,6 +62,15 @@ public class UserPaymentService {
         UserCard card = userCardRepository.findByUserIdAndCardId(userId, cardId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         messageSource.getMessage("error.card.not.found", null, Locale.getDefault())));
+
+        if ("Bank of Baku".equalsIgnoreCase(card.getBrand()) && bobIntegrationService != null) {
+            try {
+                bobIntegrationService.deleteSavedCard(userId, cardId);
+                return;
+            } catch (Exception e) {
+                log.warn("[CardDelete] Bank unbind failed for Bank of Baku card {}, deleting DB entity: {}", cardId, e.getMessage());
+            }
+        }
 
         userCardRepository.delete(card);
     }
