@@ -48,9 +48,11 @@ public class SecurityConfig {
                         // ABB (Azericard) endpoints — secured via RSA P_SIGN, not JWT
                         .requestMatchers("/payment/abb/callback").permitAll()
                         .requestMatchers("/payment/abb/redirect/**").permitAll()
+                        .requestMatchers("/payment/abb/installment").permitAll()
                         // Bank of Baku (SmartVista) endpoints
                         .requestMatchers("/payment/bob/callback").permitAll()
                         .requestMatchers("/payment/bob/redirect/**").permitAll()
+                        .requestMatchers("/payment/bob/installment").permitAll()
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/swagger-ui.html").permitAll()

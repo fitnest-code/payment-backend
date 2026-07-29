@@ -191,7 +191,7 @@ bob:
   default-currency: ${BOB_DEFAULT_CURRENCY:AZN}
   default-language: ${BOB_DEFAULT_LANGUAGE:az}
   active-installment-months: ${BOB_ACTIVE_INSTALLMENT_MONTHS:2,3,6,9,12}
-  maintenance-mode: ${BOB_MAINTENANCE_MODE:true}
+  maintenance-mode: ${BOB_MAINTENANCE_MODE:false}
   timeout-ms: ${BOB_TIMEOUT_MS:10000}
 
 # Idempotency Key Configuration
