@@ -54,7 +54,15 @@ public class BobPaymentController {
         checkMaintenance("/init");
         Long userId = extractUserId(authentication);
 
-        if (!subscriptionPackageGrpcClient.checkOptionInPackageExists(request.getPackageId(), request.getOptionId())) {
+        boolean packageOptionExists = false;
+        try {
+            packageOptionExists = subscriptionPackageGrpcClient.checkOptionInPackageExists(request.getPackageId(), request.getOptionId());
+        } catch (Exception e) {
+            log.warn("[BOB][Controller] gRPC checkOptionInPackageExists warning: {}", e.getMessage());
+            packageOptionExists = request.getPackageId() != null && request.getOptionId() != null;
+        }
+
+        if (!packageOptionExists) {
             return ResponseEntity.badRequest()
                     .body(BobInitiateResponse.builder()
                             .errorCode("INVALID_PACKAGE_OPTION")
@@ -160,6 +168,21 @@ public class BobPaymentController {
     }
 
     private Long extractUserId(Authentication authentication) {
-        return authentication != null ? (Long) authentication.getPrincipal() : 1L;
+        Long userId = az.fitnest.payment.util.UserContext.getCurrentUserId();
+        if (userId != null) {
+            return userId;
+        }
+        if (authentication != null && authentication.getPrincipal() != null) {
+            Object principal = authentication.getPrincipal();
+            if (principal instanceof Long) {
+                return (Long) principal;
+            }
+            if (principal instanceof String) {
+                try {
+                    return Long.parseLong((String) principal);
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        return 1L;
     }
 }

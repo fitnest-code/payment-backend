@@ -1,33 +1,27 @@
 package az.fitnest.payment.exception;
 
+import org.springframework.http.HttpStatus;
+
 /**
  * Bank of Baku ödəniş əməliyyatları zamanı baş verən istisnalar üçün istifadə edilir.
  */
-public class BobPaymentException extends RuntimeException {
+public class BobPaymentException extends BaseException {
 
-    private final String errorCode;
+    private static final long serialVersionUID = 1L;
 
     public BobPaymentException(String message) {
-        super(message);
-        this.errorCode = "BOB_PAYMENT_ERROR";
+        super(message, "BOB_PAYMENT_ERROR", HttpStatus.BAD_REQUEST);
     }
 
     public BobPaymentException(String errorCode, String message) {
-        super(message);
-        this.errorCode = errorCode;
+        super(message, errorCode, HttpStatus.BAD_REQUEST);
     }
 
     public BobPaymentException(String message, Throwable cause) {
-        super(message, cause);
-        this.errorCode = "BOB_PAYMENT_ERROR";
+        super(message, "BOB_PAYMENT_ERROR", HttpStatus.BAD_REQUEST);
     }
 
     public BobPaymentException(String errorCode, String message, Throwable cause) {
-        super(message, cause);
-        this.errorCode = errorCode;
-    }
-
-    public String getErrorCode() {
-        return errorCode;
+        super(message, errorCode, HttpStatus.BAD_REQUEST);
     }
 }
