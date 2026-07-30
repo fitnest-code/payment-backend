@@ -258,7 +258,11 @@ public class BobIntegrationService {
             log.info("[BOB][Callback] SmartVista status response: orderStatus={}, actionCode={}",
                     statusResponse.getOrderStatus(), statusResponse.getActionCode());
 
-            payment.setRrn(statusResponse.getRrn());
+            String rrn = statusResponse.getRrn();
+            if (rrn == null || rrn.isBlank()) {
+                rrn = statusResponse.getAuthRefNum();
+            }
+            payment.setRrn(rrn);
             payment.setCardMask(statusResponse.getPan());
             payment.setCardName(statusResponse.getCardholderName());
             payment.setCallbackProcessed(true);
@@ -309,6 +313,9 @@ public class BobIntegrationService {
             receiptNumber = paymentOpt.get().getTransactionId();
         }
         statusResponse.setReceiptNumber(receiptNumber);
+        if (statusResponse.getRrn() == null || statusResponse.getRrn().isBlank()) {
+            statusResponse.setRrn(receiptNumber);
+        }
 
         // Tarix - Saat formatlanması
         String formattedDate = null;
