@@ -47,6 +47,9 @@ public class BobIntegrationService {
     private final UserSubscriptionGrpcClient userSubscriptionGrpcClient;
     private final StringRedisTemplate redisTemplate;
 
+    @org.springframework.beans.factory.annotation.Value("${payment.card-logos-base-url:https://api.fitnest.az/assets/cards}")
+    private String cardLogosBaseUrl;
+
     private static final SecureRandom RANDOM = new SecureRandom();
 
     /**
@@ -327,6 +330,33 @@ public class BobIntegrationService {
             formattedDate = paymentOpt.get().getCreatedDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
         }
         statusResponse.setFormattedDate(formattedDate);
+
+        // cardMask, cardBrand və logoUrl təyin olunması
+        String cardMask = statusResponse.getPan();
+        if ((cardMask == null || cardMask.isBlank()) && paymentOpt.isPresent()) {
+            cardMask = paymentOpt.get().getCardMask();
+        }
+        statusResponse.setCardMask(cardMask);
+
+        String cardBrand = az.fitnest.payment.util.CardBrandDetector.detectBrand(cardMask);
+        if (cardBrand == null || "UNKNOWN".equalsIgnoreCase(cardBrand)) {
+            cardBrand = "Bank of Baku";
+        }
+        statusResponse.setCardBrand(cardBrand);
+
+        String baseUrl = cardLogosBaseUrl != null ? cardLogosBaseUrl.replaceAll("/+$", "") : "https://api.fitnest.az/assets/cards";
+        String brandLower = cardBrand.toLowerCase(java.util.Locale.ROOT);
+        String logoUrl;
+        if (brandLower.contains("bank of baku") || brandLower.contains("bob")) {
+            logoUrl = baseUrl + "/bankofbaku.png";
+        } else if (brandLower.contains("visa")) {
+            logoUrl = baseUrl + "/visa.png";
+        } else if (brandLower.contains("mastercard")) {
+            logoUrl = baseUrl + "/mastercard.png";
+        } else {
+            logoUrl = baseUrl + "/default.png";
+        }
+        statusResponse.setLogoUrl(logoUrl);
 
         return statusResponse;
     }

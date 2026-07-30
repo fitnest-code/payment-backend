@@ -34,4 +34,7 @@ public class BobOrderStatusResponse {
     private String formattedDate;
     private String terminalId;
     private String authRefNum;
+    private String cardMask;
+    private String cardBrand;
+    private String logoUrl;
 }
