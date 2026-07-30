@@ -308,12 +308,46 @@ public class UserPaymentService {
     }
 
     private UserCardResponse mapToCardResponse(UserCard card) {
+        String logoUrl = resolveCardLogoUrl(card.getBrand(), card.getCardMask());
         return new UserCardResponse(
             card.getCardId(),
             card.getCardName(),
             card.getCardMask(),
-            card.getBrand()
+            card.getBrand(),
+            logoUrl
         );
+    }
+
+    private String resolveCardLogoUrl(String brand, String cardMask) {
+        if (brand != null) {
+            String b = brand.toLowerCase(Locale.ROOT);
+            if (b.contains("bank of baku") || b.contains("bob")) {
+                return "https://fitnest.az/assets/cards/bankofbaku.png";
+            }
+            if (b.contains("abb") || b.contains("azericard") || b.contains("ibar")) {
+                return "https://fitnest.az/assets/cards/abb.png";
+            }
+            if (b.contains("mastercard") || b.contains("master")) {
+                return "https://fitnest.az/assets/cards/mastercard.png";
+            }
+            if (b.contains("visa")) {
+                return "https://fitnest.az/assets/cards/visa.png";
+            }
+            if (b.contains("epoint")) {
+                return "https://fitnest.az/assets/cards/epoint.png";
+            }
+        }
+        String detected = CardBrandDetector.detectBrand(cardMask);
+        if (detected != null) {
+            String d = detected.toLowerCase(Locale.ROOT);
+            if (d.contains("visa")) {
+                return "https://fitnest.az/assets/cards/visa.png";
+            }
+            if (d.contains("mastercard")) {
+                return "https://fitnest.az/assets/cards/mastercard.png";
+            }
+        }
+        return "https://fitnest.az/assets/cards/default.png";
     }
 
     private PaymentResponse mapToPaymentResponse(Payment payment) {

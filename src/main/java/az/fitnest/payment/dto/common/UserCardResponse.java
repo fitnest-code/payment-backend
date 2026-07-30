@@ -8,12 +8,18 @@ public record UserCardResponse(
     String cardId,
     String cardName,
     String cardMask,
-    String brand
+    String brand,
+    String logoUrl
 ) {
     public UserCardResponse(String cardId, String cardName, String cardMask, String brand) {
+        this(cardId, cardName, cardMask, brand, null);
+    }
+
+    public UserCardResponse(String cardId, String cardName, String cardMask, String brand, String logoUrl) {
         this.cardId = cardId;
         this.cardName = cardName;
         this.cardMask = cardMask;
         this.brand = brand;
+        this.logoUrl = logoUrl;
     }
 }
