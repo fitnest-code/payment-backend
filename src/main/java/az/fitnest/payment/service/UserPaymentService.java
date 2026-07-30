@@ -532,6 +532,9 @@ public class UserPaymentService {
             brand = "ABB";
         } else {
             brand = CardBrandDetector.detectBrand(payment.getCardMask());
+            if ("UNKNOWN".equalsIgnoreCase(brand) && payment.getProvider() != null && !payment.getProvider().isBlank()) {
+                brand = payment.getProvider();
+            }
         }
 
         String rawType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
