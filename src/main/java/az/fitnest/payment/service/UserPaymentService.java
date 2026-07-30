@@ -308,14 +308,49 @@ public class UserPaymentService {
     }
 
     private UserCardResponse mapToCardResponse(UserCard card) {
-        String logoUrl = resolveCardLogoUrl(card.getBrand(), card.getCardMask());
+        String bank = detectBank(card.getBrand(), card.getCardMask());
+        String brand = card.getBrand();
+
+        String detectedNetwork = CardBrandDetector.detectBrand(card.getCardMask());
+        if (brand == null || brand.isBlank() || "ABB".equalsIgnoreCase(brand) || "Bank of Baku".equalsIgnoreCase(brand)) {
+            brand = detectedNetwork != null && !"UNKNOWN".equalsIgnoreCase(detectedNetwork) ? detectedNetwork : brand;
+        }
+
+        String logoUrl = resolveCardLogoUrl(bank != null ? bank : brand, card.getCardMask());
+
         return new UserCardResponse(
             card.getCardId(),
             card.getCardName(),
             card.getCardMask(),
-            card.getBrand(),
+            brand,
+            bank,
             logoUrl
         );
+    }
+
+    private String detectBank(String existingBrand, String cardMask) {
+        if (existingBrand != null) {
+            String b = existingBrand.toLowerCase(Locale.ROOT);
+            if (b.contains("abb") || b.contains("azericard") || b.contains("ibar")) {
+                return "ABB";
+            }
+            if (b.contains("bank of baku") || b.contains("bob")) {
+                return "Bank of Baku";
+            }
+            if (b.contains("epoint")) {
+                return "Epoint";
+            }
+        }
+        if (cardMask != null) {
+            String clean = cardMask.replaceAll("[^0-9]", "");
+            if (clean.startsWith("552209") || clean.startsWith("416973") || clean.startsWith("512061") || clean.startsWith("402839")) {
+                return "ABB";
+            }
+            if (clean.startsWith("534938") || clean.startsWith("552608")) {
+                return "Bank of Baku";
+            }
+        }
+        return null;
     }
 
     @org.springframework.beans.factory.annotation.Value("${payment.card-logos-base-url:https://api.fitnest.az/assets/cards}")
