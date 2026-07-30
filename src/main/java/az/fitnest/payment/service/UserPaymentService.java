@@ -318,36 +318,41 @@ public class UserPaymentService {
         );
     }
 
+    @org.springframework.beans.factory.annotation.Value("${payment.card-logos-base-url:https://api.fitnest.az/assets/cards}")
+    private String cardLogosBaseUrl;
+
     private String resolveCardLogoUrl(String brand, String cardMask) {
+        String baseUrl = cardLogosBaseUrl != null ? cardLogosBaseUrl.replaceAll("/+$", "") : "https://api.fitnest.az/assets/cards";
+
         if (brand != null) {
             String b = brand.toLowerCase(Locale.ROOT);
             if (b.contains("bank of baku") || b.contains("bob")) {
-                return "https://fitnest.az/assets/cards/bankofbaku.png";
+                return baseUrl + "/bankofbaku.png";
             }
             if (b.contains("abb") || b.contains("azericard") || b.contains("ibar")) {
-                return "https://fitnest.az/assets/cards/abb.png";
+                return baseUrl + "/abb.png";
             }
             if (b.contains("mastercard") || b.contains("master")) {
-                return "https://fitnest.az/assets/cards/mastercard.png";
+                return baseUrl + "/mastercard.png";
             }
             if (b.contains("visa")) {
-                return "https://fitnest.az/assets/cards/visa.png";
+                return baseUrl + "/visa.png";
             }
             if (b.contains("epoint")) {
-                return "https://fitnest.az/assets/cards/epoint.png";
+                return baseUrl + "/epoint.png";
             }
         }
         String detected = CardBrandDetector.detectBrand(cardMask);
         if (detected != null) {
             String d = detected.toLowerCase(Locale.ROOT);
             if (d.contains("visa")) {
-                return "https://fitnest.az/assets/cards/visa.png";
+                return baseUrl + "/visa.png";
             }
             if (d.contains("mastercard")) {
-                return "https://fitnest.az/assets/cards/mastercard.png";
+                return baseUrl + "/mastercard.png";
             }
         }
-        return "https://fitnest.az/assets/cards/default.png";
+        return baseUrl + "/default.png";
     }
 
     private PaymentResponse mapToPaymentResponse(Payment payment) {

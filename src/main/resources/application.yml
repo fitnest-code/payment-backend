@@ -196,6 +196,7 @@ bob:
 
 # Idempotency Key Configuration
 payment:
+  card-logos-base-url: ${CARD_LOGOS_BASE_URL:https://api.fitnest.az/assets/cards}
   idempotency:
     ttl-hours: ${IDEMPOTENCY_TTL_HOURS:24}
     cleanup-cron: ${IDEMPOTENCY_CLEANUP_CRON:0 0 * * * *}
