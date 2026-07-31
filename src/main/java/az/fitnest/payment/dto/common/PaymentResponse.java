@@ -20,14 +20,5 @@ public record PaymentResponse(
     String transactionId,
     String owner,
     String description,
-    String rrn,
-    String logoUrl
-) {
-    public PaymentResponse(
-            Long paymentId, Double amount, String currency, Instant occurredAt,
-            String cardBrand, String maskedPan, String type, String status,
-            String failureCode, String transactionId, String owner, String description, String rrn
-    ) {
-        this(paymentId, amount, currency, occurredAt, cardBrand, maskedPan, type, status, failureCode, transactionId, owner, description, rrn, null);
-    }
-}
+    String rrn
+) {}

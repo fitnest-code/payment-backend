@@ -331,7 +331,7 @@ public class BobIntegrationService {
         }
         statusResponse.setFormattedDate(formattedDate);
 
-        // cardMask, cardBrand və logoUrl təyin olunması
+        // cardMask və cardBrand təyin olunması
         String cardMask = statusResponse.getPan();
         if ((cardMask == null || cardMask.isBlank()) && paymentOpt.isPresent()) {
             cardMask = paymentOpt.get().getCardMask();
@@ -343,20 +343,6 @@ public class BobIntegrationService {
             cardBrand = "Bank of Baku";
         }
         statusResponse.setCardBrand(cardBrand);
-
-        String baseUrl = cardLogosBaseUrl != null ? cardLogosBaseUrl.replaceAll("/+$", "") : "https://api.fitnest.az/assets/cards";
-        String brandLower = cardBrand.toLowerCase(java.util.Locale.ROOT);
-        String logoUrl;
-        if (brandLower.contains("bank of baku") || brandLower.contains("bob")) {
-            logoUrl = baseUrl + "/bankofbaku.png";
-        } else if (brandLower.contains("visa")) {
-            logoUrl = baseUrl + "/visa.png";
-        } else if (brandLower.contains("mastercard")) {
-            logoUrl = baseUrl + "/mastercard.png";
-        } else {
-            logoUrl = baseUrl + "/default.png";
-        }
-        statusResponse.setLogoUrl(logoUrl);
 
         return statusResponse;
     }

@@ -328,15 +328,12 @@ public class UserPaymentService {
             brand = detectedNetwork != null && !"UNKNOWN".equalsIgnoreCase(detectedNetwork) ? detectedNetwork : brand;
         }
 
-        String logoUrl = resolveCardLogoUrl(bank != null ? bank : brand, card.getCardMask());
-
         return new UserCardResponse(
             card.getCardId(),
             card.getCardName(),
             card.getCardMask(),
             brand,
-            bank,
-            logoUrl
+            bank
         );
     }
 
@@ -620,9 +617,6 @@ public class UserPaymentService {
             }
         }
 
-        String logoBrand = payment.getProvider() != null ? payment.getProvider() : brand;
-        String logoUrl = resolveCardLogoUrl(logoBrand, payment.getCardMask());
-
         return new PaymentResponse(
             payment.getId(),
             payment.getAmount(),
@@ -636,8 +630,7 @@ public class UserPaymentService {
             payment.getTransactionId(),
             ownerName,
             payment.getDescription(),
-            payment.getRrn(),
-            logoUrl
+            payment.getRrn()
         );
     }
 

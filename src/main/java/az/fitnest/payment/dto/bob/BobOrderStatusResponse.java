@@ -36,5 +36,4 @@ public class BobOrderStatusResponse {
     private String authRefNum;
     private String cardMask;
     private String cardBrand;
-    private String logoUrl;
 }
