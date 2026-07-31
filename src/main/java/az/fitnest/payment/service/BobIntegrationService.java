@@ -307,18 +307,15 @@ public class BobIntegrationService {
             paymentOpt = paymentRepository.findByTransactionId(orderId);
         }
 
-        // Qəbz Nömrəsi (Receipt Number) təyin edilməsi: RRN -> AuthRefNum -> TransactionId
-        String receiptNumber = statusResponse.getRrn();
-        if (receiptNumber == null || receiptNumber.isBlank()) {
-            receiptNumber = statusResponse.getAuthRefNum();
+        // RRN təyin edilməsi: RRN -> AuthRefNum -> TransactionId
+        String rrn = statusResponse.getRrn();
+        if (rrn == null || rrn.isBlank()) {
+            rrn = statusResponse.getAuthRefNum();
         }
-        if ((receiptNumber == null || receiptNumber.isBlank()) && paymentOpt.isPresent()) {
-            receiptNumber = paymentOpt.get().getTransactionId();
+        if ((rrn == null || rrn.isBlank()) && paymentOpt.isPresent()) {
+            rrn = paymentOpt.get().getTransactionId();
         }
-        statusResponse.setReceiptNumber(receiptNumber);
-        if (statusResponse.getRrn() == null || statusResponse.getRrn().isBlank()) {
-            statusResponse.setRrn(receiptNumber);
-        }
+        statusResponse.setRrn(rrn);
 
         // Tarix - Saat formatlanması
         String formattedDate = null;
