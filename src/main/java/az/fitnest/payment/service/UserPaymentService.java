@@ -200,9 +200,15 @@ public class UserPaymentService {
             try {
                 boolean isAbb = "ABB".equalsIgnoreCase(payment.getProvider())
                         || (payment.getType() != null && payment.getType().startsWith("ABB"));
+                boolean isBob = "BOB".equalsIgnoreCase(payment.getProvider())
+                        || "BANK_OF_BAKU".equalsIgnoreCase(payment.getProvider())
+                        || (payment.getType() != null && payment.getType().startsWith("BOB"));
                 if (isAbb) {
                     log.info("[StatusSync] Actively querying ABB status for orderId: {}", orderId);
                     abbIntegrationService.getTransactionStatus(orderId, "1");
+                } else if (isBob && bobIntegrationService != null) {
+                    log.info("[StatusSync] Actively querying BOB status for orderId: {}", orderId);
+                    bobIntegrationService.checkPaymentStatus(orderId);
                 } else {
                     log.info("[StatusSync] Actively querying Epoint status for orderId: {}", orderId);
                     integrationService.getStatus(orderId);
@@ -285,14 +291,19 @@ public class UserPaymentService {
         List<Payment> filtered = allPayments.stream()
             .filter(p -> {
                 String t = p.getType();
-                return t != null && (
+                String prov = p.getProvider();
+                boolean isBob = "BOB".equalsIgnoreCase(prov) || "BANK_OF_BAKU".equalsIgnoreCase(prov)
+                        || (t != null && t.toUpperCase().contains("BOB"));
+                return isBob || (t != null && (
                     "PAYMENT".equalsIgnoreCase(t)
                     || "WIDGET_PAYMENT".equalsIgnoreCase(t)
                     || "ABB_PAYMENT".equalsIgnoreCase(t)
                     || "ABB_INSTALLMENT".equalsIgnoreCase(t)
+                    || "BOB_PAYMENT".equalsIgnoreCase(t)
+                    || "BOB_INSTALLMENT".equalsIgnoreCase(t)
                     || "GOOGLE_PAY".equalsIgnoreCase(t)
                     || "APPLE_PAY".equalsIgnoreCase(t)
-                );
+                ));
             })
             .filter(p -> {
                 if (p.getCreatedDate() == null) return false;
