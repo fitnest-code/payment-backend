@@ -321,11 +321,17 @@ public class UserPaymentService {
 
     private UserCardResponse mapToCardResponse(UserCard card) {
         String bank = detectBank(card.getBrand(), card.getCardMask());
+        if (bank != null && ("BOB".equalsIgnoreCase(bank) || "BOB_PAYMENT".equalsIgnoreCase(bank) || "BANK_OF_BAKU".equalsIgnoreCase(bank))) {
+            bank = "Bank of Baku";
+        }
         String brand = card.getBrand();
+        if (brand != null && ("BOB".equalsIgnoreCase(brand) || "BOB_PAYMENT".equalsIgnoreCase(brand) || "BANK_OF_BAKU".equalsIgnoreCase(brand))) {
+            brand = "Bank of Baku";
+        }
 
         String detectedNetwork = CardBrandDetector.detectBrand(card.getCardMask());
-        if (brand == null || brand.isBlank() || "ABB".equalsIgnoreCase(brand) || "Bank of Baku".equalsIgnoreCase(brand)) {
-            brand = detectedNetwork != null && !"UNKNOWN".equalsIgnoreCase(detectedNetwork) ? detectedNetwork : brand;
+        if (brand == null || brand.isBlank() || "ABB".equalsIgnoreCase(brand) || "Bank of Baku".equalsIgnoreCase(brand) || "BOB".equalsIgnoreCase(brand)) {
+            brand = detectedNetwork != null && !"UNKNOWN".equalsIgnoreCase(detectedNetwork) ? detectedNetwork : (brand != null ? brand : "Bank of Baku");
         }
 
         return new UserCardResponse(
@@ -600,7 +606,8 @@ public class UserPaymentService {
                 if (detectedBank != null) {
                     brand = detectedBank;
                 } else if (payment.getProvider() != null && !payment.getProvider().isBlank()) {
-                    brand = "BOB".equalsIgnoreCase(payment.getProvider()) ? "Bank of Baku" : payment.getProvider();
+                    String p = payment.getProvider();
+                    brand = ("BOB".equalsIgnoreCase(p) || "BOB_PAYMENT".equalsIgnoreCase(p) || "BANK_OF_BAKU".equalsIgnoreCase(p)) ? "Bank of Baku" : p;
                 }
             }
         }
