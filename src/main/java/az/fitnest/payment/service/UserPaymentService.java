@@ -113,16 +113,28 @@ public class UserPaymentService {
         return deduplicated.stream()
                 .map(payment -> {
                     String brand;
-                    if ("GOOGLE_PAY".equals(payment.getType())) {
+                    if ("GOOGLE_PAY".equalsIgnoreCase(payment.getType()) || "GOOGLE_PAY".equalsIgnoreCase(payment.getProvider())) {
                         brand = "Google Pay";
-                    } else if ("APPLE_PAY".equals(payment.getType())) {
+                    } else if ("APPLE_PAY".equalsIgnoreCase(payment.getType()) || "APPLE_PAY".equalsIgnoreCase(payment.getProvider())) {
                         brand = "Apple Pay";
-                    } else if ("ABB_INSTALLMENT".equals(payment.getType())) {
+                    } else if ("ABB_INSTALLMENT".equalsIgnoreCase(payment.getType())) {
                         brand = "ABB installment";
-                    } else if ("ABB_PAYMENT".equals(payment.getType())) {
+                    } else if ("ABB_PAYMENT".equalsIgnoreCase(payment.getType()) || "ABB".equalsIgnoreCase(payment.getProvider())) {
                         brand = "ABB";
+                    } else if ("BOB_INSTALLMENT".equalsIgnoreCase(payment.getType())) {
+                        brand = "Bank of Baku installment";
+                    } else if ("BOB_PAYMENT".equalsIgnoreCase(payment.getType()) || "BOB".equalsIgnoreCase(payment.getProvider()) || "BANK_OF_BAKU".equalsIgnoreCase(payment.getProvider())) {
+                        brand = "Bank of Baku";
                     } else {
                         brand = CardBrandDetector.detectBrand(payment.getCardMask());
+                        if ("UNKNOWN".equalsIgnoreCase(brand)) {
+                            String detectedBank = detectBank(null, payment.getCardMask());
+                            if (detectedBank != null) {
+                                brand = detectedBank;
+                            } else if (payment.getProvider() != null && !payment.getProvider().isBlank()) {
+                                brand = "BOB".equalsIgnoreCase(payment.getProvider()) ? "Bank of Baku" : payment.getProvider();
+                            }
+                        }
                     }
                     if (brand == null || brand.isEmpty()) brand = "N/A";
 
@@ -343,11 +355,26 @@ public class UserPaymentService {
         }
         if (cardMask != null) {
             String clean = cardMask.replaceAll("[^0-9]", "");
-            if (clean.startsWith("552209") || clean.startsWith("416973") || clean.startsWith("512061") || clean.startsWith("402839")) {
-                return "ABB";
-            }
-            if (clean.startsWith("534938") || clean.startsWith("552608")) {
-                return "Bank of Baku";
+            if (clean.length() >= 4) {
+                // ABB BINs
+                if (clean.startsWith("552209") || clean.startsWith("416973") || clean.startsWith("512061") || clean.startsWith("402839")
+                        || clean.startsWith("403866") || clean.startsWith("405837") || clean.startsWith("412720") || clean.startsWith("412721")
+                        || clean.startsWith("412722") || clean.startsWith("417240") || clean.startsWith("421060") || clean.startsWith("421634")
+                        || clean.startsWith("427210") || clean.startsWith("437340") || clean.startsWith("444320") || clean.startsWith("454310")
+                        || clean.startsWith("462050") || clean.startsWith("462150") || clean.startsWith("471020") || clean.startsWith("477120")
+                        || clean.startsWith("483640") || clean.startsWith("484320") || clean.startsWith("492010") || clean.startsWith("523520")
+                        || clean.startsWith("523920") || clean.startsWith("524020") || clean.startsWith("528320") || clean.startsWith("532240")
+                        || clean.startsWith("535420") || clean.startsWith("542220") || clean.startsWith("545630") || clean.startsWith("552220")
+                        || clean.startsWith("558020") || clean.startsWith("4127") || clean.startsWith("4098") || clean.startsWith("4836")
+                        || clean.startsWith("5322") || clean.startsWith("5456")) {
+                    return "ABB";
+                }
+                // Bank of Baku BINs
+                if (clean.startsWith("534938") || clean.startsWith("552608") || clean.startsWith("416949") || clean.startsWith("416950")
+                        || clean.startsWith("516369") || clean.startsWith("523924") || clean.startsWith("402824") || clean.startsWith("489955")
+                        || clean.startsWith("542289")) {
+                    return "Bank of Baku";
+                }
             }
         }
         return null;
@@ -557,18 +584,27 @@ public class UserPaymentService {
         String formattedStatus = translateStatus(statusVal, userLanguage);
 
         String brand;
-        if ("GOOGLE_PAY".equals(payment.getType())) {
+        if ("GOOGLE_PAY".equalsIgnoreCase(payment.getType()) || "GOOGLE_PAY".equalsIgnoreCase(payment.getProvider())) {
             brand = "Google Pay";
-        } else if ("APPLE_PAY".equals(payment.getType())) {
+        } else if ("APPLE_PAY".equalsIgnoreCase(payment.getType()) || "APPLE_PAY".equalsIgnoreCase(payment.getProvider())) {
             brand = "Apple Pay";
-        } else if ("ABB_INSTALLMENT".equals(payment.getType())) {
+        } else if ("ABB_INSTALLMENT".equalsIgnoreCase(payment.getType())) {
             brand = "ABB installment";
-        } else if ("ABB_PAYMENT".equals(payment.getType())) {
+        } else if ("ABB_PAYMENT".equalsIgnoreCase(payment.getType()) || "ABB".equalsIgnoreCase(payment.getProvider())) {
             brand = "ABB";
+        } else if ("BOB_INSTALLMENT".equalsIgnoreCase(payment.getType())) {
+            brand = "Bank of Baku installment";
+        } else if ("BOB_PAYMENT".equalsIgnoreCase(payment.getType()) || "BOB".equalsIgnoreCase(payment.getProvider()) || "BANK_OF_BAKU".equalsIgnoreCase(payment.getProvider())) {
+            brand = "Bank of Baku";
         } else {
             brand = CardBrandDetector.detectBrand(payment.getCardMask());
-            if ("UNKNOWN".equalsIgnoreCase(brand) && payment.getProvider() != null && !payment.getProvider().isBlank()) {
-                brand = payment.getProvider();
+            if ("UNKNOWN".equalsIgnoreCase(brand)) {
+                String detectedBank = detectBank(null, payment.getCardMask());
+                if (detectedBank != null) {
+                    brand = detectedBank;
+                } else if (payment.getProvider() != null && !payment.getProvider().isBlank()) {
+                    brand = "BOB".equalsIgnoreCase(payment.getProvider()) ? "Bank of Baku" : payment.getProvider();
+                }
             }
         }
 

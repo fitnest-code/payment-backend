@@ -28,4 +28,9 @@ public record UserCardResponse(
         this.bank = bank;
         this.logoUrl = logoUrl;
     }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("cardBrand")
+    public String cardBrand() {
+        return brand;
+    }
 }
