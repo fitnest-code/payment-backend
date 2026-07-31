@@ -1,7 +1,6 @@
 package az.fitnest.payment.dto.common;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import java.time.Instant;
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public record UserCardResponse(
@@ -21,10 +20,5 @@ public record UserCardResponse(
         this.cardMask = cardMask;
         this.brand = brand;
         this.bank = bank;
-    }
-
-    @com.fasterxml.jackson.annotation.JsonProperty("cardBrand")
-    public String cardBrand() {
-        return brand;
     }
 }
