@@ -34,7 +34,28 @@ public class BobOrderStatusResponse {
     private String cardMask;
     private String cardBrand;
 
-    // SmartVista tərəfindən oxunur, amma mobile response-a göndərilmir
+    // SmartVista tərəfindən oxunur, amma Mobile response-a serializasiya olunmur (WRITE_ONLY)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String actionCode;
+
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String actionCodeDescription;
+
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String receiptNumber;
+
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String ip;
+
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String date;
+
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String authDateTime;
+
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String terminalId;
+
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String authRefNum;
 }
