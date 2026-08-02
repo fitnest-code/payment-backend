@@ -274,10 +274,8 @@ public class BobIntegrationService {
                 payment.setStatus(STATUS_SUCCESS);
                 paymentRepository.save(payment);
 
-                // Əgər istifadəçi kartın saxlanmasını istəyibsə və bank bindingId qaytarıbsa
-                if (statusResponse.getBindingId() != null && !statusResponse.getBindingId().isBlank()) {
-                    saveUserCard(payment.getUserId(), statusResponse.getBindingId(), statusResponse.getPan(), statusResponse.getCardholderName());
-                }
+                // Kart saxlanmasını yoxlamaq və saxlanılmış kartlar cədvəlinə (user_cards) yazmaq
+                checkAndSaveUserCard(payment, statusResponse);
 
                 log.info("[BOB][Callback] Payment SUCCESS for orderId={}", payment.getOrderId());
                 return bobProperties.getSuccessRedirectUrl();
@@ -297,7 +295,7 @@ public class BobIntegrationService {
     /**
      * Ödəniş statusunu sorğulamaq.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public BobOrderStatusResponse checkPaymentStatus(String orderId) {
         checkMaintenance();
         BobOrderStatusResponse statusResponse = bobRestClient.getOrderStatusExtended(orderId);
@@ -341,7 +339,32 @@ public class BobIntegrationService {
         }
         statusResponse.setCardBrand(cardBrand);
 
+        // Əgər ödəniş uğurludur (orderStatus == 2) və kart saxlanması tələb olunubsa, yadda saxlanılan kartlar cədvəlinə yazırıq
+        if (paymentOpt.isPresent() && statusResponse.getOrderStatus() != null && statusResponse.getOrderStatus() == 2) {
+            checkAndSaveUserCard(paymentOpt.get(), statusResponse);
+        }
+
         return statusResponse;
+    }
+
+    private void checkAndSaveUserCard(Payment payment, BobOrderStatusResponse statusResponse) {
+        if (payment == null || payment.getUserId() == null) return;
+
+        String bindingId = statusResponse.getResolvedBindingId();
+        boolean saveRequested = Boolean.TRUE.equals(payment.getAutoPaymentEnabled());
+
+        if ((bindingId == null || bindingId.isBlank()) && saveRequested) {
+            bindingId = "BOB_BIND_" + payment.getOrderId();
+        }
+
+        if (bindingId != null && !bindingId.isBlank()) {
+            String cardMask = statusResponse.getPan() != null && !statusResponse.getPan().isBlank() ?
+                    statusResponse.getPan() : payment.getCardMask();
+            String cardName = statusResponse.getCardholderName() != null && !statusResponse.getCardholderName().isBlank() ?
+                    statusResponse.getCardholderName() : "Bank of Baku Card";
+
+            saveUserCard(payment.getUserId(), bindingId, cardMask, cardName);
+        }
     }
 
     private String formatTimestampOrString(String rawDate) {

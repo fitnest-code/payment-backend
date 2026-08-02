@@ -36,6 +36,28 @@ public class BobOrderStatusResponse {
 
     // SmartVista tərəfindən oxunur, amma Mobile response-a serializasiya olunmur (WRITE_ONLY)
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private BindingInfo bindingInfo;
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class BindingInfo {
+        private String clientId;
+        private String bindingId;
+    }
+
+    public String getResolvedBindingId() {
+        if (bindingId != null && !bindingId.isBlank()) {
+            return bindingId;
+        }
+        if (bindingInfo != null && bindingInfo.getBindingId() != null && !bindingInfo.getBindingId().isBlank()) {
+            return bindingInfo.getBindingId();
+        }
+        return null;
+    }
+
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String actionCode;
 
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
