@@ -1024,18 +1024,15 @@ public class AbbIntegrationService {
         if (payment == null) return null;
         String formattedStatus = translateStatus(payment.getStatus());
 
-        String brand;
+        String cardBrand;
         if ("GOOGLE_PAY".equals(payment.getType())) {
-            brand = "Google Pay";
+            cardBrand = "Google Pay";
         } else if ("APPLE_PAY".equals(payment.getType())) {
-            brand = "Apple Pay";
-        } else if ("ABB_INSTALLMENT".equals(payment.getType())) {
-            brand = "ABB installment";
-        } else if ("ABB_PAYMENT".equals(payment.getType())) {
-            brand = "ABB";
+            cardBrand = "Apple Pay";
         } else {
-            brand = CardBrandDetector.detectBrand(payment.getCardMask());
+            cardBrand = CardBrandDetector.detectBrand(payment.getCardMask());
         }
+        String bank = "ABB";
 
         String rawType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
         String actualType = "Birdəfəlik";
@@ -1053,7 +1050,8 @@ public class AbbIntegrationService {
             payment.getAmount(),
             payment.getCurrency(),
             payment.getCreatedDate() != null ? payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
-            brand,
+            cardBrand,
+            bank,
             maskCardToLast4(payment.getCardMask()),
             actualType,
             formattedStatus,

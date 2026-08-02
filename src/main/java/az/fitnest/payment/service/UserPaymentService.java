@@ -604,31 +604,22 @@ public class UserPaymentService {
         }
         String formattedStatus = translateStatus(statusVal, userLanguage);
 
-        String brand;
+        String cardBrand;
         if ("GOOGLE_PAY".equalsIgnoreCase(payment.getType()) || "GOOGLE_PAY".equalsIgnoreCase(payment.getProvider())) {
-            brand = "Google Pay";
+            cardBrand = "Google Pay";
         } else if ("APPLE_PAY".equalsIgnoreCase(payment.getType()) || "APPLE_PAY".equalsIgnoreCase(payment.getProvider())) {
-            brand = "Apple Pay";
-        } else if ("ABB_INSTALLMENT".equalsIgnoreCase(payment.getType())) {
-            brand = "ABB installment";
-        } else if ("ABB_PAYMENT".equalsIgnoreCase(payment.getType()) || "ABB".equalsIgnoreCase(payment.getProvider())) {
-            brand = "ABB";
-        } else if ("BOB_INSTALLMENT".equalsIgnoreCase(payment.getType())) {
-            brand = "Bank of Baku installment";
-        } else if ("BOB_PAYMENT".equalsIgnoreCase(payment.getType()) || "BOB".equalsIgnoreCase(payment.getProvider()) || "BANK_OF_BAKU".equalsIgnoreCase(payment.getProvider())) {
-            brand = "Bank of Baku";
+            cardBrand = "Apple Pay";
         } else {
-            brand = CardBrandDetector.detectBrand(payment.getCardMask());
-            if ("UNKNOWN".equalsIgnoreCase(brand)) {
-                String detectedBank = detectBank(null, payment.getCardMask());
-                if (detectedBank != null) {
-                    brand = detectedBank;
-                } else if (payment.getProvider() != null && !payment.getProvider().isBlank()) {
+            cardBrand = CardBrandDetector.detectBrand(payment.getCardMask());
+            if ("UNKNOWN".equalsIgnoreCase(cardBrand)) {
+                if (payment.getProvider() != null && !payment.getProvider().isBlank()) {
                     String p = payment.getProvider();
-                    brand = ("BOB".equalsIgnoreCase(p) || "BOB_PAYMENT".equalsIgnoreCase(p) || "BANK_OF_BAKU".equalsIgnoreCase(p)) ? "Bank of Baku" : p;
+                    cardBrand = ("BOB".equalsIgnoreCase(p) || "BOB_PAYMENT".equalsIgnoreCase(p) || "BANK_OF_BAKU".equalsIgnoreCase(p)) ? "Bank of Baku" : p;
                 }
             }
         }
+
+        String bank = detectBank(payment.getProvider(), payment.getCardMask());
 
         String typeVal = payment.getType();
         String rawType;
@@ -659,7 +650,8 @@ public class UserPaymentService {
             payment.getAmount(),
             payment.getCurrency(),
             payment.getCreatedDate() != null ? payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
-            brand,
+            cardBrand,
+            bank,
             maskCardToLast4(payment.getCardMask()),
             actualType,
             formattedStatus,

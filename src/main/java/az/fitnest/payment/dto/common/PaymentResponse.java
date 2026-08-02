@@ -13,6 +13,7 @@ public record PaymentResponse(
     @JsonSerialize(using = InstantToCustomStringSerializer.class)
     Instant occurredAt,
     String cardBrand,
+    String bank,
     String maskedPan,
     String type,
     String status,
