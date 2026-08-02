@@ -565,6 +565,13 @@ public class UserPaymentService {
                 if ("EN".equals(l)) return "Saved Card";
                 return "Yadda saxlanılmış kart";
 
+            case "INSTALLMENT":
+            case "BOB_INSTALLMENT":
+            case "ABB_INSTALLMENT":
+                if ("RU".equals(l)) return "Рассрочка";
+                if ("EN".equals(l)) return "Installment";
+                return "Taksitli ödəniş";
+
             default:
                 return humanize(type);
         }
@@ -623,7 +630,19 @@ public class UserPaymentService {
             }
         }
 
-        String rawType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
+        String typeVal = payment.getType();
+        String rawType;
+        if (typeVal != null && (typeVal.toUpperCase().contains("INSTALLMENT") || "BOB_INSTALLMENT".equalsIgnoreCase(typeVal) || "ABB_INSTALLMENT".equalsIgnoreCase(typeVal))) {
+            rawType = "INSTALLMENT";
+        } else if ("CARD_BIND".equalsIgnoreCase(typeVal)) {
+            rawType = "CARD_BIND";
+        } else if ("SAVED_CARD".equalsIgnoreCase(typeVal)) {
+            rawType = "SAVED_CARD";
+        } else if ("AUTO_RENEWAL".equalsIgnoreCase(typeVal)) {
+            rawType = "AUTO_RENEWAL";
+        } else {
+            rawType = "ONE_TIME";
+        }
         String actualType = translatePaymentType(rawType, userLanguage);
 
         String ownerName = null;
