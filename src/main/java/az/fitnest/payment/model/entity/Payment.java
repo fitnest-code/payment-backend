@@ -97,4 +97,20 @@ public class Payment extends BaseAuditableEntity {
     public void setCardId(String cardId) {
         this.cardId = cardId;
     }
+
+    @PrePersist
+    void ensureRequiredDefaults() {
+        if (status == null || status.isBlank()) {
+            status = "PENDING";
+        }
+        if (callbackProcessed == null) {
+            callbackProcessed = false;
+        }
+        if (autoPaymentEnabled == null) {
+            autoPaymentEnabled = false;
+        }
+        if (coinsUsed == null) {
+            coinsUsed = java.math.BigDecimal.ZERO;
+        }
+    }
 }

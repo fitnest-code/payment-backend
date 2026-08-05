@@ -81,6 +81,8 @@ public class BobIntegrationService {
         payment.setProvider(PROVIDER_BOB);
         payment.setTransactionId(transactionId);
         payment.setAmount(priceCurrency.amount);
+        payment.setCurrency(priceCurrency.currency != null ? priceCurrency.currency : bobProperties.getDefaultCurrency());
+        payment.setStatus(STATUS_PENDING);
         String packageDesc = "packageId:" + request.getPackageId() + ",optionId:" + request.getOptionId();
         String description = request.getDescription();
         if (description == null || description.isBlank()) {

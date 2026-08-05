@@ -99,6 +99,11 @@ class BobIntegrationServiceTest {
         assertEquals("BOB", response.getProvider());
 
         verify(paymentRepository, times(2)).save(any(Payment.class));
+        verify(paymentRepository, atLeastOnce()).save(argThat(payment ->
+                "PENDING".equals(payment.getStatus())
+                        && "AZN".equals(payment.getCurrency())
+                        && payment.getTransactionId() != null
+                        && payment.getTransactionId().startsWith("BOB_")));
     }
 
     @Test
