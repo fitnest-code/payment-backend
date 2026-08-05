@@ -33,6 +33,8 @@ public class BobOrderStatusResponse {
     private String formattedDate;
     private String cardMask;
     private String cardBrand;
+    private String bank;
+    private String type;
 
     // SmartVista tərəfindən oxunur, amma Mobile response-a serializasiya olunmur (WRITE_ONLY)
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)

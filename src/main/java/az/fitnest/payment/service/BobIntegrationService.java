@@ -326,7 +326,7 @@ public class BobIntegrationService {
         }
         statusResponse.setFormattedDate(formattedDate);
 
-        // cardMask və cardBrand təyin olunması
+        // cardMask, cardBrand, bank və type təyin olunması
         String cardMask = statusResponse.getPan();
         if ((cardMask == null || cardMask.isBlank()) && paymentOpt.isPresent()) {
             cardMask = paymentOpt.get().getCardMask();
@@ -334,10 +334,25 @@ public class BobIntegrationService {
         statusResponse.setCardMask(cardMask);
 
         String cardBrand = az.fitnest.payment.util.CardBrandDetector.detectBrand(cardMask);
-        if (cardBrand == null || "UNKNOWN".equalsIgnoreCase(cardBrand)) {
-            cardBrand = "Bank of Baku";
+        statusResponse.setCardBrand(cardBrand != null ? cardBrand : "UNKNOWN");
+        statusResponse.setBank("Bank of Baku");
+
+        // Type təyin olunması (Birdəfəlik, Taksitli ödəniş, Avtomatik uzadılma və s.)
+        String paymentType = "Birdəfəlik";
+        if (paymentOpt.isPresent()) {
+            Payment p = paymentOpt.get();
+            String t = p.getType();
+            if (t != null && (t.toUpperCase().contains("INSTALLMENT") || "BOB_INSTALLMENT".equalsIgnoreCase(t))) {
+                paymentType = "Taksitli ödəniş";
+            } else if ("AUTO_RENEWAL".equalsIgnoreCase(t)) {
+                paymentType = "Avtomatik uzadılma";
+            } else if ("CARD_BIND".equalsIgnoreCase(t)) {
+                paymentType = "Kartın bağlanması";
+            } else if ("SAVED_CARD".equalsIgnoreCase(t)) {
+                paymentType = "Yadda saxlanılmış kart";
+            }
         }
-        statusResponse.setCardBrand(cardBrand);
+        statusResponse.setType(paymentType);
 
         // Əgər ödəniş uğurludur (orderStatus == 2) və kart saxlanması tələb olunubsa, yadda saxlanılan kartlar cədvəlinə yazırıq
         if (paymentOpt.isPresent() && statusResponse.getOrderStatus() != null && statusResponse.getOrderStatus() == 2) {
