@@ -81,9 +81,14 @@ public class BobIntegrationService {
         payment.setProvider(PROVIDER_BOB);
         payment.setTransactionId(transactionId);
         payment.setAmount(priceCurrency.amount);
-        payment.setCurrency(priceCurrency.currency != null ? priceCurrency.currency : bobProperties.getDefaultCurrency());
-        payment.setStatus(STATUS_PENDING);
-        payment.setDescription(request.getDescription() != null ? request.getDescription() : "FitNest Subscription Payment");
+        String packageDesc = "packageId:" + request.getPackageId() + ",optionId:" + request.getOptionId();
+        String description = request.getDescription();
+        if (description == null || description.isBlank()) {
+            description = packageDesc;
+        } else if (!description.contains("packageId:")) {
+            description = description + "," + packageDesc;
+        }
+        payment.setDescription(description);
         payment.setCallbackProcessed(false);
         payment.setAutoPaymentEnabled(Boolean.TRUE.equals(request.getSaveCard()));
 
@@ -277,6 +282,9 @@ public class BobIntegrationService {
                 // Kart saxlanmasını yoxlamaq və saxlanılmış kartlar cədvəlinə (user_cards) yazmaq
                 checkAndSaveUserCard(payment, statusResponse);
 
+                // Abunəliyin istifadəçiyə təyin olunması (gRPC)
+                assignSubscriptionIfPossible(payment);
+
                 log.info("[BOB][Callback] Payment SUCCESS for orderId={}", payment.getOrderId());
                 return bobProperties.getSuccessRedirectUrl();
             } else {
@@ -354,12 +362,54 @@ public class BobIntegrationService {
         }
         statusResponse.setType(paymentType);
 
-        // Əgər ödəniş uğurludur (orderStatus == 2) və kart saxlanması tələb olunubsa, yadda saxlanılan kartlar cədvəlinə yazırıq
+        // Əgər ödəniş uğurludur (orderStatus == 2), bazada statusu yeniləyirik, kartı saxlayırıq və abunəliyi təyin edirik
         if (paymentOpt.isPresent() && statusResponse.getOrderStatus() != null && statusResponse.getOrderStatus() == 2) {
-            checkAndSaveUserCard(paymentOpt.get(), statusResponse);
+            Payment payment = paymentOpt.get();
+            if (!STATUS_SUCCESS.equals(payment.getStatus())) {
+                payment.setStatus(STATUS_SUCCESS);
+                paymentRepository.save(payment);
+            }
+            checkAndSaveUserCard(payment, statusResponse);
+            assignSubscriptionIfPossible(payment);
         }
 
         return statusResponse;
+    }
+
+    /**
+     * Abunəliyi gRPC vasitəsilə istifadəçiyə təyin etməyə cəhd edir.
+     */
+    private void assignSubscriptionIfPossible(Payment payment) {
+        if (payment == null || payment.getUserId() == null) return;
+        log.info("[BOB][Subscription] Attempting to assign subscription: userId={}, orderId={}",
+                payment.getUserId(), payment.getOrderId());
+        try {
+            Long packageId = null;
+            Long optionId = null;
+
+            if (payment.getDescription() != null && payment.getDescription().contains("packageId:")) {
+                String[] parts = payment.getDescription().split(",");
+                for (String part : parts) {
+                    part = part.trim();
+                    if (part.startsWith("packageId:")) {
+                        packageId = Long.parseLong(part.replace("packageId:", "").trim());
+                    } else if (part.startsWith("optionId:")) {
+                        optionId = Long.parseLong(part.replace("optionId:", "").trim());
+                    }
+                }
+            }
+
+            if (packageId != null && optionId != null) {
+                var grpcResponse = userSubscriptionGrpcClient.assignSubscriptionToUser(
+                        payment.getUserId(), packageId, optionId, Boolean.TRUE.equals(payment.getAutoPaymentEnabled()));
+                log.info("[BOB][Subscription] gRPC subscription assigned successfully. response={}", grpcResponse);
+            } else {
+                log.warn("[BOB][Subscription] Skipped — packageId/optionId missing in payment description. desc={}",
+                        payment.getDescription());
+            }
+        } catch (Exception ex) {
+            log.error("[BOB][Subscription] Failed to assign subscription via gRPC for orderId={}", payment.getOrderId(), ex);
+        }
     }
 
     private void checkAndSaveUserCard(Payment payment, BobOrderStatusResponse statusResponse) {
