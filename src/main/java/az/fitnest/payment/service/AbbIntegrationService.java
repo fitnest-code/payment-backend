@@ -1,8 +1,6 @@
 package az.fitnest.payment.service;
 
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
-import az.fitnest.payment.client.UserSubscriptionGrpcClient;
-import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.client.abb.AbbProperties;
 import az.fitnest.payment.client.abb.AbbSigner;
 import az.fitnest.payment.dto.abb.*;
@@ -10,6 +8,7 @@ import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.util.CardBrandDetector;
+import az.fitnest.payment.util.PaymentPackageRef;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,8 +66,8 @@ public class AbbIntegrationService {
     private final PaymentRepository paymentRepository;
     private final StringRedisTemplate redisTemplate;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
-    private final UserSubscriptionGrpcClient userSubscriptionGrpcClient;
-    private final UserGrpcClient userGrpcClient;
+    private final PaymentSubscriptionService paymentSubscriptionService;
+    private final UserDisplayNameResolver userDisplayNameResolver;
 
     /** Paylaşılan HTTP client instance (thread-safe, yenidən istifadə edilir) */
     private static final java.net.http.HttpClient HTTP_CLIENT =
@@ -673,40 +672,18 @@ public class AbbIntegrationService {
     }
 
     /**
-     * Abunəliyi gRPC vasitəsilə istifadəçiyə təyin etməyə cəhd edir.
-     * Xəta halında silent fail tətbiq edilir (ödəniş uğurlu sayılır).
+     * Abunəliyi order-backend-ə gRPC ilə təyin etməyə cəhd edir (silent fail on error).
+     * ABB historically always passes autoPaymentEnabled=false.
      */
     private void assignSubscriptionIfPossible(Payment payment) {
-        log.info("[ABB][Subscription] Attempting to assign subscription: userId={}, orderId={}",
-                payment.getUserId(), payment.getOrderId());
-        try {
-            Long packageId = null;
-            Long optionId  = null;
+        paymentSubscriptionService.assignFromPaymentDescription(payment, false);
+    }
 
-            if (payment.getDescription() != null && payment.getDescription().contains("packageId:")) {
-                String[] parts = payment.getDescription().split(",");
-                for (String part : parts) {
-                    part = part.trim();
-                    if (part.startsWith("packageId:")) {
-                        packageId = Long.parseLong(part.replace("packageId:", "").trim());
-                    } else if (part.startsWith("optionId:")) {
-                        optionId = Long.parseLong(part.replace("optionId:", "").trim());
-                    }
-                }
-            }
-
-            if (packageId != null && optionId != null && payment.getUserId() != null) {
-                var grpcResponse = userSubscriptionGrpcClient.assignSubscriptionToUser(
-                        payment.getUserId(), packageId, optionId, false);
-                log.info("[ABB][Subscription] gRPC response: {}", grpcResponse);
-            } else {
-                log.warn("[ABB][Subscription] Skipped — missing packageId/optionId/userId. " +
-                        "userId={}, desc={}", payment.getUserId(), payment.getDescription());
-            }
-        } catch (Exception ex) {
-            log.error("[ABB][Subscription] gRPC subscription assignment failed for orderId={}. " +
-                    "Payment was successful, subscription NOT assigned.", payment.getOrderId(), ex);
-        }
+    /**
+     * Ödəniş açıqlaması qurur (packageId/optionId məlumatları daxil).
+     */
+    private String buildDescription(Long packageId, Long optionId) {
+        return PaymentPackageRef.encode(packageId, optionId);
     }
 
     /**
@@ -776,13 +753,6 @@ public class AbbIntegrationService {
         payment.setAutoPaymentEnabled(false);
         payment.setCallbackProcessed(false);
         return payment;
-    }
-
-    /**
-     * Ödəniş açıqlaması qurur (packageId/optionId məlumatları daxil).
-     */
-    private String buildDescription(Long packageId, Long optionId) {
-        return "packageId:" + packageId + ",optionId:" + optionId;
     }
 
     /**
@@ -989,7 +959,7 @@ public class AbbIntegrationService {
 
         String ownerName = null;
         if (payment.getUserId() != null) {
-            ownerName = resolveUserFullName(payment.getUserId());
+            ownerName = userDisplayNameResolver.resolveFullName(payment.getUserId());
         }
 
         String occurredAtStr = null;
@@ -1042,7 +1012,7 @@ public class AbbIntegrationService {
 
         String ownerName = null;
         if (payment.getUserId() != null) {
-            ownerName = resolveUserFullName(payment.getUserId());
+            ownerName = userDisplayNameResolver.resolveFullName(payment.getUserId());
         }
 
         return new PaymentResponse(
@@ -1061,21 +1031,6 @@ public class AbbIntegrationService {
             payment.getDescription(),
             payment.getRrn()
         );
-    }
-
-    private String resolveUserFullName(Long userId) {
-        try {
-            var userResp = userGrpcClient.getUser(userId);
-            if (userResp != null) {
-                String first = userResp.getFirstName();
-                String last = userResp.getLastName();
-                String full = ((first != null ? first : "") + " " + (last != null ? last : "")).trim();
-                return full.isEmpty() ? null : full;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to resolve user name for userId={}: {}", userId, e.getMessage());
-        }
-        return null;
     }
 
     private String translateStatus(String status) {

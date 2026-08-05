@@ -3,6 +3,7 @@ package az.fitnest.payment.controller;
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.repository.PaymentRepository;
+import az.fitnest.payment.util.PaymentPackageRef;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -219,20 +220,6 @@ public class PaymentReportController {
     }
 
     private Long extractPackageId(Payment payment) {
-        if (payment.getDescription() == null) return null;
-        try {
-            String desc = payment.getDescription();
-            if (desc.contains("packageId:")) {
-                String[] parts = desc.split(",");
-                for (String part : parts) {
-                    if (part.trim().startsWith("packageId:")) {
-                        return Long.parseLong(part.trim().replace("packageId:", "").trim());
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // Ignore parse errors
-        }
-        return null;
+        return PaymentPackageRef.parse(payment.getDescription()).packageId();
     }
 }

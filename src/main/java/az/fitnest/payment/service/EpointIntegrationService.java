@@ -28,7 +28,7 @@ import az.fitnest.payment.dto.common.ApplePaySubmitRequest;
 import az.fitnest.payment.dto.common.ApplePaySubmitResponse;
 import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.client.epoint.EpointHttpClient;
-import az.fitnest.payment.client.UserSubscriptionGrpcClient;
+import az.fitnest.payment.util.PaymentPackageRef;
 
 @Service
 @RequiredArgsConstructor
@@ -59,7 +59,7 @@ public class EpointIntegrationService {
     private final ObjectMapper objectMapper;
     private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
     private final az.fitnest.payment.client.SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
-    private final UserSubscriptionGrpcClient userSubscriptionGrpcClient;
+    private final PaymentSubscriptionService paymentSubscriptionService;
     private final UserGrpcClient userGrpcClient;
     private final EpointHttpClient httpClient;
 
@@ -426,7 +426,8 @@ public class EpointIntegrationService {
         String orderId = java.util.UUID.randomUUID().toString();
         String deviceType = az.fitnest.payment.util.DeviceDetector.detectDeviceType();
         String paymentTypeDescription = Boolean.TRUE.equals(autoPaymentEnabled) ? "Monthly payment" : "One-time payment";
-        String description = "packageId:" + packageId + ",optionId:" + optionId + ",device:" + deviceType + ",type:" + paymentTypeDescription;
+        String description = PaymentPackageRef.encode(packageId, optionId)
+                + ",device:" + deviceType + ",type:" + paymentTypeDescription;
 
         if (userId != null) {
             String redisKey = "payment-user:" + orderId;
@@ -869,36 +870,8 @@ public class EpointIntegrationService {
     }
 
     private void assignSubscriptionIfPossible(Payment payment, EpointResponse callbackData, Long userId) {
-        log.info("[SubscriptionAssign] Entry: userId={}, paymentId={}, orderId={}", userId, payment.getId(), payment.getOrderId());
-        try {
-            Long packageId = null;
-            Long optionId = null;
-            if (payment.getDescription() != null && payment.getDescription().contains("packageId:")) {
-                String[] parts = payment.getDescription().split(",");
-                for (String part : parts) {
-                    if (part.startsWith("packageId:")) {
-                        packageId = Long.parseLong(part.replace("packageId:", "").trim());
-                    } else if (part.startsWith("optionId:")) {
-                        optionId = Long.parseLong(part.replace("optionId:", "").trim());
-                    }
-                }
-            }
-            if ((packageId == null || optionId == null) && callbackData.otherAttr() != null) {
-                String pkg = getOtherAttrValue(callbackData.otherAttr(), "packageId");
-                String opt = getOtherAttrValue(callbackData.otherAttr(), "optionId");
-                if (pkg != null) packageId = Long.parseLong(pkg);
-                if (opt != null) optionId = Long.parseLong(opt);
-            }
-            if (packageId != null && optionId != null) {
-                log.info("[SubscriptionAssign] Assigning subscription via gRPC: userId={}, packageId={}, optionId={}, autoPaymentEnabled={}", userId, packageId, optionId, payment.getAutoPaymentEnabled());
-                var grpcResponse = userSubscriptionGrpcClient.assignSubscriptionToUser(userId, packageId, optionId, payment.getAutoPaymentEnabled());
-                log.info("[SubscriptionAssign] Subscription assignment gRPC response: {}", grpcResponse);
-            } else {
-                log.warn("[SubscriptionAssign] Could not extract packageId/optionId for subscription assignment. Skipping assignment. userId={}, paymentId={}, orderId={}", userId, payment.getId(), payment.getOrderId());
-            }
-        } catch (Exception ex) {
-            log.error("[SubscriptionAssign] Error during subscription assignment via gRPC. userId={}, paymentId={}, orderId={}", userId, payment.getId(), payment.getOrderId(), ex);
-        }
+        String fallbackAttr = callbackData != null ? callbackData.otherAttr() : null;
+        paymentSubscriptionService.assignFromPaymentDescription(payment, userId, fallbackAttr);
     }
 
     public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled) {
@@ -907,10 +880,9 @@ public class EpointIntegrationService {
         String currency = priceCurrency.currency;
         validatePaymentRequest(amount, currency);
         String orderId = java.util.UUID.randomUUID().toString();
-        java.util.List<String> otherAttrList = new java.util.ArrayList<>();
-        if (packageId != null) otherAttrList.add("packageId:" + packageId);
-        if (optionId != null) otherAttrList.add("optionId:" + optionId);
-        String otherAttr = otherAttrList.isEmpty() ? null : String.join(",", otherAttrList);
+        String otherAttr = (packageId != null && optionId != null)
+                ? PaymentPackageRef.encode(packageId, optionId)
+                : null;
         String description = Boolean.TRUE.equals(autoPaymentEnabled) ? "Fitness package monthly payment" : "Fitness package payment";
         EpointPaymentRequest request = EpointPaymentRequest.builder()
                 .currency(currency != null ? currency : "AZN")
@@ -952,7 +924,7 @@ public class EpointIntegrationService {
         validatePaymentRequest(amount, currency);
 
         String orderId = java.util.UUID.randomUUID().toString();
-        String description = "packageId:" + packageId + ",optionId:" + optionId;
+        String description = PaymentPackageRef.encode(packageId, optionId);
 
         EpointTokenRequest tokenRequest = EpointTokenRequest.builder()
                 .publicKey(epointProperties.getPublicKey())
@@ -1108,7 +1080,7 @@ public class EpointIntegrationService {
         validatePaymentRequest(amount, currency);
 
         String orderId = java.util.UUID.randomUUID().toString();
-        String description = "packageId:" + packageId + ",optionId:" + optionId;
+        String description = PaymentPackageRef.encode(packageId, optionId);
 
         EpointTokenRequest tokenRequest = EpointTokenRequest.builder()
                 .publicKey(epointProperties.getPublicKey())

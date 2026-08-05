@@ -11,6 +11,7 @@ import net.devh.boot.grpc.server.service.GrpcService;
 
 import az.fitnest.payment.dto.epoint.EpointExecutePayRequest;
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
+import az.fitnest.payment.util.PaymentPackageRef;
 import java.util.Collections;
 
 import az.fitnest.payment.service.UserPaymentService;
@@ -76,7 +77,7 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                     .amount(priceCurrency.amount)
                     .currency(priceCurrency.currency)
                     .cardId(request.getCardId())
-                    .description("packageId:" + request.getPackageId() + ",optionId:" + request.getOptionId())
+                    .description(PaymentPackageRef.encode(request.getPackageId(), request.getOptionId()))
                     .isInstallment(0)
                     .build();
 

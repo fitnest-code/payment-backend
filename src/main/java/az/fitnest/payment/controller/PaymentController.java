@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.core.Authentication;
 import az.fitnest.payment.dto.epoint.*;
+import az.fitnest.payment.util.PaymentPackageRef;
 
 import java.util.Map;
 
@@ -154,10 +155,9 @@ public class PaymentController {
             Double amount = priceCurrency.amount;
             String currency = priceCurrency.currency;
             String orderId = java.util.UUID.randomUUID().toString();
-            java.util.List<String> otherAttrList = new java.util.ArrayList<>();
-            if (currencyRequest.packageId() != null) otherAttrList.add("packageId:" + currencyRequest.packageId());
-            if (currencyRequest.optionId() != null) otherAttrList.add("optionId:" + currencyRequest.optionId());
-            String otherAttr = otherAttrList.isEmpty() ? null : String.join(",", otherAttrList);
+            String otherAttr = (currencyRequest.packageId() != null && currencyRequest.optionId() != null)
+                    ? PaymentPackageRef.encode(currencyRequest.packageId(), currencyRequest.optionId())
+                    : null;
             String description = Boolean.TRUE.equals(currencyRequest.autoPaymentEnabled()) ? "Fitness package monthly payment" : "Fitness package payment";
             EpointPaymentRequest request = EpointPaymentRequest.builder()
                     .currency(currency != null ? currency : "AZN")
@@ -236,7 +236,8 @@ public class PaymentController {
             String publicKey = integrationService.getPublicKey();
             String language = "az";
             String paymentTypeDescription = Boolean.TRUE.equals(withCardRequest.autoPaymentEnabled()) ? "Monthly payment" : "One-time payment";
-            String description = "packageId:" + withCardRequest.packageId() + ",optionId:" + withCardRequest.optionId() + ",type:" + paymentTypeDescription;
+            String description = PaymentPackageRef.encode(withCardRequest.packageId(), withCardRequest.optionId())
+                    + ",type:" + paymentTypeDescription;
             EpointExecutePayRequest epointRequest = EpointExecutePayRequest.builder()
                     .publicKey(publicKey)
                     .language(language)

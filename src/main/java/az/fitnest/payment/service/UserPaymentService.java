@@ -23,9 +23,8 @@ import org.springframework.data.domain.PageImpl;
 
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.stream.Collectors;
-import az.fitnest.payment.dto.epoint.EpointResponse;
+import az.fitnest.payment.client.UserGrpcClient;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +36,7 @@ public class UserPaymentService {
     private final PaymentRepository paymentRepository;
     private final EpointIntegrationService integrationService;
     private final AbbIntegrationService abbIntegrationService;
+    private final UserDisplayNameResolver userDisplayNameResolver;
     @Autowired(required = false)
     private BobIntegrationService bobIntegrationService;
     @Autowired
@@ -641,7 +641,7 @@ public class UserPaymentService {
             if (userNameCache != null) {
                 ownerName = userNameCache.get(payment.getUserId());
             } else {
-                ownerName = resolveUserFullName(payment.getUserId());
+                ownerName = userDisplayNameResolver.resolveFullName(payment.getUserId());
             }
         }
 
@@ -663,34 +663,9 @@ public class UserPaymentService {
         );
     }
 
-    private String resolveUserFullName(Long userId) {
-        try {
-            var userResp = userGrpcClient.getUser(userId);
-            if (userResp != null) {
-                String first = userResp.getFirstName();
-                String last = userResp.getLastName();
-                String full = ((first != null ? first : "") + " " + (last != null ? last : "")).trim();
-                return full.isEmpty() ? null : full;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to resolve user name for userId={}: {}", userId, e.getMessage());
-        }
-        return null;
-    }
-
     private java.util.Map<Long, String> buildUserNameCache(java.util.List<Payment> payments) {
-        java.util.Map<Long, String> cache = new java.util.HashMap<>();
-        java.util.Set<Long> userIds = payments.stream()
-                .map(Payment::getUserId)
-                .filter(java.util.Objects::nonNull)
-                .collect(java.util.stream.Collectors.toSet());
-        for (Long uid : userIds) {
-            String name = resolveUserFullName(uid);
-            if (name != null) {
-                cache.put(uid, name);
-            }
-        }
-        return cache;
+        return userDisplayNameResolver.buildNameCache(
+                payments.stream().map(Payment::getUserId).toList());
     }
 
     private String maskCardToLast4(String cardMask) {
@@ -702,42 +677,5 @@ public class UserPaymentService {
             return clean;
         }
         return "************" + clean.substring(clean.length() - 4);
-    }
-
-    private void upsertCardFromCallback(Long userId, EpointResponse callbackData) {
-        log.info("[CardSave] (ENTRY) upsertCardFromCallback: userId={}, cardId={}, cardMask={}, cardName={}, callbackData={}", userId, callbackData.cardId(), callbackData.cardMask(), callbackData.cardName(), callbackData);
-
-        if (callbackData.cardId() == null || callbackData.cardId().isBlank()) {
-            log.warn("[CardSave] No cardId in callbackData, skipping card save.");
-            return;
-        }
-
-        Optional<UserCard> existingCard = userCardRepository.findByUserIdAndCardId(userId, callbackData.cardId());
-        if (existingCard.isPresent()) {
-            UserCard card = existingCard.get();
-            card.setCardMask(callbackData.cardMask());
-            card.setCardName(callbackData.cardName());
-            card.setBankTransaction(callbackData.bankTransaction());
-            card.setBankResponse(callbackData.bankResponse());
-            card.setOperationCode(callbackData.operationCode());
-            card.setRrn(callbackData.rrn());
-            userCardRepository.save(card);
-            log.info("[CardSave] Updated existing card {} for user {}", callbackData.cardId(), userId);
-        } else {
-            UserCard userCard = UserCard.builder()
-                    .userId(userId)
-                    .cardId(callbackData.cardId())
-                    .cardMask(callbackData.cardMask())
-                    .cardName(callbackData.cardName())
-                    .bankTransaction(callbackData.bankTransaction())
-                    .bankResponse(callbackData.bankResponse())
-                    .operationCode(callbackData.operationCode())
-                    .rrn(callbackData.rrn())
-                    .build();
-            userCardRepository.save(userCard);
-            log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);
-        }
-        List<UserCard> allCards = userCardRepository.findAllByUserId(userId);
-        log.info("[CardSave] (EXIT) All cards for user {} after upsert: {}", userId, allCards);
     }
 }

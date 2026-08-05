@@ -1,7 +1,6 @@
 package az.fitnest.payment.service;
 
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
-import az.fitnest.payment.client.UserSubscriptionGrpcClient;
 import az.fitnest.payment.client.bob.BobProperties;
 import az.fitnest.payment.client.bob.BobRestClient;
 import az.fitnest.payment.dto.bob.*;
@@ -9,8 +8,9 @@ import az.fitnest.payment.exception.BobMaintenanceException;
 import az.fitnest.payment.exception.BobPaymentException;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.entity.UserCard;
-import az.fitnest.payment.repository.PaymentRepository;
-import az.fitnest.payment.repository.UserCardRepository;
+import az.fitnest.payment.service.bob.BobCardService;
+import az.fitnest.payment.service.bob.BobPaymentStore;
+import az.fitnest.payment.service.bob.BobStatusMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,7 +21,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -34,25 +33,20 @@ class BobIntegrationServiceTest {
 
     @Mock
     private BobProperties bobProperties;
-
     @Mock
     private BobRestClient bobRestClient;
-
     @Mock
-    private PaymentRepository paymentRepository;
-
+    private BobPaymentStore paymentStore;
     @Mock
-    private UserCardRepository userCardRepository;
-
+    private BobCardService bobCardService;
+    @Mock
+    private BobStatusMapper statusMapper;
+    @Mock
+    private PaymentSubscriptionService paymentSubscriptionService;
     @Mock
     private SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
-
-    @Mock
-    private UserSubscriptionGrpcClient userSubscriptionGrpcClient;
-
     @Mock
     private StringRedisTemplate redisTemplate;
-
     @Mock
     private ValueOperations<String, String> valueOperations;
 
@@ -78,40 +72,38 @@ class BobIntegrationServiceTest {
                 .description("Test Payment")
                 .build();
 
-        SubscriptionPackageGrpcClient.OptionPriceCurrency priceCurrency =
-                new SubscriptionPackageGrpcClient.OptionPriceCurrency(25.00, "AZN", 1);
+        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(10L, 20L))
+                .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(25.00, "AZN", 1));
+        when(paymentStore.buildPackageDescription(10L, 20L, "Test Payment"))
+                .thenReturn("Test Payment,packageId:10,optionId:20");
 
-        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(10L, 20L)).thenReturn(priceCurrency);
+        Payment pending = new Payment();
+        pending.setStatus(BobPaymentStore.STATUS_PENDING);
+        pending.setCurrency("AZN");
+        pending.setTransactionId("BOB_TX");
+        pending.setDescription("Test Payment,packageId:10,optionId:20");
+        when(paymentStore.createPending(eq(userId), anyString(), eq(25.00), eq("AZN"),
+                anyString(), eq(true), isNull(), isNull())).thenReturn(pending);
 
         Map<String, Object> bankResponse = new HashMap<>();
         bankResponse.put("errorCode", "0");
         bankResponse.put("orderId", "BOB_ORDER_123");
         bankResponse.put("formUrl", "https://epg.bankofbaku.com/payment/page?orderId=BOB_ORDER_123");
-
         when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(bankResponse);
 
         BobInitiateResponse response = bobIntegrationService.initiatePayment(userId, request);
 
-        assertNotNull(response);
         assertEquals("BOB_ORDER_123", response.getOrderId());
-        assertEquals("https://epg.bankofbaku.com/payment/page?orderId=BOB_ORDER_123", response.getFormUrl());
         assertEquals("BOB", response.getProvider());
-
-        verify(paymentRepository, times(2)).save(any(Payment.class));
-        verify(paymentRepository, atLeastOnce()).save(argThat(payment ->
-                "PENDING".equals(payment.getStatus())
-                        && "AZN".equals(payment.getCurrency())
-                        && payment.getTransactionId() != null
-                        && payment.getTransactionId().startsWith("BOB_")));
+        verify(paymentStore).markRegistered(pending, "BOB_ORDER_123",
+                "https://epg.bankofbaku.com/payment/page?orderId=BOB_ORDER_123");
     }
 
     @Test
     void testInitiatePayment_MaintenanceMode() {
         when(bobProperties.isMaintenanceMode()).thenReturn(true);
-
         BobInitiateRequest request = BobInitiateRequest.builder().packageId(10L).optionId(20L).build();
-
         assertThrows(BobMaintenanceException.class, () ->
                 bobIntegrationService.initiatePayment(1L, request));
     }
@@ -120,50 +112,31 @@ class BobIntegrationServiceTest {
     void testPayWithSavedCard_Success() {
         Long userId = 1L;
         String cardId = "BINDING_999";
+        UserCard userCard = UserCard.builder().userId(userId).cardId(cardId).cardMask("411111****1111").build();
+        when(bobCardService.requireSavedCard(userId, cardId)).thenReturn(userCard);
+        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(10L, 20L))
+                .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(15.00, "AZN", 1));
 
-        UserCard userCard = UserCard.builder()
-                .userId(userId)
-                .cardId(cardId)
-                .cardMask("411111****1111")
-                .build();
+        Payment pending = new Payment();
+        pending.setDescription("FitNest Saved Card Payment");
+        when(paymentStore.createPending(eq(userId), anyString(), eq(15.00), eq("AZN"),
+                anyString(), eq(false), eq(cardId), eq("411111****1111"))).thenReturn(pending);
 
-        when(userCardRepository.findByUserIdAndCardId(userId, cardId)).thenReturn(Optional.of(userCard));
-
-        SubscriptionPackageGrpcClient.OptionPriceCurrency priceCurrency =
-                new SubscriptionPackageGrpcClient.OptionPriceCurrency(15.00, "AZN", 1);
-
-        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(10L, 20L)).thenReturn(priceCurrency);
-
-        Map<String, Object> registerResp = new HashMap<>();
-        registerResp.put("errorCode", "0");
-        registerResp.put("orderId", "ORDER_BIND_123");
-
+        Map<String, Object> registerResp = Map.of("errorCode", "0", "orderId", "ORDER_BIND_123");
         when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(registerResp);
+        when(bobRestClient.payWithBinding("ORDER_BIND_123", cardId)).thenReturn(Map.of("errorCode", "0"));
 
-        Map<String, Object> payResp = new HashMap<>();
-        payResp.put("errorCode", "0");
-        when(bobRestClient.payWithBinding("ORDER_BIND_123", cardId)).thenReturn(payResp);
-
-        BobOrderStatusResponse statusResponse = BobOrderStatusResponse.builder()
-                .orderStatus(2)
-                .rrn("RRN123456")
-                .pan("411111****1111")
-                .build();
-
+        BobOrderStatusResponse statusResponse = BobOrderStatusResponse.builder().orderStatus(2).rrn("RRN123").build();
         when(bobRestClient.getOrderStatusExtended("ORDER_BIND_123")).thenReturn(statusResponse);
+        when(statusMapper.toBobStatus(2)).thenReturn(az.fitnest.payment.model.enums.BobPaymentStatus.APPROVED);
 
-        BobPayWithSavedCardRequest request = BobPayWithSavedCardRequest.builder()
-                .cardId(cardId)
-                .packageId(10L)
-                .optionId(20L)
-                .build();
+        BobInitiateResponse response = bobIntegrationService.payWithSavedCard(userId,
+                BobPayWithSavedCardRequest.builder().cardId(cardId).packageId(10L).optionId(20L).build());
 
-        BobInitiateResponse response = bobIntegrationService.payWithSavedCard(userId, request);
-
-        assertNotNull(response);
         assertEquals("ORDER_BIND_123", response.getOrderId());
-        verify(userSubscriptionGrpcClient, times(1)).assignSubscriptionToUser(userId, 10L, 20L, true);
+        verify(paymentSubscriptionService).assign(userId, 10L, 20L, true);
+        verify(paymentStore).markSuccess(pending, statusResponse);
     }
 
     @Test
@@ -175,7 +148,7 @@ class BobIntegrationServiceTest {
         payment.setUserId(1L);
         payment.setCallbackProcessed(false);
 
-        when(paymentRepository.findByOrderId(orderId)).thenReturn(Optional.of(payment));
+        when(paymentStore.findByOrderIdOrTransactionId(orderId, null)).thenReturn(Optional.of(payment));
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
 
@@ -185,28 +158,51 @@ class BobIntegrationServiceTest {
                 .pan("411111****9999")
                 .bindingId("NEW_BINDING_555")
                 .build();
-
         when(bobRestClient.getOrderStatusExtended(orderId)).thenReturn(statusResponse);
+        when(statusMapper.toBobStatus(2)).thenReturn(az.fitnest.payment.model.enums.BobPaymentStatus.APPROVED);
 
         String redirectUrl = bobIntegrationService.processCallback(null, orderId);
 
         assertEquals("https://fitnest.az/payment/success", redirectUrl);
-        assertEquals("SUCCESS", payment.getStatus());
+        assertEquals(BobPaymentStore.STATUS_SUCCESS, payment.getStatus());
         assertTrue(payment.getCallbackProcessed());
-        verify(userCardRepository, times(1)).save(any(UserCard.class));
+        verify(bobCardService).checkAndSaveUserCard(payment, statusResponse);
+        verify(paymentSubscriptionService).assignFromPaymentDescription(payment);
+    }
+
+    @Test
+    void testProcessCallback_DeclineStoresRobustMessage() {
+        Payment payment = new Payment();
+        payment.setOrderId("ORDER_FAIL");
+        payment.setTransactionId("BOB_TX_FAIL");
+        payment.setCallbackProcessed(false);
+
+        when(paymentStore.findByOrderIdOrTransactionId("ORDER_FAIL", null)).thenReturn(Optional.of(payment));
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
+
+        BobOrderStatusResponse statusResponse = BobOrderStatusResponse.builder()
+                .orderStatus(6)
+                .errorMessage("Success")
+                .actionCode("-2006")
+                .build();
+        when(bobRestClient.getOrderStatusExtended("ORDER_FAIL")).thenReturn(statusResponse);
+        when(statusMapper.toBobStatus(6)).thenReturn(az.fitnest.payment.model.enums.BobPaymentStatus.DECLINED);
+        when(statusMapper.declineMessage(statusResponse)).thenReturn("Ödənişdən imtina edildi (actionCode=-2006)");
+        when(statusMapper.operationCode(statusResponse)).thenReturn("-2006");
+
+        String redirect = bobIntegrationService.processCallback(null, "ORDER_FAIL");
+
+        assertEquals("https://fitnest.az/payment/error", redirect);
+        verify(paymentStore).markFailed(eq(payment),
+                eq("Ödənişdən imtina edildi (actionCode=-2006)"),
+                eq("-2006"),
+                contains("orderStatus=6"));
     }
 
     @Test
     void testDeleteSavedCard_Success() {
-        Long userId = 1L;
-        String cardId = "BIND_123";
-
-        UserCard card = UserCard.builder().userId(userId).cardId(cardId).build();
-        when(userCardRepository.findByUserIdAndCardId(userId, cardId)).thenReturn(Optional.of(card));
-
-        bobIntegrationService.deleteSavedCard(userId, cardId);
-
-        verify(bobRestClient, times(1)).unbindCard(cardId);
-        verify(userCardRepository, times(1)).delete(card);
+        bobIntegrationService.deleteSavedCard(1L, "BIND_123");
+        verify(bobCardService).deleteSavedCard(1L, "BIND_123");
     }
 }

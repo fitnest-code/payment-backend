@@ -1,7 +1,6 @@
 package az.fitnest.payment.service;
 
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
-import az.fitnest.payment.client.UserSubscriptionGrpcClient;
 import az.fitnest.payment.client.bob.BobProperties;
 import az.fitnest.payment.client.bob.BobRestClient;
 import az.fitnest.payment.dto.bob.*;
@@ -10,8 +9,9 @@ import az.fitnest.payment.exception.BobPaymentException;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.entity.UserCard;
 import az.fitnest.payment.model.enums.BobPaymentStatus;
-import az.fitnest.payment.repository.PaymentRepository;
-import az.fitnest.payment.repository.UserCardRepository;
+import az.fitnest.payment.service.bob.BobCardService;
+import az.fitnest.payment.service.bob.BobPaymentStore;
+import az.fitnest.payment.service.bob.BobStatusMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -23,78 +23,59 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 
 /**
- * Bank of Baku (SmartVista EPG) ödəniş inteqrasiya servisi.
+ * Bank of Baku (SmartVista EPG) payment orchestration facade.
+ * Persistence, cards, subscriptions, and status mapping live in dedicated collaborators.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class BobIntegrationService {
 
-    private static final String PROVIDER_BOB = "BOB";
-    private static final String STATUS_PENDING = "PENDING";
-    private static final String STATUS_SUCCESS = "SUCCESS";
-    private static final String STATUS_FAILED = "FAILED";
-    private static final String STATUS_REFUNDED = "REFUNDED";
-
     private final BobProperties bobProperties;
     private final BobRestClient bobRestClient;
-    private final PaymentRepository paymentRepository;
-    private final UserCardRepository userCardRepository;
+    private final BobPaymentStore paymentStore;
+    private final BobCardService bobCardService;
+    private final BobStatusMapper statusMapper;
+    private final PaymentSubscriptionService paymentSubscriptionService;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
-    private final UserSubscriptionGrpcClient userSubscriptionGrpcClient;
     private final StringRedisTemplate redisTemplate;
-
-    @org.springframework.beans.factory.annotation.Value("${payment.card-logos-base-url:https://api.fitnest.az/assets/cards}")
-    private String cardLogosBaseUrl;
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    /**
-     * Maintenance rejimi yoxlanışı
-     */
     private void checkMaintenance() {
         if (bobProperties.isMaintenanceMode()) {
             throw new BobMaintenanceException("Hazırda Bank of Baku ödəniş sistemində texniki işlər aparılır");
         }
     }
 
-    /**
-     * Bank of Baku ilə birbaşa (Single-Phase) ödəniş başlatma.
-     */
     @Transactional
     public BobInitiateResponse initiatePayment(Long userId, BobInitiateRequest request) {
         checkMaintenance();
 
-        log.info("[BOB][Service] Initiating payment for userId={}, packageId={}, optionId={}",
+        log.info("[BOB] Initiating payment userId={}, packageId={}, optionId={}",
                 userId, request.getPackageId(), request.getOptionId());
 
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(
                 request.getPackageId(), request.getOptionId());
 
         String transactionId = "BOB_" + System.currentTimeMillis() + "_" + (1000 + RANDOM.nextInt(9000));
+        String currency = priceCurrency.currency != null
+                ? priceCurrency.currency
+                : bobProperties.getDefaultCurrency();
+        String description = paymentStore.buildPackageDescription(
+                request.getPackageId(), request.getOptionId(), request.getDescription());
 
-        Payment payment = new Payment();
-        payment.setUserId(userId);
-        payment.setProvider(PROVIDER_BOB);
-        payment.setTransactionId(transactionId);
-        payment.setAmount(priceCurrency.amount);
-        payment.setCurrency(priceCurrency.currency != null ? priceCurrency.currency : bobProperties.getDefaultCurrency());
-        payment.setStatus(STATUS_PENDING);
-        String packageDesc = "packageId:" + request.getPackageId() + ",optionId:" + request.getOptionId();
-        String description = request.getDescription();
-        if (description == null || description.isBlank()) {
-            description = packageDesc;
-        } else if (!description.contains("packageId:")) {
-            description = description + "," + packageDesc;
-        }
-        payment.setDescription(description);
-        payment.setCallbackProcessed(false);
-        payment.setAutoPaymentEnabled(Boolean.TRUE.equals(request.getSaveCard()));
-
-        paymentRepository.save(payment);
+        Payment payment = paymentStore.createPending(
+                userId,
+                transactionId,
+                priceCurrency.amount,
+                currency,
+                description,
+                Boolean.TRUE.equals(request.getSaveCard()),
+                null,
+                null);
 
         String callbackUrl = bobProperties.getCallbackUrl();
         String returnUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=success";
@@ -108,67 +89,59 @@ public class BobIntegrationService {
                 returnUrl,
                 failUrl,
                 clientId,
-                request.getInstallmentMonths()
-        );
+                request.getInstallmentMonths());
 
-        String errorCode = bankResponse.get("errorCode") != null ? String.valueOf(bankResponse.get("errorCode")) : "0";
+        String errorCode = bankResponse.get("errorCode") != null
+                ? String.valueOf(bankResponse.get("errorCode"))
+                : "0";
         String errorMessage = (String) bankResponse.get("errorMessage");
 
         if (!"0".equals(errorCode)) {
-            log.error("[BOB][Service] Register order failed: errorCode={}, errorMessage={}", errorCode, errorMessage);
-            payment.setStatus(STATUS_FAILED);
-            payment.setMessage(errorMessage);
-            paymentRepository.save(payment);
-            throw new BobPaymentException(errorCode, "Bank of Baku ödəniş qeydiyyatı uğursuz oldu: " + errorMessage);
+            log.error("[BOB] Register order failed: errorCode={}, errorMessage={}", errorCode, errorMessage);
+            paymentStore.markFailed(payment, errorMessage, errorCode, String.valueOf(bankResponse));
+            throw new BobPaymentException(errorCode,
+                    "Bank of Baku ödəniş qeydiyyatı uğursuz oldu: " + errorMessage);
         }
 
         String orderId = (String) bankResponse.get("orderId");
         String formUrl = (String) bankResponse.get("formUrl");
+        paymentStore.markRegistered(payment, orderId, formUrl);
 
-        payment.setOrderId(orderId);
-        payment.setRedirectUrl(formUrl);
-        paymentRepository.save(payment);
-
-        log.info("[BOB][Service] Payment registered successfully: orderId={}, formUrl={}", orderId, formUrl);
+        log.info("[BOB] Payment registered orderId={}, formUrl={}", orderId, formUrl);
 
         return BobInitiateResponse.builder()
                 .orderId(orderId)
                 .transactionId(transactionId)
                 .formUrl(formUrl)
-                .provider(PROVIDER_BOB)
+                .provider(BobPaymentStore.PROVIDER_BOB)
                 .amount(priceCurrency.amount)
                 .currency(priceCurrency.currency)
                 .build();
     }
 
-    /**
-     * Yadda saxlanılmış kartla (Binding) dərhal ödəniş etmək.
-     */
     @Transactional
     public BobInitiateResponse payWithSavedCard(Long userId, BobPayWithSavedCardRequest request) {
         checkMaintenance();
 
-        UserCard savedCard = userCardRepository.findByUserIdAndCardId(userId, request.getCardId())
-                .orElseThrow(() -> new BobPaymentException("CARD_NOT_FOUND", "Saxlanılmış kart tapılmadı"));
+        UserCard savedCard = bobCardService.requireSavedCard(userId, request.getCardId());
 
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(
                 request.getPackageId(), request.getOptionId());
 
         String transactionId = "BOB_BIND_" + System.currentTimeMillis() + "_" + (1000 + RANDOM.nextInt(9000));
+        String currency = priceCurrency.currency != null
+                ? priceCurrency.currency
+                : bobProperties.getDefaultCurrency();
 
-        Payment payment = new Payment();
-        payment.setUserId(userId);
-        payment.setProvider(PROVIDER_BOB);
-        payment.setTransactionId(transactionId);
-        payment.setAmount(priceCurrency.amount);
-        payment.setCurrency(priceCurrency.currency != null ? priceCurrency.currency : bobProperties.getDefaultCurrency());
-        payment.setStatus(STATUS_PENDING);
-        payment.setCardId(savedCard.getCardId());
-        payment.setCardMask(savedCard.getCardMask());
-        payment.setDescription("FitNest Saved Card Payment");
-        payment.setCallbackProcessed(false);
-
-        paymentRepository.save(payment);
+        Payment payment = paymentStore.createPending(
+                userId,
+                transactionId,
+                priceCurrency.amount,
+                currency,
+                "FitNest Saved Card Payment",
+                false,
+                savedCard.getCardId(),
+                savedCard.getCardMask());
 
         String callbackUrl = bobProperties.getCallbackUrl();
         String returnUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=success";
@@ -181,281 +154,133 @@ public class BobIntegrationService {
                 returnUrl,
                 failUrl,
                 String.valueOf(userId),
-                null
-        );
+                null);
 
         String orderId = (String) registerResponse.get("orderId");
         if (orderId == null) {
-            payment.setStatus(STATUS_FAILED);
-            paymentRepository.save(payment);
+            paymentStore.markFailed(payment, "Order registration failed", null, String.valueOf(registerResponse));
             throw new BobPaymentException("ORDER_REGISTRATION_FAILED", "Order qeydə alına bilmədi");
         }
 
-        payment.setOrderId(orderId);
-        paymentRepository.save(payment);
+        paymentStore.markRegistered(payment, orderId, null);
 
-        // Saxlanılmış kartla ödənişi icra et
         Map<String, Object> bindingPayResponse = bobRestClient.payWithBinding(orderId, savedCard.getCardId());
+        log.info("[BOB] Binding payment executed orderId={}: {}", orderId, bindingPayResponse);
 
-        log.info("[BOB][Service] Binding payment executed for orderId={}: {}", orderId, bindingPayResponse);
-
-        // Statusu yoxla
         BobOrderStatusResponse statusResponse = bobRestClient.getOrderStatusExtended(orderId);
-        BobPaymentStatus bobStatus = BobPaymentStatus.fromCode(statusResponse.getOrderStatus() != null ? statusResponse.getOrderStatus() : -1);
+        BobPaymentStatus bobStatus = statusMapper.toBobStatus(statusResponse.getOrderStatus());
 
         if (bobStatus == BobPaymentStatus.APPROVED) {
-            payment.setStatus(STATUS_SUCCESS);
-            payment.setRrn(statusResponse.getRrn());
-            payment.setCardMask(statusResponse.getPan());
-            payment.setCardName(statusResponse.getCardholderName());
-            payment.setCallbackProcessed(true);
-            paymentRepository.save(payment);
-
-            userSubscriptionGrpcClient.assignSubscriptionToUser(userId, request.getPackageId(), request.getOptionId(), true);
+            paymentStore.markSuccess(payment, statusResponse);
+            paymentSubscriptionService.assign(
+                    userId, request.getPackageId(), request.getOptionId(), true);
 
             return BobInitiateResponse.builder()
                     .orderId(orderId)
                     .transactionId(transactionId)
-                    .provider(PROVIDER_BOB)
+                    .provider(BobPaymentStore.PROVIDER_BOB)
                     .amount(priceCurrency.amount)
                     .currency(priceCurrency.currency)
                     .build();
-        } else {
-            payment.setStatus(STATUS_FAILED);
-            payment.setMessage(statusResponse.getErrorMessage());
-            paymentRepository.save(payment);
-            throw new BobPaymentException("BINDING_PAYMENT_FAILED", "Saxlanılmış kartla ödəniş imtina edildi: " + statusResponse.getErrorMessage());
         }
+
+        paymentStore.markFailed(
+                payment,
+                statusMapper.declineMessage(statusResponse),
+                statusMapper.operationCode(statusResponse),
+                String.valueOf(statusResponse));
+        throw new BobPaymentException("BINDING_PAYMENT_FAILED",
+                "Saxlanılmış kartla ödəniş imtina edildi: " + statusMapper.declineMessage(statusResponse));
     }
 
-    /**
-     * Bankın Callback/Webhook bildirişinin və ya Redirect cavabının emalı.
-     */
     @Transactional
     public String processCallback(String orderNumber, String orderIdFromBank) {
-        log.info("[BOB][Callback] Processing callback: orderNumber={}, orderId={}", orderNumber, orderIdFromBank);
+        log.info("[BOB][Callback] Processing orderNumber={}, orderId={}", orderNumber, orderIdFromBank);
 
-        Payment payment = null;
-        if (orderIdFromBank != null && !orderIdFromBank.isBlank()) {
-            payment = paymentRepository.findByOrderId(orderIdFromBank).orElse(null);
-        }
-        if (payment == null && orderNumber != null && !orderNumber.isBlank()) {
-            payment = paymentRepository.findByTransactionId(orderNumber).orElse(null);
-        }
-
-        if (payment == null) {
-            log.error("[BOB][Callback] Payment not found for orderNumber={}, orderId={}", orderNumber, orderIdFromBank);
+        Optional<Payment> paymentOpt = paymentStore.findByOrderIdOrTransactionId(orderIdFromBank, orderNumber);
+        if (paymentOpt.isEmpty()) {
+            log.error("[BOB][Callback] Payment not found orderNumber={}, orderId={}", orderNumber, orderIdFromBank);
             return bobProperties.getErrorRedirectUrl();
         }
 
+        Payment payment = paymentOpt.get();
+
         if (Boolean.TRUE.equals(payment.getCallbackProcessed())) {
-            log.info("[BOB][Callback] Callback already processed for orderId={}", payment.getOrderId());
-            return STATUS_SUCCESS.equalsIgnoreCase(payment.getStatus()) ?
-                    bobProperties.getSuccessRedirectUrl() : bobProperties.getErrorRedirectUrl();
+            log.info("[BOB][Callback] Already processed orderId={}", payment.getOrderId());
+            return BobPaymentStore.STATUS_SUCCESS.equalsIgnoreCase(payment.getStatus())
+                    ? bobProperties.getSuccessRedirectUrl()
+                    : bobProperties.getErrorRedirectUrl();
         }
 
         String redisLockKey = "bob_callback_lock:" + payment.getTransactionId();
-        Boolean acquireLock = redisTemplate.opsForValue().setIfAbsent(redisLockKey, "LOCKED", Duration.ofSeconds(30));
+        Boolean acquireLock = redisTemplate.opsForValue()
+                .setIfAbsent(redisLockKey, "LOCKED", Duration.ofSeconds(30));
         if (Boolean.FALSE.equals(acquireLock)) {
-            log.warn("[BOB][Callback] Callback processing already locked in Redis for orderId={}", payment.getOrderId());
+            log.warn("[BOB][Callback] Redis lock held orderId={}", payment.getOrderId());
             return bobProperties.getSuccessRedirectUrl();
         }
 
         try {
             BobOrderStatusResponse statusResponse = bobRestClient.getOrderStatusExtended(payment.getOrderId());
-            BobPaymentStatus bobStatus = BobPaymentStatus.fromCode(statusResponse.getOrderStatus() != null ? statusResponse.getOrderStatus() : -1);
+            BobPaymentStatus bobStatus = statusMapper.toBobStatus(statusResponse.getOrderStatus());
 
-            log.info("[BOB][Callback] SmartVista status response: orderStatus={}, actionCode={}",
+            log.info("[BOB][Callback] SmartVista orderStatus={}, actionCode={}",
                     statusResponse.getOrderStatus(), statusResponse.getActionCode());
 
-            String rrn = statusResponse.getRrn();
-            if (rrn == null || rrn.isBlank()) {
-                rrn = statusResponse.getAuthRefNum();
-            }
-            payment.setRrn(rrn);
-            payment.setCardMask(statusResponse.getPan());
-            payment.setCardName(statusResponse.getCardholderName());
+            paymentStore.applyBankCardFields(payment, statusResponse);
             payment.setCallbackProcessed(true);
 
             if (bobStatus == BobPaymentStatus.APPROVED) {
-                payment.setStatus(STATUS_SUCCESS);
-                paymentRepository.save(payment);
-
-                // Kart saxlanmasını yoxlamaq və saxlanılmış kartlar cədvəlinə (user_cards) yazmaq
-                checkAndSaveUserCard(payment, statusResponse);
-
-                // Abunəliyin istifadəçiyə təyin olunması (gRPC)
-                assignSubscriptionIfPossible(payment);
-
-                log.info("[BOB][Callback] Payment SUCCESS for orderId={}", payment.getOrderId());
+                payment.setStatus(BobPaymentStore.STATUS_SUCCESS);
+                paymentStore.save(payment);
+                bobCardService.checkAndSaveUserCard(payment, statusResponse);
+                paymentSubscriptionService.assignFromPaymentDescription(payment);
+                log.info("[BOB][Callback] SUCCESS orderId={}", payment.getOrderId());
                 return bobProperties.getSuccessRedirectUrl();
-            } else {
-                payment.setStatus(STATUS_FAILED);
-                payment.setMessage(statusResponse.getErrorMessage() != null ? statusResponse.getErrorMessage() : "Payment declined");
-                paymentRepository.save(payment);
-
-                log.warn("[BOB][Callback] Payment FAILED for orderId={}", payment.getOrderId());
-                return bobProperties.getErrorRedirectUrl();
             }
+
+            paymentStore.markFailed(
+                    payment,
+                    statusMapper.declineMessage(statusResponse),
+                    statusMapper.operationCode(statusResponse),
+                    "orderStatus=" + statusResponse.getOrderStatus()
+                            + ",actionCode=" + statusResponse.getActionCode());
+            log.warn("[BOB][Callback] FAILED orderId={}", payment.getOrderId());
+            return bobProperties.getErrorRedirectUrl();
         } finally {
             redisTemplate.delete(redisLockKey);
         }
     }
 
-    /**
-     * Ödəniş statusunu sorğulamaq.
-     */
     @Transactional
     public BobOrderStatusResponse checkPaymentStatus(String orderId) {
         checkMaintenance();
         BobOrderStatusResponse statusResponse = bobRestClient.getOrderStatusExtended(orderId);
 
-        Optional<Payment> paymentOpt = paymentRepository.findByOrderId(orderId);
-        if (paymentOpt.isEmpty()) {
-            paymentOpt = paymentRepository.findByTransactionId(orderId);
-        }
+        Optional<Payment> paymentOpt = paymentStore.findByOrderIdOrTransactionId(orderId, orderId);
+        statusMapper.enrichStatusResponse(statusResponse, paymentOpt.orElse(null));
 
-        // RRN təyin edilməsi: RRN -> AuthRefNum -> TransactionId
-        String rrn = statusResponse.getRrn();
-        if (rrn == null || rrn.isBlank()) {
-            rrn = statusResponse.getAuthRefNum();
-        }
-        if ((rrn == null || rrn.isBlank()) && paymentOpt.isPresent()) {
-            rrn = paymentOpt.get().getTransactionId();
-        }
-        statusResponse.setRrn(rrn);
-
-        // Tarix - Saat formatlanması
-        String formattedDate = null;
-        if (statusResponse.getAuthDateTime() != null && !statusResponse.getAuthDateTime().isBlank()) {
-            formattedDate = formatTimestampOrString(statusResponse.getAuthDateTime());
-        } else if (statusResponse.getDate() != null && !statusResponse.getDate().isBlank()) {
-            formattedDate = formatTimestampOrString(statusResponse.getDate());
-        } else if (paymentOpt.isPresent() && paymentOpt.get().getCreatedDate() != null) {
-            formattedDate = paymentOpt.get().getCreatedDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
-        }
-        statusResponse.setFormattedDate(formattedDate);
-
-        // cardMask, cardBrand, bank və type təyin olunması
-        String cardMask = statusResponse.getPan();
-        if ((cardMask == null || cardMask.isBlank()) && paymentOpt.isPresent()) {
-            cardMask = paymentOpt.get().getCardMask();
-        }
-        statusResponse.setCardMask(cardMask);
-
-        String cardBrand = az.fitnest.payment.util.CardBrandDetector.detectBrand(cardMask);
-        statusResponse.setCardBrand(cardBrand != null ? cardBrand : "UNKNOWN");
-        statusResponse.setBank("Bank of Baku");
-
-        // Type təyin olunması (Birdəfəlik, Taksitli ödəniş, Avtomatik uzadılma və s.)
-        String paymentType = "Birdəfəlik";
-        if (paymentOpt.isPresent()) {
-            Payment p = paymentOpt.get();
-            String t = p.getType();
-            if (t != null && (t.toUpperCase().contains("INSTALLMENT") || "BOB_INSTALLMENT".equalsIgnoreCase(t))) {
-                paymentType = "Taksitli ödəniş";
-            } else if ("AUTO_RENEWAL".equalsIgnoreCase(t)) {
-                paymentType = "Avtomatik uzadılma";
-            } else if ("CARD_BIND".equalsIgnoreCase(t)) {
-                paymentType = "Kartın bağlanması";
-            } else if ("SAVED_CARD".equalsIgnoreCase(t)) {
-                paymentType = "Yadda saxlanılmış kart";
-            }
-        }
-        statusResponse.setType(paymentType);
-
-        // Əgər ödəniş uğurludur (orderStatus == 2), bazada statusu yeniləyirik, kartı saxlayırıq və abunəliyi təyin edirik
-        if (paymentOpt.isPresent() && statusResponse.getOrderStatus() != null && statusResponse.getOrderStatus() == 2) {
+        if (paymentOpt.isPresent() && statusMapper.isApproved(statusResponse.getOrderStatus())) {
             Payment payment = paymentOpt.get();
-            if (!STATUS_SUCCESS.equals(payment.getStatus())) {
-                payment.setStatus(STATUS_SUCCESS);
-                paymentRepository.save(payment);
+            if (!BobPaymentStore.STATUS_SUCCESS.equals(payment.getStatus())) {
+                paymentStore.markSuccess(payment, statusResponse);
             }
-            checkAndSaveUserCard(payment, statusResponse);
-            assignSubscriptionIfPossible(payment);
+            bobCardService.checkAndSaveUserCard(payment, statusResponse);
+            paymentSubscriptionService.assignFromPaymentDescription(payment);
         }
 
         return statusResponse;
     }
 
-    /**
-     * Abunəliyi gRPC vasitəsilə istifadəçiyə təyin etməyə cəhd edir.
-     */
-    private void assignSubscriptionIfPossible(Payment payment) {
-        if (payment == null || payment.getUserId() == null) return;
-        log.info("[BOB][Subscription] Attempting to assign subscription: userId={}, orderId={}",
-                payment.getUserId(), payment.getOrderId());
-        try {
-            Long packageId = null;
-            Long optionId = null;
-
-            if (payment.getDescription() != null && payment.getDescription().contains("packageId:")) {
-                String[] parts = payment.getDescription().split(",");
-                for (String part : parts) {
-                    part = part.trim();
-                    if (part.startsWith("packageId:")) {
-                        packageId = Long.parseLong(part.replace("packageId:", "").trim());
-                    } else if (part.startsWith("optionId:")) {
-                        optionId = Long.parseLong(part.replace("optionId:", "").trim());
-                    }
-                }
-            }
-
-            if (packageId != null && optionId != null) {
-                var grpcResponse = userSubscriptionGrpcClient.assignSubscriptionToUser(
-                        payment.getUserId(), packageId, optionId, Boolean.TRUE.equals(payment.getAutoPaymentEnabled()));
-                log.info("[BOB][Subscription] gRPC subscription assigned successfully. response={}", grpcResponse);
-            } else {
-                log.warn("[BOB][Subscription] Skipped — packageId/optionId missing in payment description. desc={}",
-                        payment.getDescription());
-            }
-        } catch (Exception ex) {
-            log.error("[BOB][Subscription] Failed to assign subscription via gRPC for orderId={}", payment.getOrderId(), ex);
-        }
-    }
-
-    private void checkAndSaveUserCard(Payment payment, BobOrderStatusResponse statusResponse) {
-        if (payment == null || payment.getUserId() == null) return;
-
-        String bindingId = statusResponse.getResolvedBindingId();
-        boolean saveRequested = Boolean.TRUE.equals(payment.getAutoPaymentEnabled());
-
-        if ((bindingId == null || bindingId.isBlank()) && saveRequested) {
-            bindingId = "BOB_BIND_" + payment.getOrderId();
-        }
-
-        if (bindingId != null && !bindingId.isBlank()) {
-            String cardMask = statusResponse.getPan() != null && !statusResponse.getPan().isBlank() ?
-                    statusResponse.getPan() : payment.getCardMask();
-            String cardName = statusResponse.getCardholderName() != null && !statusResponse.getCardholderName().isBlank() ?
-                    statusResponse.getCardholderName() : "Bank of Baku Card";
-
-            saveUserCard(payment.getUserId(), bindingId, cardMask, cardName);
-        }
-    }
-
-    private String formatTimestampOrString(String rawDate) {
-        if (rawDate == null || rawDate.isBlank()) return null;
-        try {
-            long ts = Long.parseLong(rawDate.trim());
-            return java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ts), java.time.ZoneId.of("Asia/Baku"))
-                    .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
-        } catch (Exception e) {
-            return rawDate;
-        }
-    }
-
-    /**
-     * Ödənişi geri qaytarmaq (Refund).
-     */
     @Transactional
     public BobRefundResponse refundPayment(BobRefundRequest request) {
         checkMaintenance();
 
-        Payment payment = paymentRepository.findByOrderId(request.getOrderId())
-                .orElseThrow(() -> new BobPaymentException("PAYMENT_NOT_FOUND", "Ödəniş tapılmadı: " + request.getOrderId()));
+        Payment payment = paymentStore.findByOrderId(request.getOrderId())
+                .orElseThrow(() -> new BobPaymentException(
+                        "PAYMENT_NOT_FOUND", "Ödəniş tapılmadı: " + request.getOrderId()));
 
-        if (!STATUS_SUCCESS.equals(payment.getStatus())) {
+        if (!BobPaymentStore.STATUS_SUCCESS.equals(payment.getStatus())) {
             throw new BobPaymentException("INVALID_STATUS", "Yalnız uğurlu ödənişlər geri qaytarıla bilər");
         }
 
@@ -464,55 +289,33 @@ public class BobIntegrationService {
         String errorMessage = (String) refundResponse.get("errorMessage");
 
         if ("0".equals(errorCode)) {
-            payment.setStatus(STATUS_REFUNDED);
-            paymentRepository.save(payment);
-
+            paymentStore.markRefunded(payment);
             return BobRefundResponse.builder()
                     .orderId(request.getOrderId())
                     .success(true)
                     .errorCode("0")
                     .build();
-        } else {
-            return BobRefundResponse.builder()
-                    .orderId(request.getOrderId())
-                    .success(false)
-                    .errorCode(errorCode)
-                    .errorMessage(errorMessage)
-                    .build();
         }
+
+        return BobRefundResponse.builder()
+                .orderId(request.getOrderId())
+                .success(false)
+                .errorCode(errorCode)
+                .errorMessage(errorMessage)
+                .build();
     }
 
-    /**
-     * İstifadəçinin saxlanılmış kartlarını gətirmək.
-     */
     @Transactional(readOnly = true)
     public List<UserCard> getUserSavedCards(Long userId) {
-        return userCardRepository.findAllByUserId(userId);
+        return bobCardService.getUserSavedCards(userId);
     }
 
-    /**
-     * Saxlanılmış kartı silmək (Unbind).
-     */
     @Transactional
     public void deleteSavedCard(Long userId, String cardId) {
         checkMaintenance();
-
-        UserCard userCard = userCardRepository.findByUserIdAndCardId(userId, cardId)
-                .orElseThrow(() -> new BobPaymentException("CARD_NOT_FOUND", "Kart tapılmadı"));
-
-        try {
-            bobRestClient.unbindCard(cardId);
-        } catch (Exception e) {
-            log.warn("[BOB][Service] Bank unbindCard call failed for cardId={}, proceeding with DB deletion: {}", cardId, e.getMessage());
-        }
-
-        userCardRepository.delete(userCard);
-        log.info("[BOB][Service] Saved card deleted for userId={}, cardId={}", userId, cardId);
+        bobCardService.deleteSavedCard(userId, cardId);
     }
 
-    /**
-     * Bank of Baku tərəfindən dəstəklənən aktiv taksit aylarının siyahısını qaytarır.
-     */
     @Transactional(readOnly = true)
     public List<Integer> getSupportedInstallments() {
         String active = bobProperties.getActiveInstallmentMonths();
@@ -523,25 +326,5 @@ public class BobIntegrationService {
                 .map(String::trim)
                 .map(Integer::parseInt)
                 .toList();
-    }
-
-    private void saveUserCard(Long userId, String bindingId, String cardMask, String cardName) {
-        try {
-            Optional<UserCard> existing = userCardRepository.findByUserIdAndCardId(userId, bindingId);
-            if (existing.isEmpty()) {
-                UserCard userCard = UserCard.builder()
-                        .userId(userId)
-                        .cardId(bindingId)
-                        .cardMask(cardMask != null ? cardMask : "**** **** **** ****")
-                        .cardName(cardName != null ? cardName : "Bank Card")
-                        .brand("Bank of Baku")
-                        .reccPmntId(bindingId)
-                        .build();
-                userCardRepository.save(userCard);
-                log.info("[BOB][Service] Saved new card binding for userId={}, bindingId={}", userId, bindingId);
-            }
-        } catch (Exception e) {
-            log.error("[BOB][Service] Failed to save user card binding: userId={}, bindingId={}", userId, bindingId, e);
-        }
     }
 }
