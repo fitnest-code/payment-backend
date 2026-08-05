@@ -91,6 +91,9 @@ public class Payment extends BaseAuditableEntity {
     @Column(name = "auto_payment_enabled")
     private Boolean autoPaymentEnabled = false;
 
+    @Column(name = "coins_used")
+    private java.math.BigDecimal coinsUsed = java.math.BigDecimal.ZERO;
+
     public void setCardId(String cardId) {
         this.cardId = cardId;
     }

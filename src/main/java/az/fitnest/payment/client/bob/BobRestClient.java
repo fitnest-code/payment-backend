@@ -77,8 +77,8 @@ public class BobRestClient {
             params.put("clientId", clientId);
         }
 
-        if (installmentMonths != null && installmentMonths > 1) {
-            params.put("jsonParams", "{\"installmentCount\":" + installmentMonths + "}");
+        if (installmentMonths != null && installmentMonths >= 1) {
+            params.put("jsonParams", "{\"taxit\":" + installmentMonths + "}");
         }
 
         return sendFormRequest(endpoint, params);
