@@ -1,5 +1,6 @@
 package az.fitnest.payment.dto.bob;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -10,13 +11,14 @@ import lombok.NoArgsConstructor;
 
 /**
  * SmartVista EPG getOrderStatusExtended.do cavab DTO-su.
+ * Mobile API omits bank-only binding fields; those stay write-only for card-save internals.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonInclude(JsonInclude.Include.ALWAYS)
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class BobOrderStatusResponse {
 
     private String errorCode;
@@ -29,12 +31,15 @@ public class BobOrderStatusResponse {
     private String approvalCode;
     private String pan;
     private String cardholderName;
-    private String bindingId;
     private String formattedDate;
     private String cardMask;
     private String cardBrand;
     private String bank;
     private String type;
+
+    /** Bank may return this; never exposed on mobile status API. */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String bindingId;
 
     // SmartVista tərəfindən oxunur, amma Mobile response-a serializasiya olunmur (WRITE_ONLY)
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
@@ -49,6 +54,8 @@ public class BobOrderStatusResponse {
         private String bindingId;
     }
 
+    /** Internal helper for card save — not part of API response. */
+    @JsonIgnore
     public String getResolvedBindingId() {
         if (bindingId != null && !bindingId.isBlank()) {
             return bindingId;
