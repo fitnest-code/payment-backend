@@ -49,6 +49,8 @@ class BobIntegrationServiceTest {
     private StringRedisTemplate redisTemplate;
     @Mock
     private ValueOperations<String, String> valueOperations;
+    @Mock
+    private az.fitnest.payment.client.UserGrpcClient userGrpcClient;
 
     @InjectMocks
     private BobIntegrationService bobIntegrationService;
@@ -262,7 +264,7 @@ class BobIntegrationServiceTest {
         BobOrderStatusResponse result = bobIntegrationService.checkPaymentStatus("ORDER_DECLINED");
 
         assertNotNull(result);
-        verify(statusMapper).enrichStatusResponse(statusResponse, payment);
+        verify(statusMapper).enrichStatusResponse(statusResponse, payment, "AZ");
         verify(paymentStore).markFailed(eq(payment),
                 eq("Ödənişdən imtina edildi (actionCode=-2006)"),
                 eq("-2006"),

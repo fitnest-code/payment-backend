@@ -55,11 +55,13 @@ public class BobCardService {
 
     public void checkAndSaveUserCard(Payment payment, BobOrderStatusResponse statusResponse) {
         if (payment == null || payment.getUserId() == null) {
+            log.warn("[BOB][Card] skip save: payment or userId null");
             return;
         }
 
         boolean saveRequested = Boolean.TRUE.equals(payment.getAutoPaymentEnabled());
         if (!saveRequested) {
+            log.info("[BOB][Card] skip save: saveCard not requested orderId={}", payment.getOrderId());
             return;
         }
 
@@ -69,8 +71,11 @@ public class BobCardService {
 
         String bindingId = statusResponse != null ? statusResponse.getResolvedBindingId() : null;
         if (bindingId == null || bindingId.isBlank()) {
-            log.warn("[BOB][Card] saveCard requested but bank returned no bindingId for orderId={}",
-                    payment.getOrderId());
+            log.warn("[BOB][Card] saveCard requested but bank returned no bindingId for orderId={} orderStatus={} bindingInfo={} attributesPresent={}",
+                    payment.getOrderId(),
+                    statusResponse != null ? statusResponse.getOrderStatus() : null,
+                    statusResponse != null && statusResponse.getBindingInfo() != null,
+                    statusResponse != null && statusResponse.getAttributes() != null);
             return;
         }
 
@@ -84,6 +89,8 @@ public class BobCardService {
                 : "Bank of Baku Card";
         String brand = resolveBrand(statusResponse, cardMask);
 
+        log.info("[BOB][Card] saving binding userId={} orderId={} bindingId={} mask={} brand={}",
+                payment.getUserId(), payment.getOrderId(), bindingId, cardMask, brand);
         saveUserCard(payment.getUserId(), bindingId, cardMask, cardName, brand);
     }
 

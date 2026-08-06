@@ -4,6 +4,7 @@ import az.fitnest.payment.dto.bob.BobOrderStatusResponse;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.enums.BobPaymentStatus;
 import az.fitnest.payment.util.CardBrandDetector;
+import az.fitnest.payment.util.PaymentTypeLabels;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -78,6 +79,10 @@ public class BobStatusMapper {
     }
 
     public void enrichStatusResponse(BobOrderStatusResponse statusResponse, Payment payment) {
+        enrichStatusResponse(statusResponse, payment, "AZ");
+    }
+
+    public void enrichStatusResponse(BobOrderStatusResponse statusResponse, Payment payment, String lang) {
         if (statusResponse == null) {
             return;
         }
@@ -128,7 +133,7 @@ public class BobStatusMapper {
 
         statusResponse.setCardBrand(resolveCardBrand(statusResponse, cardMask));
         statusResponse.setBank("Bank of Baku");
-        statusResponse.setType(resolvePaymentTypeLabel(payment));
+        statusResponse.setType(resolvePaymentTypeLabel(payment, lang));
     }
 
     public String resolveCardBrand(BobOrderStatusResponse statusResponse, String cardMask) {
@@ -141,23 +146,14 @@ public class BobStatusMapper {
     }
 
     public String resolvePaymentTypeLabel(Payment payment) {
-        if (payment == null || payment.getType() == null) {
-            return "Birdəfəlik";
+        return resolvePaymentTypeLabel(payment, "AZ");
+    }
+
+    public String resolvePaymentTypeLabel(Payment payment, String lang) {
+        if (payment == null) {
+            return PaymentTypeLabels.translate("ONE_TIME", lang);
         }
-        String t = payment.getType();
-        if (t.toUpperCase().contains("INSTALLMENT") || "BOB_INSTALLMENT".equalsIgnoreCase(t)) {
-            return "Taksitli ödəniş";
-        }
-        if ("AUTO_RENEWAL".equalsIgnoreCase(t)) {
-            return "Avtomatik uzadılma";
-        }
-        if ("CARD_BIND".equalsIgnoreCase(t)) {
-            return "Kartın bağlanması";
-        }
-        if ("SAVED_CARD".equalsIgnoreCase(t)) {
-            return "Yadda saxlanılmış kart";
-        }
-        return "Birdəfəlik";
+        return PaymentTypeLabels.fromPayment(payment.getType(), payment.getAutoPaymentEnabled(), lang);
     }
 
     private static String normalizePaymentSystem(String paymentSystem) {

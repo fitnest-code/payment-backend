@@ -103,10 +103,27 @@ class BobStatusMapperTest {
     void installmentTypeLabel() {
         Payment installment = new Payment();
         installment.setType("BOB_INSTALLMENT");
-        assertEquals("Taksitli ödəniş", mapper.resolvePaymentTypeLabel(installment));
+        assertEquals("Taksitli ödəniş", mapper.resolvePaymentTypeLabel(installment, "AZ"));
+        assertEquals("Installment", mapper.resolvePaymentTypeLabel(installment, "EN"));
+        assertEquals("Рассрочка", mapper.resolvePaymentTypeLabel(installment, "RU"));
 
         Payment oneTime = new Payment();
         oneTime.setType("BOB_PAYMENT");
-        assertEquals("Birdəfəlik", mapper.resolvePaymentTypeLabel(oneTime));
+        assertEquals("Birdəfəlik", mapper.resolvePaymentTypeLabel(oneTime, "AZ"));
+        assertEquals("One-time", mapper.resolvePaymentTypeLabel(oneTime, "EN"));
+    }
+
+    @Test
+    void enrichUsesLanguageForType() {
+        BobOrderStatusResponse response = BobOrderStatusResponse.builder()
+                .orderStatus(2)
+                .errorCode("0")
+                .errorMessage("Success")
+                .build();
+        Payment payment = new Payment();
+        payment.setType("BOB_INSTALLMENT");
+
+        mapper.enrichStatusResponse(response, payment, "EN");
+        assertEquals("Installment", response.getType());
     }
 }

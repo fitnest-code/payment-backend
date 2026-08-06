@@ -41,6 +41,7 @@ public class BobIntegrationService {
     private final PaymentSubscriptionService paymentSubscriptionService;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final StringRedisTemplate redisTemplate;
+    private final az.fitnest.payment.client.UserGrpcClient userGrpcClient;
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -229,14 +230,22 @@ public class BobIntegrationService {
             BobOrderStatusResponse statusResponse = bobRestClient.getOrderStatusExtended(payment.getOrderId());
             BobPaymentStatus bobStatus = statusMapper.toBobStatus(statusResponse.getOrderStatus());
 
-            log.info("[BOB][Callback] SmartVista orderStatus={}, actionCode={}",
-                    statusResponse.getOrderStatus(), statusResponse.getActionCode());
+            log.info("[BOB][Callback] SmartVista orderStatus={}, actionCode={}, bindingIdPresent={}, panPresent={}, saveCard={}",
+                    statusResponse.getOrderStatus(),
+                    statusResponse.getActionCode(),
+                    statusResponse.getResolvedBindingId() != null,
+                    statusResponse.getPan() != null && !statusResponse.getPan().isBlank(),
+                    Boolean.TRUE.equals(payment.getAutoPaymentEnabled()));
 
             paymentStore.applyBankCardFields(payment, statusResponse);
             payment.setCallbackProcessed(true);
 
             if (bobStatus == BobPaymentStatus.APPROVED) {
                 payment.setStatus(BobPaymentStore.STATUS_SUCCESS);
+                String bindingId = statusResponse.getResolvedBindingId();
+                if (bindingId != null && !bindingId.isBlank()) {
+                    payment.setCardId(bindingId);
+                }
                 paymentStore.save(payment);
                 bobCardService.checkAndSaveUserCard(payment, statusResponse);
                 paymentSubscriptionService.assignFromPaymentDescription(payment);
@@ -264,7 +273,17 @@ public class BobIntegrationService {
         statusResponse.flattenBankPayload();
 
         Optional<Payment> paymentOpt = paymentStore.findByOrderIdOrTransactionId(orderId, orderId);
-        statusMapper.enrichStatusResponse(statusResponse, paymentOpt.orElse(null));
+        String lang = resolveLanguage(paymentOpt.map(Payment::getUserId).orElse(null));
+        statusMapper.enrichStatusResponse(statusResponse, paymentOpt.orElse(null), lang);
+
+        log.info("[BOB][Status] orderId={} orderStatus={} type={} lang={} saveCard={} bindingIdPresent={} cardMaskPresent={}",
+                orderId,
+                statusResponse.getOrderStatus(),
+                statusResponse.getType(),
+                lang,
+                paymentOpt.map(Payment::getAutoPaymentEnabled).orElse(null),
+                statusResponse.getResolvedBindingId() != null,
+                statusResponse.getCardMask() != null && !statusResponse.getCardMask().isBlank());
 
         if (paymentOpt.isPresent()) {
             Payment payment = paymentOpt.get();
@@ -273,6 +292,11 @@ public class BobIntegrationService {
                     paymentStore.markSuccess(payment, statusResponse);
                 } else {
                     paymentStore.applyBankCardFields(payment, statusResponse);
+                    paymentStore.save(payment);
+                }
+                String bindingId = statusResponse.getResolvedBindingId();
+                if (bindingId != null && !bindingId.isBlank()) {
+                    payment.setCardId(bindingId);
                     paymentStore.save(payment);
                 }
                 bobCardService.checkAndSaveUserCard(payment, statusResponse);
@@ -292,6 +316,29 @@ public class BobIntegrationService {
         }
 
         return statusResponse;
+    }
+
+    private String resolveLanguage(Long userId) {
+        try {
+            if (userId != null) {
+                String lang = userGrpcClient.getUserLanguage(userId);
+                if (lang != null && !lang.isBlank()) {
+                    return az.fitnest.payment.util.PaymentTypeLabels.normalizeLang(lang);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            var attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
+                String accept = servletAttrs.getRequest().getHeader("Accept-Language");
+                if (accept != null && !accept.isBlank()) {
+                    return az.fitnest.payment.util.PaymentTypeLabels.normalizeLang(accept.split("[,;-]")[0]);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "AZ";
     }
 
     @Transactional

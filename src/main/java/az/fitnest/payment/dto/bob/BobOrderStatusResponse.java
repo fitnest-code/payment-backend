@@ -9,6 +9,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * SmartVista EPG getOrderStatusExtended.do cavab DTO-su.
  * Mobile API omits bank-only binding fields; those stay write-only for card-save internals.
@@ -52,6 +54,10 @@ public class BobOrderStatusResponse {
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private CardAuthInfo cardAuthInfo;
 
+    /** Optional name/value attributes; some merchants return bindingId here. */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private List<NameValueAttribute> attributes;
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -74,6 +80,15 @@ public class BobOrderStatusResponse {
         private String authorizationResponseId;
     }
 
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class NameValueAttribute {
+        private String name;
+        private String value;
+    }
+
     /** Internal helper for card save — not part of API response. */
     @JsonIgnore
     public String getResolvedBindingId() {
@@ -82,6 +97,15 @@ public class BobOrderStatusResponse {
         }
         if (bindingInfo != null && bindingInfo.getBindingId() != null && !bindingInfo.getBindingId().isBlank()) {
             return bindingInfo.getBindingId();
+        }
+        if (attributes != null) {
+            for (NameValueAttribute attr : attributes) {
+                if (attr != null && attr.getName() != null
+                        && "bindingId".equalsIgnoreCase(attr.getName().trim())
+                        && attr.getValue() != null && !attr.getValue().isBlank()) {
+                    return attr.getValue().trim();
+                }
+            }
         }
         return null;
     }
@@ -120,6 +144,9 @@ public class BobOrderStatusResponse {
         }
         if (isBlank(bindingId) && bindingInfo != null && !isBlank(bindingInfo.getBindingId())) {
             bindingId = bindingInfo.getBindingId();
+        }
+        if (isBlank(bindingId)) {
+            bindingId = getResolvedBindingId();
         }
     }
 

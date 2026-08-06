@@ -68,6 +68,7 @@ public class AbbIntegrationService {
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final PaymentSubscriptionService paymentSubscriptionService;
     private final UserDisplayNameResolver userDisplayNameResolver;
+    private final az.fitnest.payment.client.UserGrpcClient userGrpcClient;
 
     /** Paylaşılan HTTP client instance (thread-safe, yenidən istifadə edilir) */
     private static final java.net.http.HttpClient HTTP_CLIENT =
@@ -951,19 +952,11 @@ public class AbbIntegrationService {
             }
         }
 
-        String rawType;
-        if (payment.getType() != null && payment.getType().toUpperCase().contains("INSTALLMENT")) {
-            rawType = "INSTALLMENT";
-        } else if (Boolean.TRUE.equals(payment.getAutoPaymentEnabled())) {
-            rawType = "AUTO_RENEWAL";
-        } else {
-            rawType = "ONE_TIME";
-        }
-        String actualType = switch (rawType) {
-            case "INSTALLMENT" -> "Taksitli ödəniş";
-            case "AUTO_RENEWAL" -> "Avtomatik";
-            default -> "Birdəfəlik";
-        };
+        String lang = resolveLanguage(payment.getUserId());
+        String actualType = az.fitnest.payment.util.PaymentTypeLabels.fromPayment(
+                payment.getType(), payment.getAutoPaymentEnabled(), lang);
+        log.info("[ABB][Status] paymentId={} typeDb={} typeLocalized={} lang={}",
+                payment.getId(), payment.getType(), actualType, lang);
 
         String ownerName = null;
         if (payment.getUserId() != null) {
@@ -1016,19 +1009,8 @@ public class AbbIntegrationService {
         }
         String bank = "ABB";
 
-        String rawType;
-        if (payment.getType() != null && payment.getType().toUpperCase().contains("INSTALLMENT")) {
-            rawType = "INSTALLMENT";
-        } else if (Boolean.TRUE.equals(payment.getAutoPaymentEnabled())) {
-            rawType = "AUTO_RENEWAL";
-        } else {
-            rawType = "ONE_TIME";
-        }
-        String actualType = switch (rawType) {
-            case "INSTALLMENT" -> "Taksitli ödəniş";
-            case "AUTO_RENEWAL" -> "Avtomatik";
-            default -> "Birdəfəlik";
-        };
+        String actualType = az.fitnest.payment.util.PaymentTypeLabels.fromPayment(
+                payment.getType(), payment.getAutoPaymentEnabled(), resolveLanguage(payment.getUserId()));
 
         String ownerName = null;
         if (payment.getUserId() != null) {
@@ -1051,6 +1033,29 @@ public class AbbIntegrationService {
             payment.getDescription(),
             payment.getRrn()
         );
+    }
+
+    private String resolveLanguage(Long userId) {
+        try {
+            if (userId != null) {
+                String lang = userGrpcClient.getUserLanguage(userId);
+                if (lang != null && !lang.isBlank()) {
+                    return az.fitnest.payment.util.PaymentTypeLabels.normalizeLang(lang);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            var attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
+                String accept = servletAttrs.getRequest().getHeader("Accept-Language");
+                if (accept != null && !accept.isBlank()) {
+                    return az.fitnest.payment.util.PaymentTypeLabels.normalizeLang(accept.split("[,;-]")[0]);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "AZ";
     }
 
     private String translateStatus(String status) {

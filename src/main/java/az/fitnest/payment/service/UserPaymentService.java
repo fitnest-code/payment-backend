@@ -10,6 +10,7 @@ import az.fitnest.payment.model.entity.UserCard;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
 import az.fitnest.payment.util.CardBrandDetector;
+import az.fitnest.payment.util.PaymentTypeLabels;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -445,7 +446,7 @@ public class UserPaymentService {
             try {
                 String lang = userGrpcClient.getUserLanguage(userId);
                 if (lang != null && !lang.trim().isEmpty()) {
-                    return lang.toUpperCase();
+                    return PaymentTypeLabels.normalizeLang(lang);
                 }
             } catch (Exception ignored) {
             }
@@ -460,11 +461,7 @@ public class UserPaymentService {
                         ((org.springframework.web.context.request.ServletRequestAttributes) requestAttributes).getRequest();
                 String acceptLanguage = request.getHeader("Accept-Language");
                 if (acceptLanguage != null && !acceptLanguage.trim().isEmpty()) {
-                    String localeLang = org.springframework.context.i18n.LocaleContextHolder.getLocale().getLanguage()
-                            .toUpperCase();
-                    if (localeLang.equals("EN") || localeLang.equals("RU") || localeLang.equals("AZ")) {
-                        return localeLang;
-                    }
+                    return PaymentTypeLabels.normalizeLang(acceptLanguage.split("[,;-]")[0]);
                 }
             }
         } catch (Exception ignored) {
@@ -628,19 +625,10 @@ public class UserPaymentService {
             }
         }
         String typeVal = payment.getType();
-        String rawType;
-        if (typeVal != null && (typeVal.toUpperCase().contains("INSTALLMENT") || "BOB_INSTALLMENT".equalsIgnoreCase(typeVal) || "ABB_INSTALLMENT".equalsIgnoreCase(typeVal))) {
-            rawType = "INSTALLMENT";
-        } else if ("CARD_BIND".equalsIgnoreCase(typeVal)) {
-            rawType = "CARD_BIND";
-        } else if ("SAVED_CARD".equalsIgnoreCase(typeVal)) {
-            rawType = "SAVED_CARD";
-        } else if ("AUTO_RENEWAL".equalsIgnoreCase(typeVal)) {
-            rawType = "AUTO_RENEWAL";
-        } else {
-            rawType = "ONE_TIME";
-        }
-        String actualType = translatePaymentType(rawType, userLanguage);
+        String rawType = PaymentTypeLabels.rawTypeKey(typeVal, payment.getAutoPaymentEnabled());
+        String actualType = PaymentTypeLabels.translate(rawType, userLanguage);
+        log.info("[History] paymentId={} provider={} typeRawDb={} typeKey={} typeLocalized={} lang={}",
+                payment.getId(), payment.getProvider(), typeVal, rawType, actualType, userLanguage);
 
         String ownerName = null;
         if (payment.getUserId() != null) {

@@ -75,11 +75,18 @@ public class BobRestClient {
 
         if (clientId != null && !clientId.isBlank()) {
             params.put("clientId", clientId);
+            // Required by SmartVista to create a reusable card binding for saveCard flows.
+            params.put("features", "BINDING");
         }
 
         if (installmentMonths != null && installmentMonths >= 1) {
+            // Bank of Baku installment key used by the merchant terminal.
             params.put("jsonParams", "{\"taxit\":" + installmentMonths + "}");
         }
+
+        log.info("[BOB][Client] register.do orderNumber={}, amountQepik={}, clientIdPresent={}, features={}, installmentMonths={}",
+                orderNumber, amountInQepik, clientId != null && !clientId.isBlank(),
+                params.get("features"), installmentMonths);
 
         return sendFormRequest(endpoint, params);
     }
@@ -127,7 +134,40 @@ public class BobRestClient {
         params.put("orderId", orderId);
 
         Map<String, Object> responseMap = sendFormRequest(endpoint, params);
-        return objectMapper.convertValue(responseMap, BobOrderStatusResponse.class);
+        logBankStatusDiagnostics(orderId, responseMap);
+        BobOrderStatusResponse response = objectMapper.convertValue(responseMap, BobOrderStatusResponse.class);
+        response.flattenBankPayload();
+        return response;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void logBankStatusDiagnostics(String orderId, Map<String, Object> responseMap) {
+        if (responseMap == null) {
+            log.warn("[BOB][Client] getOrderStatusExtended empty response orderId={}", orderId);
+            return;
+        }
+        Object orderStatus = responseMap.get("orderStatus");
+        Object actionCode = responseMap.get("actionCode");
+        Object actionDesc = responseMap.get("actionCodeDescription");
+        Object errorMessage = responseMap.get("errorMessage");
+        Object bindingId = responseMap.get("bindingId");
+        Object bindingInfo = responseMap.get("bindingInfo");
+        Object cardAuthInfo = responseMap.get("cardAuthInfo");
+        Object authRefNum = responseMap.get("authRefNum");
+        Object rrn = responseMap.get("rrn");
+        boolean hasCardAuth = cardAuthInfo instanceof Map && !((Map<?, ?>) cardAuthInfo).isEmpty();
+        String cardAuthKeys = hasCardAuth ? ((Map<?, ?>) cardAuthInfo).keySet().toString() : "null";
+        String bindingInfoKeys = bindingInfo instanceof Map ? ((Map<?, ?>) bindingInfo).keySet().toString() : String.valueOf(bindingInfo);
+
+        log.info("[BOB][Client] status orderId={} orderStatus={} actionCode={} errorMessage={} rrnPresent={} authRefPresent={} bindingIdPresent={} bindingInfo={} cardAuthInfoKeys={}",
+                orderId, orderStatus, actionCode, errorMessage,
+                rrn != null && !String.valueOf(rrn).isBlank(),
+                authRefNum != null && !String.valueOf(authRefNum).isBlank(),
+                bindingId != null && !String.valueOf(bindingId).isBlank(),
+                bindingInfoKeys, cardAuthKeys);
+        if (actionDesc != null) {
+            log.info("[BOB][Client] status actionCodeDescription={}", actionDesc);
+        }
     }
 
     /**
