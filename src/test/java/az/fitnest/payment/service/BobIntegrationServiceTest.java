@@ -83,7 +83,7 @@ class BobIntegrationServiceTest {
         pending.setTransactionId("BOB_TX");
         pending.setDescription("Test Payment,packageId:10,optionId:20");
         when(paymentStore.createPending(eq(userId), anyString(), eq(25.00), eq("AZN"),
-                anyString(), eq(true), isNull(), isNull())).thenReturn(pending);
+                anyString(), eq(true), isNull(), isNull(), eq("BOB_PAYMENT"))).thenReturn(pending);
 
         Map<String, Object> bankResponse = new HashMap<>();
         bankResponse.put("errorCode", "0");
@@ -120,7 +120,7 @@ class BobIntegrationServiceTest {
         Payment pending = new Payment();
         pending.setDescription("FitNest Saved Card Payment");
         when(paymentStore.createPending(eq(userId), anyString(), eq(15.00), eq("AZN"),
-                anyString(), eq(false), eq(cardId), eq("411111****1111"))).thenReturn(pending);
+                anyString(), eq(false), eq(cardId), eq("411111****1111"), eq("SAVED_CARD"))).thenReturn(pending);
 
         Map<String, Object> registerResp = Map.of("errorCode", "0", "orderId", "ORDER_BIND_123");
         when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(), anyString(), any()))
@@ -198,6 +198,77 @@ class BobIntegrationServiceTest {
                 eq("Ödənişdən imtina edildi (actionCode=-2006)"),
                 eq("-2006"),
                 contains("orderStatus=6"));
+    }
+
+    @Test
+    void testInitiatePayment_InstallmentSetsType() {
+        Long userId = 1L;
+        BobInitiateRequest request = BobInitiateRequest.builder()
+                .packageId(10L)
+                .optionId(20L)
+                .installmentMonths(6)
+                .description("Gold")
+                .build();
+
+        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(10L, 20L))
+                .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(726.00, "AZN", 1));
+        when(paymentStore.buildPackageDescription(10L, 20L, "Gold"))
+                .thenReturn("Gold,packageId:10,optionId:20");
+
+        Payment pending = new Payment();
+        pending.setStatus(BobPaymentStore.STATUS_PENDING);
+        pending.setCurrency("AZN");
+        pending.setDescription("Gold,packageId:10,optionId:20");
+        when(paymentStore.createPending(eq(userId), anyString(), eq(726.00), eq("AZN"),
+                anyString(), eq(false), isNull(), isNull(), eq("BOB_INSTALLMENT"))).thenReturn(pending);
+
+        Map<String, Object> bankResponse = new HashMap<>();
+        bankResponse.put("errorCode", "0");
+        bankResponse.put("orderId", "BOB_ORDER_INST");
+        bankResponse.put("formUrl", "https://epg.bankofbaku.com/payment/page?orderId=BOB_ORDER_INST");
+        when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(), isNull(), eq(6)))
+                .thenReturn(bankResponse);
+
+        BobInitiateResponse response = bobIntegrationService.initiatePayment(userId, request);
+
+        assertEquals("BOB_ORDER_INST", response.getOrderId());
+        verify(paymentStore).createPending(eq(userId), anyString(), eq(726.00), eq("AZN"),
+                anyString(), eq(false), isNull(), isNull(), eq("BOB_INSTALLMENT"));
+        verify(bobRestClient).registerOrder(anyString(), eq(726.00), anyString(), anyString(), anyString(), isNull(), eq(6));
+    }
+
+    @Test
+    void testCheckPaymentStatus_MarksFailedOnDecline() {
+        Payment payment = new Payment();
+        payment.setOrderId("ORDER_DECLINED");
+        payment.setStatus(BobPaymentStore.STATUS_PENDING);
+        payment.setTransactionId("BOB_TX");
+
+        BobOrderStatusResponse statusResponse = BobOrderStatusResponse.builder()
+                .orderStatus(6)
+                .errorCode("0")
+                .errorMessage("Success")
+                .actionCode("-2006")
+                .build();
+
+        when(bobRestClient.getOrderStatusExtended("ORDER_DECLINED")).thenReturn(statusResponse);
+        when(paymentStore.findByOrderIdOrTransactionId("ORDER_DECLINED", "ORDER_DECLINED"))
+                .thenReturn(Optional.of(payment));
+        when(statusMapper.isApproved(6)).thenReturn(false);
+        when(statusMapper.isTerminalFailure(6)).thenReturn(true);
+        when(statusMapper.declineMessage(statusResponse)).thenReturn("Ödənişdən imtina edildi (actionCode=-2006)");
+        when(statusMapper.operationCode(statusResponse)).thenReturn("-2006");
+
+        BobOrderStatusResponse result = bobIntegrationService.checkPaymentStatus("ORDER_DECLINED");
+
+        assertNotNull(result);
+        verify(statusMapper).enrichStatusResponse(statusResponse, payment);
+        verify(paymentStore).markFailed(eq(payment),
+                eq("Ödənişdən imtina edildi (actionCode=-2006)"),
+                eq("-2006"),
+                contains("orderStatus=6"));
+        verify(paymentSubscriptionService, never()).assignFromPaymentDescription(any());
+        verify(bobCardService, never()).checkAndSaveUserCard(any(), any());
     }
 
     @Test

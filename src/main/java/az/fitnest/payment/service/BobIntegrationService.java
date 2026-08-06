@@ -67,6 +67,9 @@ public class BobIntegrationService {
         String description = paymentStore.buildPackageDescription(
                 request.getPackageId(), request.getOptionId(), request.getDescription());
 
+        boolean installment = request.getInstallmentMonths() != null && request.getInstallmentMonths() >= 1;
+        String paymentType = installment ? "BOB_INSTALLMENT" : "BOB_PAYMENT";
+
         Payment payment = paymentStore.createPending(
                 userId,
                 transactionId,
@@ -75,7 +78,8 @@ public class BobIntegrationService {
                 description,
                 Boolean.TRUE.equals(request.getSaveCard()),
                 null,
-                null);
+                null,
+                paymentType);
 
         String callbackUrl = bobProperties.getCallbackUrl();
         String returnUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=success";
@@ -141,7 +145,8 @@ public class BobIntegrationService {
                 "FitNest Saved Card Payment",
                 false,
                 savedCard.getCardId(),
-                savedCard.getCardMask());
+                savedCard.getCardMask(),
+                "SAVED_CARD");
 
         String callbackUrl = bobProperties.getCallbackUrl();
         String returnUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=success";
@@ -256,17 +261,34 @@ public class BobIntegrationService {
     public BobOrderStatusResponse checkPaymentStatus(String orderId) {
         checkMaintenance();
         BobOrderStatusResponse statusResponse = bobRestClient.getOrderStatusExtended(orderId);
+        statusResponse.flattenBankPayload();
 
         Optional<Payment> paymentOpt = paymentStore.findByOrderIdOrTransactionId(orderId, orderId);
         statusMapper.enrichStatusResponse(statusResponse, paymentOpt.orElse(null));
 
-        if (paymentOpt.isPresent() && statusMapper.isApproved(statusResponse.getOrderStatus())) {
+        if (paymentOpt.isPresent()) {
             Payment payment = paymentOpt.get();
-            if (!BobPaymentStore.STATUS_SUCCESS.equals(payment.getStatus())) {
-                paymentStore.markSuccess(payment, statusResponse);
+            if (statusMapper.isApproved(statusResponse.getOrderStatus())) {
+                if (!BobPaymentStore.STATUS_SUCCESS.equals(payment.getStatus())) {
+                    paymentStore.markSuccess(payment, statusResponse);
+                } else {
+                    paymentStore.applyBankCardFields(payment, statusResponse);
+                    paymentStore.save(payment);
+                }
+                bobCardService.checkAndSaveUserCard(payment, statusResponse);
+                paymentSubscriptionService.assignFromPaymentDescription(payment);
+            } else if (statusMapper.isTerminalFailure(statusResponse.getOrderStatus())
+                    && !BobPaymentStore.STATUS_FAILED.equals(payment.getStatus())
+                    && !BobPaymentStore.STATUS_SUCCESS.equals(payment.getStatus())
+                    && !BobPaymentStore.STATUS_REFUNDED.equals(payment.getStatus())) {
+                paymentStore.applyBankCardFields(payment, statusResponse);
+                paymentStore.markFailed(
+                        payment,
+                        statusMapper.declineMessage(statusResponse),
+                        statusMapper.operationCode(statusResponse),
+                        "orderStatus=" + statusResponse.getOrderStatus()
+                                + ",actionCode=" + statusResponse.getActionCode());
             }
-            bobCardService.checkAndSaveUserCard(payment, statusResponse);
-            paymentSubscriptionService.assignFromPaymentDescription(payment);
         }
 
         return statusResponse;

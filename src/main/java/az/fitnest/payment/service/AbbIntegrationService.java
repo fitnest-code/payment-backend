@@ -935,6 +935,7 @@ public class AbbIntegrationService {
             return AbbTransactionActionResponse.builder()
                     .status(paymentStatus)
                     .action(action).rc(rc).approval(approval).rrn(rrn).intRef(intRef).card(maskedCard)
+                    .bank("ABB")
                     .build();
         }
 
@@ -943,19 +944,26 @@ public class AbbIntegrationService {
             brand = "Google Pay";
         } else if ("APPLE_PAY".equals(payment.getType())) {
             brand = "Apple Pay";
-        } else if ("ABB_INSTALLMENT".equals(payment.getType())) {
-            brand = "ABB installment";
-        } else if ("ABB_PAYMENT".equals(payment.getType())) {
-            brand = "ABB";
         } else {
             brand = CardBrandDetector.detectBrand(payment.getCardMask());
+            if (brand == null || brand.isBlank()) {
+                brand = "UNKNOWN";
+            }
         }
 
-        String rawType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
-        String actualType = "Birdəfəlik";
-        if ("AUTO_RENEWAL".equals(rawType)) {
-            actualType = "Avtomatik";
+        String rawType;
+        if (payment.getType() != null && payment.getType().toUpperCase().contains("INSTALLMENT")) {
+            rawType = "INSTALLMENT";
+        } else if (Boolean.TRUE.equals(payment.getAutoPaymentEnabled())) {
+            rawType = "AUTO_RENEWAL";
+        } else {
+            rawType = "ONE_TIME";
         }
+        String actualType = switch (rawType) {
+            case "INSTALLMENT" -> "Taksitli ödəniş";
+            case "AUTO_RENEWAL" -> "Avtomatik";
+            default -> "Birdəfəlik";
+        };
 
         String ownerName = null;
         if (payment.getUserId() != null) {
@@ -984,6 +992,7 @@ public class AbbIntegrationService {
                 .currency(payment.getCurrency())
                 .occurredAt(occurredAtStr)
                 .cardBrand(brand)
+                .bank("ABB")
                 .type(actualType)
                 .owner(ownerName)
                 .description(payment.getDescription())
@@ -1001,14 +1010,25 @@ public class AbbIntegrationService {
             cardBrand = "Apple Pay";
         } else {
             cardBrand = CardBrandDetector.detectBrand(payment.getCardMask());
+            if (cardBrand == null || cardBrand.isBlank()) {
+                cardBrand = "UNKNOWN";
+            }
         }
         String bank = "ABB";
 
-        String rawType = Boolean.TRUE.equals(payment.getAutoPaymentEnabled()) ? "AUTO_RENEWAL" : "ONE_TIME";
-        String actualType = "Birdəfəlik";
-        if ("AUTO_RENEWAL".equals(rawType)) {
-            actualType = "Avtomatik";
+        String rawType;
+        if (payment.getType() != null && payment.getType().toUpperCase().contains("INSTALLMENT")) {
+            rawType = "INSTALLMENT";
+        } else if (Boolean.TRUE.equals(payment.getAutoPaymentEnabled())) {
+            rawType = "AUTO_RENEWAL";
+        } else {
+            rawType = "ONE_TIME";
         }
+        String actualType = switch (rawType) {
+            case "INSTALLMENT" -> "Taksitli ödəniş";
+            case "AUTO_RENEWAL" -> "Avtomatik";
+            default -> "Birdəfəlik";
+        };
 
         String ownerName = null;
         if (payment.getUserId() != null) {

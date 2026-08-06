@@ -29,6 +29,13 @@ public class BobStatusMapper {
         return toBobStatus(orderStatus) == BobPaymentStatus.APPROVED;
     }
 
+    /** Terminal failure states that should mark the payment FAILED in our DB. */
+    public boolean isTerminalFailure(Integer orderStatus) {
+        BobPaymentStatus status = toBobStatus(orderStatus);
+        return status == BobPaymentStatus.DECLINED
+                || status == BobPaymentStatus.REVERSED;
+    }
+
     /**
      * Human-readable decline reason. Never returns bare API "Success" when payment failed.
      */
@@ -75,12 +82,21 @@ public class BobStatusMapper {
             return;
         }
 
+        statusResponse.flattenBankPayload();
+
+        // errorCode/errorMessage="Success" only means the status API call succeeded —
+        // not that the payment was approved. Replace misleading Success on declines.
+        if (isTerminalFailure(statusResponse.getOrderStatus())
+                && isGenericSuccess(statusResponse.getErrorMessage())) {
+            statusResponse.setErrorMessage(declineMessage(statusResponse));
+        }
+
         String rrn = statusResponse.getRrn();
         if (rrn == null || rrn.isBlank()) {
             rrn = statusResponse.getAuthRefNum();
         }
-        if ((rrn == null || rrn.isBlank()) && payment != null) {
-            rrn = payment.getTransactionId();
+        if ((rrn == null || rrn.isBlank()) && payment != null && payment.getRrn() != null) {
+            rrn = payment.getRrn();
         }
         statusResponse.setRrn(rrn);
 
@@ -100,10 +116,28 @@ public class BobStatusMapper {
         }
         statusResponse.setCardMask(cardMask);
 
-        String cardBrand = CardBrandDetector.detectBrand(cardMask);
-        statusResponse.setCardBrand(cardBrand != null ? cardBrand : "UNKNOWN");
+        if ((statusResponse.getCardholderName() == null || statusResponse.getCardholderName().isBlank())
+                && payment != null && payment.getCardName() != null) {
+            statusResponse.setCardholderName(payment.getCardName());
+        }
+
+        if ((statusResponse.getApprovalCode() == null || statusResponse.getApprovalCode().isBlank())
+                && payment != null && payment.getCode() != null) {
+            statusResponse.setApprovalCode(payment.getCode());
+        }
+
+        statusResponse.setCardBrand(resolveCardBrand(statusResponse, cardMask));
         statusResponse.setBank("Bank of Baku");
         statusResponse.setType(resolvePaymentTypeLabel(payment));
+    }
+
+    public String resolveCardBrand(BobOrderStatusResponse statusResponse, String cardMask) {
+        String paymentSystem = statusResponse != null ? statusResponse.getResolvedPaymentSystem() : null;
+        if (paymentSystem != null && !paymentSystem.isBlank()) {
+            return normalizePaymentSystem(paymentSystem);
+        }
+        String detected = CardBrandDetector.detectBrand(cardMask);
+        return detected != null ? detected : "UNKNOWN";
     }
 
     public String resolvePaymentTypeLabel(Payment payment) {
@@ -126,8 +160,25 @@ public class BobStatusMapper {
         return "Birdəfəlik";
     }
 
+    private static String normalizePaymentSystem(String paymentSystem) {
+        String upper = paymentSystem.trim().toUpperCase();
+        if (upper.contains("VISA")) {
+            return "VISA";
+        }
+        if (upper.contains("MASTER")) {
+            return "MASTERCARD";
+        }
+        if (upper.contains("AMEX") || upper.contains("AMERICAN")) {
+            return "AMEX";
+        }
+        if (upper.contains("DISCOVER")) {
+            return "DISCOVER";
+        }
+        return upper;
+    }
+
     private static boolean isGenericSuccess(String value) {
-        return "success".equalsIgnoreCase(value.trim());
+        return value != null && "success".equalsIgnoreCase(value.trim());
     }
 
     private static String formatTimestampOrString(String rawDate) {

@@ -6,6 +6,7 @@ import az.fitnest.payment.exception.BobPaymentException;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.entity.UserCard;
 import az.fitnest.payment.repository.UserCardRepository;
+import az.fitnest.payment.util.CardBrandDetector;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -57,14 +58,19 @@ public class BobCardService {
             return;
         }
 
-        String bindingId = statusResponse != null ? statusResponse.getResolvedBindingId() : null;
         boolean saveRequested = Boolean.TRUE.equals(payment.getAutoPaymentEnabled());
-
-        if ((bindingId == null || bindingId.isBlank()) && saveRequested) {
-            bindingId = "BOB_BIND_" + payment.getOrderId();
+        if (!saveRequested) {
+            return;
         }
 
+        if (statusResponse != null) {
+            statusResponse.flattenBankPayload();
+        }
+
+        String bindingId = statusResponse != null ? statusResponse.getResolvedBindingId() : null;
         if (bindingId == null || bindingId.isBlank()) {
+            log.warn("[BOB][Card] saveCard requested but bank returned no bindingId for orderId={}",
+                    payment.getOrderId());
             return;
         }
 
@@ -76,11 +82,30 @@ public class BobCardService {
                 && !statusResponse.getCardholderName().isBlank()
                 ? statusResponse.getCardholderName()
                 : "Bank of Baku Card";
+        String brand = resolveBrand(statusResponse, cardMask);
 
-        saveUserCard(payment.getUserId(), bindingId, cardMask, cardName);
+        saveUserCard(payment.getUserId(), bindingId, cardMask, cardName, brand);
     }
 
-    private void saveUserCard(Long userId, String bindingId, String cardMask, String cardName) {
+    private static String resolveBrand(BobOrderStatusResponse statusResponse, String cardMask) {
+        if (statusResponse != null) {
+            String paymentSystem = statusResponse.getResolvedPaymentSystem();
+            if (paymentSystem != null && !paymentSystem.isBlank()) {
+                String upper = paymentSystem.trim().toUpperCase();
+                if (upper.contains("VISA")) {
+                    return "VISA";
+                }
+                if (upper.contains("MASTER")) {
+                    return "MASTERCARD";
+                }
+                return upper;
+            }
+        }
+        String detected = CardBrandDetector.detectBrand(cardMask);
+        return detected != null && !"UNKNOWN".equalsIgnoreCase(detected) ? detected : "UNKNOWN";
+    }
+
+    private void saveUserCard(Long userId, String bindingId, String cardMask, String cardName, String brand) {
         try {
             Optional<UserCard> existing = userCardRepository.findByUserIdAndCardId(userId, bindingId);
             if (existing.isEmpty()) {
@@ -89,11 +114,11 @@ public class BobCardService {
                         .cardId(bindingId)
                         .cardMask(cardMask != null ? cardMask : "**** **** **** ****")
                         .cardName(cardName != null ? cardName : "Bank Card")
-                        .brand("Bank of Baku")
+                        .brand(brand != null ? brand : "UNKNOWN")
                         .reccPmntId(bindingId)
                         .build();
                 userCardRepository.save(userCard);
-                log.info("[BOB][Card] Saved binding userId={}, bindingId={}", userId, bindingId);
+                log.info("[BOB][Card] Saved binding userId={}, bindingId={}, brand={}", userId, bindingId, brand);
             }
         } catch (Exception e) {
             log.error("[BOB][Card] Failed to save binding userId={}, bindingId={}", userId, bindingId, e);

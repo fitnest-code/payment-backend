@@ -45,6 +45,13 @@ public class BobOrderStatusResponse {
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private BindingInfo bindingInfo;
 
+    /**
+     * SmartVista nests pan / cardholder / approval / paymentSystem under cardAuthInfo.
+     * Flattened into root fields before returning to clients.
+     */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private CardAuthInfo cardAuthInfo;
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -52,6 +59,19 @@ public class BobOrderStatusResponse {
     public static class BindingInfo {
         private String clientId;
         private String bindingId;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class CardAuthInfo {
+        private String pan;
+        private String expiration;
+        private String cardholderName;
+        private String paymentSystem;
+        private String approvalCode;
+        private String authorizationResponseId;
     }
 
     /** Internal helper for card save — not part of API response. */
@@ -64,6 +84,47 @@ public class BobOrderStatusResponse {
             return bindingInfo.getBindingId();
         }
         return null;
+    }
+
+    /** Payment network from cardAuthInfo (VISA, MASTERCARD, …). */
+    @JsonIgnore
+    public String getResolvedPaymentSystem() {
+        if (cardAuthInfo == null) {
+            return null;
+        }
+        String ps = cardAuthInfo.getPaymentSystem();
+        return ps != null && !ps.isBlank() ? ps.trim() : null;
+    }
+
+    /**
+     * Copies nested cardAuthInfo / binding fields onto root DTO fields used by the API.
+     */
+    public void flattenBankPayload() {
+        if (cardAuthInfo != null) {
+            if (isBlank(pan) && !isBlank(cardAuthInfo.getPan())) {
+                pan = cardAuthInfo.getPan();
+            }
+            if (isBlank(cardholderName) && !isBlank(cardAuthInfo.getCardholderName())) {
+                cardholderName = cardAuthInfo.getCardholderName();
+            }
+            if (isBlank(approvalCode)) {
+                if (!isBlank(cardAuthInfo.getApprovalCode())) {
+                    approvalCode = cardAuthInfo.getApprovalCode();
+                } else if (!isBlank(cardAuthInfo.getAuthorizationResponseId())) {
+                    approvalCode = cardAuthInfo.getAuthorizationResponseId();
+                }
+            }
+        }
+        if (isBlank(rrn) && !isBlank(authRefNum)) {
+            rrn = authRefNum;
+        }
+        if (isBlank(bindingId) && bindingInfo != null && !isBlank(bindingInfo.getBindingId())) {
+            bindingId = bindingInfo.getBindingId();
+        }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)

@@ -611,16 +611,22 @@ public class UserPaymentService {
             cardBrand = "Apple Pay";
         } else {
             cardBrand = CardBrandDetector.detectBrand(payment.getCardMask());
+            // Do not fall back to provider/bank name — cardBrand must be a network (VISA/MC/…).
             if ("UNKNOWN".equalsIgnoreCase(cardBrand)) {
-                if (payment.getProvider() != null && !payment.getProvider().isBlank()) {
-                    String p = payment.getProvider();
-                    cardBrand = ("BOB".equalsIgnoreCase(p) || "BOB_PAYMENT".equalsIgnoreCase(p) || "BANK_OF_BAKU".equalsIgnoreCase(p)) ? "Bank of Baku" : p;
-                }
+                cardBrand = "UNKNOWN";
             }
         }
 
         String bank = detectBank(payment.getProvider(), payment.getCardMask());
-
+        if (bank == null || bank.isBlank()) {
+            if ("BOB".equalsIgnoreCase(payment.getProvider())) {
+                bank = "Bank of Baku";
+            } else if ("ABB".equalsIgnoreCase(payment.getProvider())) {
+                bank = "ABB";
+            } else if (payment.getProvider() != null) {
+                bank = payment.getProvider();
+            }
+        }
         String typeVal = payment.getType();
         String rawType;
         if (typeVal != null && (typeVal.toUpperCase().contains("INSTALLMENT") || "BOB_INSTALLMENT".equalsIgnoreCase(typeVal) || "ABB_INSTALLMENT".equalsIgnoreCase(typeVal))) {

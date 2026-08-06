@@ -40,6 +40,20 @@ public class BobPaymentStore {
                                  boolean autoPaymentEnabled,
                                  String cardId,
                                  String cardMask) {
+        return createPending(userId, transactionId, amount, currency, description,
+                autoPaymentEnabled, cardId, cardMask, "BOB_PAYMENT");
+    }
+
+    @Transactional
+    public Payment createPending(Long userId,
+                                 String transactionId,
+                                 Double amount,
+                                 String currency,
+                                 String description,
+                                 boolean autoPaymentEnabled,
+                                 String cardId,
+                                 String cardMask,
+                                 String type) {
         Payment payment = new Payment();
         payment.setUserId(userId);
         payment.setProvider(PROVIDER_BOB);
@@ -50,6 +64,7 @@ public class BobPaymentStore {
         payment.setDescription(description);
         payment.setCallbackProcessed(false);
         payment.setAutoPaymentEnabled(autoPaymentEnabled);
+        payment.setType(type != null && !type.isBlank() ? type : "BOB_PAYMENT");
         if (cardId != null) {
             payment.setCardId(cardId);
         }
@@ -121,6 +136,8 @@ public class BobPaymentStore {
         if (statusResponse == null) {
             return;
         }
+        statusResponse.flattenBankPayload();
+
         String rrn = statusResponse.getRrn();
         if (rrn == null || rrn.isBlank()) {
             rrn = statusResponse.getAuthRefNum();
@@ -133,6 +150,9 @@ public class BobPaymentStore {
         }
         if (statusResponse.getCardholderName() != null && !statusResponse.getCardholderName().isBlank()) {
             payment.setCardName(statusResponse.getCardholderName());
+        }
+        if (statusResponse.getApprovalCode() != null && !statusResponse.getApprovalCode().isBlank()) {
+            payment.setCode(statusResponse.getApprovalCode());
         }
     }
 
