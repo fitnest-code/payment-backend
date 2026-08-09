@@ -179,6 +179,31 @@ abb:
   # Inteqrasiya tamamlandıqdan sonra ABB_MAINTENANCE_MODE=false set edin
   maintenance-mode: ${ABB_MAINTENANCE_MODE:true}
 
+# ABB BNPL (Buy Now Pay Later) External API — separate from Azericard abb: block
+abb-bnpl:
+  # Test auth: https://test-id.abb-bank.az/realms/partner/protocol/openid-connect/token
+  # Prod auth: https://id.abb-bank.az/realms/abb-partners/protocol/openid-connect/token
+  auth-url: ${ABB_BNPL_AUTH_URL:https://test-id.abb-bank.az/realms/partner/protocol/openid-connect/token}
+  # Test API: https://api-test.abb-bank.az
+  # Prod API: https://api.abb-bank.az
+  api-base-url: ${ABB_BNPL_API_BASE_URL:https://api-test.abb-bank.az}
+  client-id: ${ABB_BNPL_CLIENT_ID:}
+  # RSA private key for Private Key JWT (RS256, min 2048-bit). Public key is sent to ABB.
+  private-key: ${ABB_BNPL_PRIVATE_KEY:}
+  # Optional JWT aud override; defaults to auth-url
+  token-audience: ${ABB_BNPL_TOKEN_AUDIENCE:}
+  scope: ${ABB_BNPL_SCOPE:openid}
+  timeout-ms: ${ABB_BNPL_TIMEOUT_MS:10000}
+  # Credentials FitNest provides to ABB for inbound callbacks (Basic Auth)
+  callback-username: ${ABB_BNPL_CALLBACK_USERNAME:}
+  callback-password: ${ABB_BNPL_CALLBACK_PASSWORD:}
+  # Optional HMAC secret for X-Signature (algorithm pending ABB clarification)
+  callback-hmac-secret: ${ABB_BNPL_CALLBACK_HMAC_SECRET:}
+  active-terms: ${ABB_BNPL_ACTIVE_TERMS:1,3,4,6,9,12,18,24}
+  default-product-name: ${ABB_BNPL_DEFAULT_PRODUCT_NAME:FitNest Abunəlik}
+  # Keep true until ABB onboarding (keys, IP whitelist, callback) is complete
+  maintenance-mode: ${ABB_BNPL_MAINTENANCE_MODE:true}
+
 # Bank of Baku (SmartVista EPG) Configuration
 bob:
   gateway-url: ${BOB_GATEWAY_URL:https://3ds2.bankofbaku.com/epg/rest}

@@ -31,6 +31,9 @@ public final class PaymentTypeLabels {
     public static String rawTypeKey(String paymentType, Boolean autoPaymentEnabled) {
         if (paymentType != null) {
             String t = paymentType.toUpperCase();
+            if (t.contains("BNPL")) {
+                return "BNPL";
+            }
             if (t.contains("INSTALLMENT")) {
                 return "INSTALLMENT";
             }
@@ -96,6 +99,11 @@ public final class PaymentTypeLabels {
                 case "RU" -> "Рассрочка";
                 case "EN" -> "Installment";
                 default -> "Taksitli ödəniş";
+            };
+            case "BNPL", "ABB_BNPL" -> switch (l) {
+                case "RU" -> "Рассрочка ABB (BNPL)";
+                case "EN" -> "ABB Pay Later";
+                default -> "ABB ilə hissə-hissə ödə";
             };
             default -> humanize(key);
         };
