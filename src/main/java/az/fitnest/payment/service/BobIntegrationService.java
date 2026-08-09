@@ -101,6 +101,22 @@ public class BobIntegrationService {
                 : "0";
         String errorMessage = (String) bankResponse.get("errorMessage");
 
+        // Əgər bank hesabı tərəfindən kart saxlama (clientId / Features are invalid) aktiv olunmayıbsa, clientId olmadan yenidən cəhd edirik
+        if (("14".equals(errorCode) || (errorMessage != null && errorMessage.toLowerCase().contains("features"))) && clientId != null) {
+            log.warn("[BOB][Service] Bank of Baku merchant profile fitnest_api does not have binding (clientId) feature enabled yet (errorCode: {}). Retrying registerOrder without clientId...", errorCode);
+            bankResponse = bobRestClient.registerOrder(
+                    transactionId,
+                    priceCurrency.amount,
+                    payment.getDescription(),
+                    returnUrl,
+                    failUrl,
+                    null,
+                    request.getInstallmentMonths()
+            );
+            errorCode = bankResponse.get("errorCode") != null ? String.valueOf(bankResponse.get("errorCode")) : "0";
+            errorMessage = (String) bankResponse.get("errorMessage");
+        }
+
         if (!"0".equals(errorCode)) {
             log.error("[BOB] Register order failed: errorCode={}, errorMessage={}", errorCode, errorMessage);
             paymentStore.markFailed(payment, errorMessage, errorCode, String.valueOf(bankResponse));
