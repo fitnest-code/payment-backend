@@ -143,7 +143,7 @@ public class UserPaymentService {
                     if ("SUCCESS".equalsIgnoreCase(status)) status = "Uğurlu";
                     else if ("FAILED".equalsIgnoreCase(status)) status = "Uğursuz";
                     else if ("PENDING".equalsIgnoreCase(status)) status = "Gözləmədə";
-                    else if ("PENDING_USER_ACTION".equalsIgnoreCase(status)) status = "Gözləmədə";
+                    else if ("PENDING_USER_ACTION".equalsIgnoreCase(status)) status = "Natamam ödəniş";
                     else if ("REVERSED".equalsIgnoreCase(status)) status = "Geri qaytarıldı";
                     else if ("REFUNDED".equalsIgnoreCase(status)) status = "İadə edildi";
                     else if (status != null) {
@@ -499,9 +499,9 @@ public class UserPaymentService {
                 return "Gözləmədə";
 
             case "PENDING_USER_ACTION":
-                if ("RU".equals(l)) return "Ожидание действия пользователя";
-                if ("EN".equals(l)) return "Pending User Action";
-                return "İstifadəçi fəaliyyəti gözlənilir";
+                if ("RU".equals(l)) return "Незавершенная оплата";
+                if ("EN".equals(l)) return "Incomplete payment";
+                return "Natamam ödəniş";
 
             case "CANCELLED":
             case "CANCELED":

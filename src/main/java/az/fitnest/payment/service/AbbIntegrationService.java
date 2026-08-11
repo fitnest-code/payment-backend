@@ -1063,7 +1063,8 @@ public class AbbIntegrationService {
         return switch (status) {
             case "SUCCESS" -> "Uğurlu";
             case "FAILED" -> "Uğursuz";
-            case "PENDING", "PENDING_USER_ACTION" -> "Gözləmədə";
+            case "PENDING" -> "Gözləmədə";
+            case "PENDING_USER_ACTION" -> "Natamam ödəniş";
             default -> status;
         };
     }
