@@ -91,7 +91,7 @@ class BobIntegrationServiceTest {
         bankResponse.put("errorCode", "0");
         bankResponse.put("orderId", "BOB_ORDER_123");
         bankResponse.put("formUrl", "https://epg.bankofbaku.com/payment/page?orderId=BOB_ORDER_123");
-        when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(), anyString(), any()))
+        when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(), nullable(String.class), any()))
                 .thenReturn(bankResponse);
 
         BobInitiateResponse response = bobIntegrationService.initiatePayment(userId, request);
