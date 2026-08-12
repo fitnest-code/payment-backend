@@ -85,11 +85,9 @@ public class BobIntegrationService {
         String callbackUrl = bobProperties.getCallbackUrl();
         String returnUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=success";
         String failUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=fail";
-        // QEYD: Bank of Baku merchant hesabı (fitnest_api) epg portalında kart saxlama (BINDING) funksiyasını
-        // hələ aktiv etmədiyi üçün clientId ötürüldükdə SmartVista errorCode 14 (Features are invalid) qaytarır.
-        // İstifadəçinin abunəliyinin və ödənişinin rəvan keçməsi üçün registerOrder sorğusunda clientId = null ötürürük,
-        // lakin istifadəçi istəyi (autoPaymentEnabled) bazada ruyd olunaraq qorunur.
-        String clientId = null;
+        // Bank of Baku (fitnest_api) üçün Binding/Card Storage funksiyası aktiv olduğu üçün
+        // saveCard=true olduqda clientId göndəririk ki, bank kartı yadda saxlasın.
+        String clientId = Boolean.TRUE.equals(request.getSaveCard()) ? String.valueOf(userId) : null;
 
         Map<String, Object> bankResponse = bobRestClient.registerOrder(
                 transactionId,
