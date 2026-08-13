@@ -278,12 +278,12 @@ grpc:
 
 logging:
   level:
-    root: INFO
-    com.fitnest: DEBUG
-    org.springframework.web: DEBUG
-    org.springframework.security: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
-    az.fitnest.payment: DEBUG
+    root: WARN
+    com.fitnest: WARN
+    org.springframework.web: WARN
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    az.fitnest.payment: WARN
   file:
     name: logs/payment-backend.log   # ✅ Updated log file name
