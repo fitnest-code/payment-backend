@@ -84,9 +84,10 @@ public class BobRestClient {
             params.put("jsonParams", "{\"taxit\":" + installmentMonths + "}");
         }
 
-        log.info("[BOB][Client] register.do orderNumber={}, amountQepik={}, clientIdPresent={}, features={}, installmentMonths={}",
+        log.warn("[BOB][Client] register.do orderNumber={}, amountQepik={}, clientIdPresent={}, features={}, installmentMonths={}",
                 orderNumber, amountInQepik, clientId != null && !clientId.isBlank(),
                 params.get("features"), installmentMonths);
+        log.warn("[BOB][Client] register.do request params={}", maskParams(params));
 
         return sendFormRequest(endpoint, params);
     }
@@ -222,6 +223,21 @@ public class BobRestClient {
         return base + path;
     }
 
+    private Map<String, String> maskParams(Map<String, String> params) {
+        Map<String, String> masked = new HashMap<>(params);
+        if (masked.containsKey("password")) {
+            masked.put("password", "***");
+        }
+        return masked;
+    }
+
+    private String maskSensitiveBody(String requestBody) {
+        if (requestBody == null || requestBody.isBlank()) {
+            return requestBody;
+        }
+        return requestBody.replaceAll("(?i)(password=)[^&]*", "$1***");
+    }
+
     private String getCurrencyCode(String currencyStr) {
         if (currencyStr == null || currencyStr.equalsIgnoreCase("AZN")) {
             return "944";
@@ -246,8 +262,11 @@ public class BobRestClient {
                 }
             }
             String requestBody = sj.toString();
+            String maskedBody = maskSensitiveBody(requestBody);
 
-            log.info("[BOB][Client] Sending POST request to endpoint: {}", endpoint);
+            if (endpoint.contains("register.do")) {
+                log.warn("[BOB][Client] Sending POST request to endpoint: {}, body={}", endpoint, maskedBody);
+            }
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint))
@@ -258,12 +277,24 @@ public class BobRestClient {
 
             HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
 
+            if (endpoint.contains("register.do")) {
+                log.warn("[BOB][Client] Response from {}: status={}, body={}",
+                        endpoint, response.statusCode(), response.body());
+            }
+
             if (response.statusCode() != 200) {
-                log.error("[BOB][Client] HTTP Error response: status={}, body={}", response.statusCode(), response.body());
+                log.error("[BOB][Client] HTTP Error response: status={}, requestBody={}, body={}",
+                        response.statusCode(), maskedBody, response.body());
                 throw new BobPaymentException("BOB_HTTP_ERROR", "Bank of Baku HTTP xətası: status " + response.statusCode());
             }
 
-            return objectMapper.readValue(response.body(), Map.class);
+            Map<String, Object> responseMap = objectMapper.readValue(response.body(), Map.class);
+            Object errorCode = responseMap.get("errorCode");
+            if (errorCode != null && !"0".equals(String.valueOf(errorCode))) {
+                log.error("[BOB][Client] Bank error from {}: errorCode={}, requestBody={}, responseBody={}",
+                        endpoint, errorCode, maskedBody, response.body());
+            }
+            return responseMap;
         } catch (BobPaymentException bpe) {
             throw bpe;
         } catch (Exception e) {

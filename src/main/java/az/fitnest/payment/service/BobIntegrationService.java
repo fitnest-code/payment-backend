@@ -104,7 +104,8 @@ public class BobIntegrationService {
         String errorMessage = (String) bankResponse.get("errorMessage");
 
         if (!"0".equals(errorCode)) {
-            log.error("[BOB] Register order failed: errorCode={}, errorMessage={}", errorCode, errorMessage);
+            log.error("[BOB] Register order failed: errorCode={}, errorMessage={}, saveCard={}, clientIdPresent={}, bankResponse={}",
+                    errorCode, errorMessage, Boolean.TRUE.equals(request.getSaveCard()), clientId != null, bankResponse);
             paymentStore.markFailed(payment, errorMessage, errorCode, String.valueOf(bankResponse));
             throw new BobPaymentException(errorCode,
                     "Bank of Baku ödəniş qeydiyyatı uğursuz oldu: " + errorMessage);
