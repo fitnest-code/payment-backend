@@ -151,23 +151,33 @@ public class BobRestClient {
         Object actionCode = responseMap.get("actionCode");
         Object actionDesc = responseMap.get("actionCodeDescription");
         Object errorMessage = responseMap.get("errorMessage");
+        Object errorCode = responseMap.get("errorCode");
         Object bindingId = responseMap.get("bindingId");
         Object bindingInfo = responseMap.get("bindingInfo");
         Object cardAuthInfo = responseMap.get("cardAuthInfo");
+        Object paymentAmountInfo = responseMap.get("paymentAmountInfo");
         Object authRefNum = responseMap.get("authRefNum");
         Object rrn = responseMap.get("rrn");
-        boolean hasCardAuth = cardAuthInfo instanceof Map && !((Map<?, ?>) cardAuthInfo).isEmpty();
-        String cardAuthKeys = hasCardAuth ? ((Map<?, ?>) cardAuthInfo).keySet().toString() : "null";
-        String bindingInfoKeys = bindingInfo instanceof Map ? ((Map<?, ?>) bindingInfo).keySet().toString() : String.valueOf(bindingInfo);
+        Object pan = null;
+        Object paymentSystem = null;
+        if (cardAuthInfo instanceof Map<?, ?> cardAuth) {
+            pan = cardAuth.get("pan");
+            paymentSystem = cardAuth.get("paymentSystem");
+        }
+        Object paymentState = paymentAmountInfo instanceof Map<?, ?> amountInfo
+                ? amountInfo.get("paymentState")
+                : null;
+        Object bindingInfoId = bindingInfo instanceof Map<?, ?> info
+                ? info.get("bindingId")
+                : bindingInfo;
 
-        log.info("[BOB][Client] status orderId={} orderStatus={} actionCode={} errorMessage={} rrnPresent={} authRefPresent={} bindingIdPresent={} bindingInfo={} cardAuthInfoKeys={}",
-                orderId, orderStatus, actionCode, errorMessage,
-                rrn != null && !String.valueOf(rrn).isBlank(),
-                authRefNum != null && !String.valueOf(authRefNum).isBlank(),
-                bindingId != null && !String.valueOf(bindingId).isBlank(),
-                bindingInfoKeys, cardAuthKeys);
-        if (actionDesc != null) {
-            log.info("[BOB][Client] status actionCodeDescription={}", actionDesc);
+        log.warn("[BOB][Client] status orderId={} errorCode={} errorMessage={} orderStatus={} actionCode={} actionCodeDescription={} paymentState={} paymentSystem={} pan={} rrn={} authRefNum={} bindingId={} bindingInfoId={}",
+                orderId, errorCode, errorMessage, orderStatus, actionCode, actionDesc, paymentState,
+                paymentSystem, pan, rrn, authRefNum, bindingId, bindingInfoId);
+        try {
+            log.warn("[BOB][Client] status rawBody orderId={} {}", orderId, objectMapper.writeValueAsString(responseMap));
+        } catch (Exception e) {
+            log.warn("[BOB][Client] status rawBody serialize failed orderId={}: {}", orderId, responseMap);
         }
     }
 
@@ -264,9 +274,7 @@ public class BobRestClient {
             String requestBody = sj.toString();
             String maskedBody = maskSensitiveBody(requestBody);
 
-            if (endpoint.contains("register.do")) {
-                log.warn("[BOB][Client] Sending POST request to endpoint: {}, body={}", endpoint, maskedBody);
-            }
+            log.warn("[BOB][Client] Sending POST request to endpoint: {}, body={}", endpoint, maskedBody);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint))
@@ -277,10 +285,8 @@ public class BobRestClient {
 
             HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
 
-            if (endpoint.contains("register.do")) {
-                log.warn("[BOB][Client] Response from {}: status={}, body={}",
-                        endpoint, response.statusCode(), response.body());
-            }
+            log.warn("[BOB][Client] Response from {}: status={}, body={}",
+                    endpoint, response.statusCode(), response.body());
 
             if (response.statusCode() != 200) {
                 log.error("[BOB][Client] HTTP Error response: status={}, requestBody={}, body={}",

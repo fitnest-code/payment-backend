@@ -55,8 +55,9 @@ public class BobIntegrationService {
     public BobInitiateResponse initiatePayment(Long userId, BobInitiateRequest request) {
         checkMaintenance();
 
-        log.info("[BOB] Initiating payment userId={}, packageId={}, optionId={}",
-                userId, request.getPackageId(), request.getOptionId());
+        log.warn("[BOB] Initiating payment userId={}, packageId={}, optionId={}, saveCard={}, installmentMonths={}",
+                userId, request.getPackageId(), request.getOptionId(),
+                request.getSaveCard(), request.getInstallmentMonths());
 
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(
                 request.getPackageId(), request.getOptionId());
@@ -115,7 +116,8 @@ public class BobIntegrationService {
         String formUrl = (String) bankResponse.get("formUrl");
         paymentStore.markRegistered(payment, orderId, formUrl);
 
-        log.info("[BOB] Payment registered orderId={}, formUrl={}", orderId, formUrl);
+        log.warn("[BOB] Payment registered orderId={}, formUrl={}, saveCard={}",
+                orderId, formUrl, Boolean.TRUE.equals(request.getSaveCard()));
 
         return BobInitiateResponse.builder()
                 .orderId(orderId)
@@ -204,7 +206,7 @@ public class BobIntegrationService {
 
     @Transactional
     public String processCallback(String orderNumber, String orderIdFromBank) {
-        log.info("[BOB][Callback] Processing orderNumber={}, orderId={}", orderNumber, orderIdFromBank);
+        log.warn("[BOB][Callback] Processing orderNumber={}, orderId={}", orderNumber, orderIdFromBank);
 
         Optional<Payment> paymentOpt = paymentStore.findByOrderIdOrTransactionId(orderIdFromBank, orderNumber);
         if (paymentOpt.isEmpty()) {
@@ -215,7 +217,8 @@ public class BobIntegrationService {
         Payment payment = paymentOpt.get();
 
         if (Boolean.TRUE.equals(payment.getCallbackProcessed())) {
-            log.info("[BOB][Callback] Already processed orderId={}", payment.getOrderId());
+            log.warn("[BOB][Callback] Already processed orderId={} dbStatus={}",
+                    payment.getOrderId(), payment.getStatus());
             return BobPaymentStore.STATUS_SUCCESS.equalsIgnoreCase(payment.getStatus())
                     ? bobProperties.getSuccessRedirectUrl()
                     : bobProperties.getErrorRedirectUrl();
@@ -233,12 +236,12 @@ public class BobIntegrationService {
             BobOrderStatusResponse statusResponse = bobRestClient.getOrderStatusExtended(payment.getOrderId());
             BobPaymentStatus bobStatus = statusMapper.toBobStatus(statusResponse.getOrderStatus());
 
-            log.info("[BOB][Callback] SmartVista orderStatus={}, actionCode={}, bindingIdPresent={}, panPresent={}, saveCard={}",
-                    statusResponse.getOrderStatus(),
-                    statusResponse.getActionCode(),
-                    statusResponse.getResolvedBindingId() != null,
-                    statusResponse.getPan() != null && !statusResponse.getPan().isBlank(),
-                    Boolean.TRUE.equals(payment.getAutoPaymentEnabled()));
+            log.warn("[BOB][Callback] SmartVista mappedStatus={} saveCard={} userId={} tx={} {}",
+                    bobStatus,
+                    Boolean.TRUE.equals(payment.getAutoPaymentEnabled()),
+                    payment.getUserId(),
+                    payment.getTransactionId(),
+                    bankStatusSummary(statusResponse));
 
             paymentStore.applyBankCardFields(payment, statusResponse);
             payment.setCallbackProcessed(true);
@@ -252,17 +255,21 @@ public class BobIntegrationService {
                 paymentStore.save(payment);
                 bobCardService.checkAndSaveUserCard(payment, statusResponse);
                 paymentSubscriptionService.assignFromPaymentDescription(payment);
-                log.info("[BOB][Callback] SUCCESS orderId={}", payment.getOrderId());
+                log.warn("[BOB][Callback] SUCCESS orderId={} bindingId={} rrn={}",
+                        payment.getOrderId(),
+                        statusResponse.getResolvedBindingId(),
+                        statusResponse.getRrn());
                 return bobProperties.getSuccessRedirectUrl();
             }
 
+            String declineMessage = statusMapper.declineMessage(statusResponse);
             paymentStore.markFailed(
                     payment,
-                    statusMapper.declineMessage(statusResponse),
+                    declineMessage,
                     statusMapper.operationCode(statusResponse),
-                    "orderStatus=" + statusResponse.getOrderStatus()
-                            + ",actionCode=" + statusResponse.getActionCode());
-            log.warn("[BOB][Callback] FAILED orderId={}", payment.getOrderId());
+                    bankStatusSummary(statusResponse));
+            log.warn("[BOB][Callback] FAILED orderId={} mappedStatus={} declineMessage={} {}",
+                    payment.getOrderId(), bobStatus, declineMessage, bankStatusSummary(statusResponse));
             return bobProperties.getErrorRedirectUrl();
         } finally {
             redisTemplate.delete(redisLockKey);
@@ -279,14 +286,13 @@ public class BobIntegrationService {
         String lang = resolveLanguage(paymentOpt.map(Payment::getUserId).orElse(null));
         statusMapper.enrichStatusResponse(statusResponse, paymentOpt.orElse(null), lang);
 
-        log.info("[BOB][Status] orderId={} orderStatus={} type={} lang={} saveCard={} bindingIdPresent={} cardMaskPresent={}",
+        log.warn("[BOB][Status] orderId={} dbStatus={} type={} lang={} saveCard={} {}",
                 orderId,
-                statusResponse.getOrderStatus(),
+                paymentOpt.map(Payment::getStatus).orElse(null),
                 statusResponse.getType(),
                 lang,
                 paymentOpt.map(Payment::getAutoPaymentEnabled).orElse(null),
-                statusResponse.getResolvedBindingId() != null,
-                statusResponse.getCardMask() != null && !statusResponse.getCardMask().isBlank());
+                bankStatusSummary(statusResponse));
 
         if (paymentOpt.isPresent()) {
             Payment payment = paymentOpt.get();
@@ -313,8 +319,7 @@ public class BobIntegrationService {
                         payment,
                         statusMapper.declineMessage(statusResponse),
                         statusMapper.operationCode(statusResponse),
-                        "orderStatus=" + statusResponse.getOrderStatus()
-                                + ",actionCode=" + statusResponse.getActionCode());
+                        bankStatusSummary(statusResponse));
             }
         }
 
@@ -342,6 +347,22 @@ public class BobIntegrationService {
         } catch (Exception ignored) {
         }
         return "AZ";
+    }
+
+    private String bankStatusSummary(BobOrderStatusResponse status) {
+        if (status == null) {
+            return "status=null";
+        }
+        return "orderStatus=" + status.getOrderStatus()
+                + ",actionCode=" + status.getActionCode()
+                + ",actionCodeDescription=" + status.getActionCodeDescription()
+                + ",errorCode=" + status.getErrorCode()
+                + ",errorMessage=" + status.getErrorMessage()
+                + ",rrn=" + status.getRrn()
+                + ",authRefNum=" + status.getAuthRefNum()
+                + ",pan=" + status.getPan()
+                + ",bindingId=" + status.getResolvedBindingId()
+                + ",approvalCode=" + status.getApprovalCode();
     }
 
     @Transactional

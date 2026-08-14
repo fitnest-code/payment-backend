@@ -61,7 +61,7 @@ public class BobCardService {
 
         boolean saveRequested = Boolean.TRUE.equals(payment.getAutoPaymentEnabled());
         if (!saveRequested) {
-            log.info("[BOB][Card] skip save: saveCard not requested orderId={}", payment.getOrderId());
+            log.warn("[BOB][Card] skip save: saveCard not requested orderId={}", payment.getOrderId());
             return;
         }
 
@@ -89,7 +89,7 @@ public class BobCardService {
                 : "Bank of Baku Card";
         String brand = resolveBrand(statusResponse, cardMask);
 
-        log.info("[BOB][Card] saving binding userId={} orderId={} bindingId={} mask={} brand={}",
+        log.warn("[BOB][Card] saving binding userId={} orderId={} bindingId={} mask={} brand={}",
                 payment.getUserId(), payment.getOrderId(), bindingId, cardMask, brand);
         saveUserCard(payment.getUserId(), bindingId, cardMask, cardName, brand);
     }
@@ -125,7 +125,7 @@ public class BobCardService {
                         .reccPmntId(bindingId)
                         .build();
                 userCardRepository.save(userCard);
-                log.info("[BOB][Card] Saved binding userId={}, bindingId={}, brand={}", userId, bindingId, brand);
+                log.warn("[BOB][Card] Saved binding userId={}, bindingId={}, brand={}", userId, bindingId, brand);
             }
         } catch (Exception e) {
             log.error("[BOB][Card] Failed to save binding userId={}, bindingId={}", userId, bindingId, e);

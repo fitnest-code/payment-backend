@@ -97,10 +97,18 @@ public class BobPaymentController {
     @RequestMapping(value = "/callback", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Void> handleCallback(
             @RequestParam(value = "orderNumber", required = false) String orderNumber,
-            @RequestParam(value = "orderId", required = false) String orderId) {
+            @RequestParam(value = "orderId", required = false) String orderId,
+            jakarta.servlet.http.HttpServletRequest httpRequest) {
 
-        log.info("[BOB][Controller] Callback received: orderNumber={}, orderId={}", orderNumber, orderId);
+        log.warn("[BOB][Controller] Callback received method={} query={} orderNumber={} orderId={} params={}",
+                httpRequest.getMethod(),
+                httpRequest.getQueryString(),
+                orderNumber,
+                orderId,
+                httpRequest.getParameterMap());
         String redirectUrl = bobIntegrationService.processCallback(orderNumber, orderId);
+        log.warn("[BOB][Controller] Callback redirect orderNumber={} orderId={} redirectUrl={}",
+                orderNumber, orderId, redirectUrl);
 
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create(redirectUrl))
