@@ -74,9 +74,9 @@ public class BobRestClient {
         }
 
         if (clientId != null && !clientId.isBlank()) {
+            // Binding is created on successful payment when clientId is present.
+            // Do not send features=BINDING: register.do features only accepts FORCE_SSL / FORCE_TDS.
             params.put("clientId", clientId);
-            // Required by SmartVista to create a reusable card binding for saveCard flows.
-            params.put("features", "BINDING");
         }
 
         if (installmentMonths != null && installmentMonths >= 1) {
