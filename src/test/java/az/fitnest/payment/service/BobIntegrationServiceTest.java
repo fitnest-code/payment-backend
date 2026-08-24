@@ -118,9 +118,11 @@ class BobIntegrationServiceTest {
         when(bobCardService.requireSavedCard(userId, cardId)).thenReturn(userCard);
         when(subscriptionPackageGrpcClient.getOptionPriceCurrency(10L, 20L))
                 .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(15.00, "AZN", 1));
+        when(paymentStore.buildPackageDescription(10L, 20L, "FitNest Saved Card Payment"))
+                .thenReturn("FitNest Saved Card Payment,packageId:10,optionId:20");
 
         Payment pending = new Payment();
-        pending.setDescription("FitNest Saved Card Payment");
+        pending.setDescription("FitNest Saved Card Payment,packageId:10,optionId:20");
         when(paymentStore.createPending(eq(userId), anyString(), eq(15.00), eq("AZN"),
                 anyString(), eq(false), eq(cardId), eq("411111****1111"), eq("SAVED_CARD"))).thenReturn(pending);
 
@@ -139,6 +141,66 @@ class BobIntegrationServiceTest {
         assertEquals("ORDER_BIND_123", response.getOrderId());
         verify(paymentSubscriptionService).assign(userId, 10L, 20L, true);
         verify(paymentStore).markSuccess(pending, statusResponse);
+    }
+
+    @Test
+    void testPayWithSavedCard_ReturnsRedirectWhen3dsRequired() {
+        Long userId = 1L;
+        String cardId = "5b849b75-3cbf-4899-a44d-6421d1b9e984";
+        UserCard userCard = UserCard.builder().userId(userId).cardId(cardId).cardMask("531599**5217").build();
+        when(bobCardService.requireSavedCard(userId, cardId)).thenReturn(userCard);
+        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(10L, 20L))
+                .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(15.00, "AZN", 1));
+        when(paymentStore.buildPackageDescription(10L, 20L, "FitNest Saved Card Payment"))
+                .thenReturn("FitNest Saved Card Payment,packageId:10,optionId:20");
+
+        Payment pending = new Payment();
+        pending.setDescription("FitNest Saved Card Payment,packageId:10,optionId:20");
+        when(paymentStore.createPending(eq(userId), anyString(), eq(15.00), eq("AZN"),
+                anyString(), eq(false), eq(cardId), eq("531599**5217"), eq("SAVED_CARD"))).thenReturn(pending);
+
+        when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(), anyString(), any()))
+                .thenReturn(Map.of("errorCode", "0", "orderId", "ORDER_3DS"));
+        when(bobRestClient.payWithBinding("ORDER_3DS", cardId)).thenReturn(Map.of(
+                "errorCode", "0",
+                "redirect", "https://3ds2.bankofbaku.com/acs?mdOrder=ORDER_3DS"
+        ));
+
+        BobInitiateResponse response = bobIntegrationService.payWithSavedCard(userId,
+                BobPayWithSavedCardRequest.builder().cardId(cardId).packageId(10L).optionId(20L).build());
+
+        assertEquals("ORDER_3DS", response.getOrderId());
+        assertEquals("https://3ds2.bankofbaku.com/acs?mdOrder=ORDER_3DS", response.getFormUrl());
+        verify(paymentStore, never()).markSuccess(any(), any());
+        verify(paymentSubscriptionService, never()).assign(anyLong(), anyLong(), anyLong(), anyBoolean());
+    }
+
+    @Test
+    void testProcessCallback_InProgressDoesNotMarkFailed() {
+        Payment payment = new Payment();
+        payment.setOrderId("ORDER_3DS");
+        payment.setTransactionId("BOB_TX_3DS");
+        payment.setCallbackProcessed(false);
+        payment.setStatus(BobPaymentStore.STATUS_PENDING);
+
+        when(paymentStore.findByOrderIdOrTransactionId("ORDER_3DS", null)).thenReturn(Optional.of(payment));
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any())).thenReturn(true);
+
+        BobOrderStatusResponse statusResponse = BobOrderStatusResponse.builder()
+                .orderStatus(5)
+                .build();
+        when(bobRestClient.getOrderStatusExtended("ORDER_3DS")).thenReturn(statusResponse);
+        when(statusMapper.toBobStatus(5)).thenReturn(az.fitnest.payment.model.enums.BobPaymentStatus.AUTHENTICATION_INITIATED);
+        when(statusMapper.isInProgress(5)).thenReturn(true);
+
+        String redirect = bobIntegrationService.processCallback(null, "ORDER_3DS");
+
+        assertEquals("https://fitnest.az/payment/success", redirect);
+        assertEquals(BobPaymentStore.STATUS_PENDING, payment.getStatus());
+        assertFalse(Boolean.TRUE.equals(payment.getCallbackProcessed()));
+        verify(paymentStore, never()).markFailed(any(), any(), any(), any());
+        verify(paymentSubscriptionService, never()).assignFromPaymentDescription(any());
     }
 
     @Test
@@ -190,6 +252,8 @@ class BobIntegrationServiceTest {
                 .build();
         when(bobRestClient.getOrderStatusExtended("ORDER_FAIL")).thenReturn(statusResponse);
         when(statusMapper.toBobStatus(6)).thenReturn(az.fitnest.payment.model.enums.BobPaymentStatus.DECLINED);
+        when(statusMapper.isInProgress(6)).thenReturn(false);
+        when(statusMapper.isTerminalFailure(6)).thenReturn(true);
         when(statusMapper.declineMessage(statusResponse)).thenReturn("Ödənişdən imtina edildi (actionCode=-2006)");
         when(statusMapper.operationCode(statusResponse)).thenReturn("-2006");
 

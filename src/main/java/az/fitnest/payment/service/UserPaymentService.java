@@ -332,7 +332,7 @@ public class UserPaymentService {
     }
 
     private UserCardResponse mapToCardResponse(UserCard card) {
-        String bank = detectBank(card.getBrand(), card.getCardMask());
+        String bank = detectBank(card.getBrand(), card.getCardMask(), card.getCardId());
         if (bank != null && ("BOB".equalsIgnoreCase(bank) || "BOB_PAYMENT".equalsIgnoreCase(bank) || "BANK_OF_BAKU".equalsIgnoreCase(bank))) {
             bank = "Bank of Baku";
         }
@@ -356,6 +356,17 @@ public class UserPaymentService {
     }
 
     private String detectBank(String existingBrand, String cardMask) {
+        return detectBank(existingBrand, cardMask, null);
+    }
+
+    private String detectBank(String existingBrand, String cardMask, String cardId) {
+        // SmartVista bindingIds are UUIDs; Epoint cards use ce… ids.
+        if (cardId != null) {
+            String id = cardId.trim();
+            if (id.matches("(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) {
+                return "Bank of Baku";
+            }
+        }
         if (existingBrand != null) {
             String b = existingBrand.toLowerCase(Locale.ROOT);
             if (b.contains("abb") || b.contains("azericard") || b.contains("ibar")) {
@@ -387,7 +398,7 @@ public class UserPaymentService {
                 // Bank of Baku BINs
                 if (clean.startsWith("534938") || clean.startsWith("552608") || clean.startsWith("416949") || clean.startsWith("416950")
                         || clean.startsWith("516369") || clean.startsWith("523924") || clean.startsWith("402824") || clean.startsWith("489955")
-                        || clean.startsWith("542289")) {
+                        || clean.startsWith("542289") || clean.startsWith("531599")) {
                     return "Bank of Baku";
                 }
             }

@@ -73,6 +73,11 @@ public class BobRestClient {
             params.put("description", description);
         }
 
+        String language = bobProperties.getDefaultLanguage();
+        if (language != null && !language.isBlank()) {
+            params.put("language", language.trim().toLowerCase());
+        }
+
         if (clientId != null && !clientId.isBlank()) {
             // Binding is created on successful payment when clientId is present.
             // Do not send features=BINDING: register.do features only accepts FORCE_SSL / FORCE_TDS.
@@ -116,8 +121,29 @@ public class BobRestClient {
         params.put("password", bobProperties.getPassword());
         params.put("mdOrder", mdOrder);
         params.put("bindingId", bindingId);
+        String language = bobProperties.getDefaultLanguage();
+        if (language != null && !language.isBlank()) {
+            params.put("language", language.trim().toLowerCase());
+        }
 
         return sendFormRequest(endpoint, params);
+    }
+
+    /** Prefer bank redirect URL when 3DS / ACS challenge is required after binding pay. */
+    public static String extractRedirectUrl(Map<String, Object> bindingPayResponse) {
+        if (bindingPayResponse == null) {
+            return null;
+        }
+        for (String key : new String[]{"redirect", "formUrl", "acsUrl", "redirectUrl"}) {
+            Object value = bindingPayResponse.get(key);
+            if (value != null) {
+                String url = String.valueOf(value).trim();
+                if (!url.isEmpty() && !"null".equalsIgnoreCase(url) && url.startsWith("http")) {
+                    return url;
+                }
+            }
+        }
+        return null;
     }
 
     /**

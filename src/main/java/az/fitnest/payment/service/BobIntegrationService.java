@@ -143,12 +143,18 @@ public class BobIntegrationService {
                 ? priceCurrency.currency
                 : bobProperties.getDefaultCurrency();
 
+        // Must include packageId/optionId so callback/status can assign subscription.
+        String description = paymentStore.buildPackageDescription(
+                request.getPackageId(),
+                request.getOptionId(),
+                "FitNest Saved Card Payment");
+
         Payment payment = paymentStore.createPending(
                 userId,
                 transactionId,
                 priceCurrency.amount,
                 currency,
-                "FitNest Saved Card Payment",
+                description,
                 false,
                 savedCard.getCardId(),
                 savedCard.getCardMask(),
@@ -167,8 +173,18 @@ public class BobIntegrationService {
                 String.valueOf(userId),
                 null);
 
+        String registerError = registerResponse.get("errorCode") != null
+                ? String.valueOf(registerResponse.get("errorCode"))
+                : "0";
+        if (!"0".equals(registerError)) {
+            String registerMessage = (String) registerResponse.get("errorMessage");
+            paymentStore.markFailed(payment, registerMessage, registerError, String.valueOf(registerResponse));
+            throw new BobPaymentException(registerError,
+                    "Saxlanılmış kartla ödəniş qeydiyyatı uğursuz oldu: " + registerMessage);
+        }
+
         String orderId = (String) registerResponse.get("orderId");
-        if (orderId == null) {
+        if (orderId == null || orderId.isBlank()) {
             paymentStore.markFailed(payment, "Order registration failed", null, String.valueOf(registerResponse));
             throw new BobPaymentException("ORDER_REGISTRATION_FAILED", "Order qeydə alına bilmədi");
         }
@@ -176,7 +192,37 @@ public class BobIntegrationService {
         paymentStore.markRegistered(payment, orderId, null);
 
         Map<String, Object> bindingPayResponse = bobRestClient.payWithBinding(orderId, savedCard.getCardId());
-        log.info("[BOB] Binding payment executed orderId={}: {}", orderId, bindingPayResponse);
+        log.warn("[BOB] Binding payment executed orderId={}: {}", orderId, bindingPayResponse);
+
+        String bindingError = bindingPayResponse.get("errorCode") != null
+                ? String.valueOf(bindingPayResponse.get("errorCode"))
+                : "0";
+        String redirectUrl = BobRestClient.extractRedirectUrl(bindingPayResponse);
+
+        // Bank may require 3DS challenge — return redirect and keep PENDING for callback/status.
+        if (redirectUrl != null) {
+            paymentStore.markRegistered(payment, orderId, redirectUrl);
+            log.warn("[BOB] Binding pay requires redirect/3DS orderId={} redirect={}", orderId, redirectUrl);
+            return BobInitiateResponse.builder()
+                    .orderId(orderId)
+                    .transactionId(transactionId)
+                    .formUrl(redirectUrl)
+                    .provider(BobPaymentStore.PROVIDER_BOB)
+                    .amount(priceCurrency.amount)
+                    .currency(priceCurrency.currency)
+                    .build();
+        }
+
+        if (!"0".equals(bindingError) && !"null".equalsIgnoreCase(bindingError)) {
+            String bindingMessage = bindingPayResponse.get("errorMessage") != null
+                    ? String.valueOf(bindingPayResponse.get("errorMessage"))
+                    : bindingPayResponse.get("info") != null
+                    ? String.valueOf(bindingPayResponse.get("info"))
+                    : "Binding payment failed";
+            paymentStore.markFailed(payment, bindingMessage, bindingError, String.valueOf(bindingPayResponse));
+            throw new BobPaymentException(bindingError,
+                    "Saxlanılmış kartla ödəniş imtina edildi: " + bindingMessage);
+        }
 
         BobOrderStatusResponse statusResponse = bobRestClient.getOrderStatusExtended(orderId);
         BobPaymentStatus bobStatus = statusMapper.toBobStatus(statusResponse.getOrderStatus());
@@ -186,6 +232,19 @@ public class BobIntegrationService {
             paymentSubscriptionService.assign(
                     userId, request.getPackageId(), request.getOptionId(), true);
 
+            return BobInitiateResponse.builder()
+                    .orderId(orderId)
+                    .transactionId(transactionId)
+                    .provider(BobPaymentStore.PROVIDER_BOB)
+                    .amount(priceCurrency.amount)
+                    .currency(priceCurrency.currency)
+                    .build();
+        }
+
+        if (statusMapper.isInProgress(statusResponse.getOrderStatus())) {
+            // Still open / ACS — client should poll status (or follow ACS if formUrl appears later).
+            log.warn("[BOB] Binding pay in progress orderId={} status={}",
+                    orderId, statusResponse.getOrderStatus());
             return BobInitiateResponse.builder()
                     .orderId(orderId)
                     .transactionId(transactionId)
@@ -244,9 +303,9 @@ public class BobIntegrationService {
                     bankStatusSummary(statusResponse));
 
             paymentStore.applyBankCardFields(payment, statusResponse);
-            payment.setCallbackProcessed(true);
 
             if (bobStatus == BobPaymentStatus.APPROVED) {
+                payment.setCallbackProcessed(true);
                 payment.setStatus(BobPaymentStore.STATUS_SUCCESS);
                 String bindingId = statusResponse.getResolvedBindingId();
                 if (bindingId != null && !bindingId.isBlank()) {
@@ -262,6 +321,25 @@ public class BobIntegrationService {
                 return bobProperties.getSuccessRedirectUrl();
             }
 
+            // Do NOT mark FAILED while payment is still in progress (3DS / registered).
+            if (statusMapper.isInProgress(statusResponse.getOrderStatus())) {
+                paymentStore.save(payment);
+                log.warn("[BOB][Callback] In-progress orderId={} status={} — leaving PENDING for status poll",
+                        payment.getOrderId(), statusResponse.getOrderStatus());
+                return bobProperties.getSuccessRedirectUrl();
+            }
+
+            if (!statusMapper.isTerminalFailure(statusResponse.getOrderStatus())
+                    && bobStatus != BobPaymentStatus.DECLINED
+                    && bobStatus != BobPaymentStatus.REVERSED) {
+                // Unknown / non-terminal — keep PENDING, let client poll.
+                paymentStore.save(payment);
+                log.warn("[BOB][Callback] Non-terminal status orderId={} mappedStatus={} — leaving PENDING",
+                        payment.getOrderId(), bobStatus);
+                return bobProperties.getSuccessRedirectUrl();
+            }
+
+            payment.setCallbackProcessed(true);
             String declineMessage = statusMapper.declineMessage(statusResponse);
             paymentStore.markFailed(
                     payment,

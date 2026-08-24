@@ -30,6 +30,17 @@ public class BobStatusMapper {
         return toBobStatus(orderStatus) == BobPaymentStatus.APPROVED;
     }
 
+    /**
+     * Non-final states: do not mark FAILED yet (3DS / still open for payment).
+     * REGISTERED(0), AUTHORIZED(1) for two-phase hold, AUTHENTICATION_INITIATED(5).
+     */
+    public boolean isInProgress(Integer orderStatus) {
+        BobPaymentStatus status = toBobStatus(orderStatus);
+        return status == BobPaymentStatus.REGISTERED
+                || status == BobPaymentStatus.AUTHORIZED
+                || status == BobPaymentStatus.AUTHENTICATION_INITIATED;
+    }
+
     /** Terminal failure states that should mark the payment FAILED in our DB. */
     public boolean isTerminalFailure(Integer orderStatus) {
         BobPaymentStatus status = toBobStatus(orderStatus);
