@@ -164,6 +164,12 @@ public class BobIntegrationService {
         String returnUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=success";
         String failUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=fail";
 
+        // Without merchant "pay by binding without CVC": either collect CVC on bank page
+        // (register.do + bindingId → formUrl) or pass cvc into paymentOrderBinding.do.
+        String cvc = request.getCvc() != null ? request.getCvc().trim() : null;
+        boolean hasCvc = cvc != null && !cvc.isBlank();
+        String registerBindingId = hasCvc ? null : savedCard.getCardId();
+
         Map<String, Object> registerResponse = bobRestClient.registerOrder(
                 transactionId,
                 priceCurrency.amount,
@@ -171,7 +177,8 @@ public class BobIntegrationService {
                 returnUrl,
                 failUrl,
                 String.valueOf(userId),
-                null);
+                null,
+                registerBindingId);
 
         String registerError = registerResponse.get("errorCode") != null
                 ? String.valueOf(registerResponse.get("errorCode"))
@@ -189,10 +196,32 @@ public class BobIntegrationService {
             throw new BobPaymentException("ORDER_REGISTRATION_FAILED", "Order qeydə alına bilmədi");
         }
 
+        // PCI-friendly path: bank payment page collects CVC for this binding.
+        if (!hasCvc) {
+            String formUrl = (String) registerResponse.get("formUrl");
+            if (formUrl == null || formUrl.isBlank()) {
+                paymentStore.markFailed(payment, "Missing formUrl for binding CVC entry", null,
+                        String.valueOf(registerResponse));
+                throw new BobPaymentException("MISSING_FORM_URL",
+                        "Saxlanılmış kartla ödəniş üçün bank səhifəsi alınmadı");
+            }
+            paymentStore.markRegistered(payment, orderId, formUrl);
+            log.warn("[BOB] Saved-card pay via bank CVC page orderId={} formUrlPresent=true", orderId);
+            return BobInitiateResponse.builder()
+                    .orderId(orderId)
+                    .transactionId(transactionId)
+                    .formUrl(formUrl)
+                    .provider(BobPaymentStore.PROVIDER_BOB)
+                    .amount(priceCurrency.amount)
+                    .currency(priceCurrency.currency)
+                    .build();
+        }
+
         paymentStore.markRegistered(payment, orderId, null);
 
-        Map<String, Object> bindingPayResponse = bobRestClient.payWithBinding(orderId, savedCard.getCardId());
-        log.warn("[BOB] Binding payment executed orderId={}: {}", orderId, bindingPayResponse);
+        Map<String, Object> bindingPayResponse = bobRestClient.payWithBinding(
+                orderId, savedCard.getCardId(), cvc);
+        log.warn("[BOB] Binding payment executed orderId={} (cvcPresent=true)", orderId);
 
         String bindingError = bindingPayResponse.get("errorCode") != null
                 ? String.valueOf(bindingPayResponse.get("errorCode"))

@@ -23,6 +23,13 @@ public class BobPayWithSavedCardRequest {
     private String cardId;
 
     /**
+     * Optional CVV/CVC. Required by Bank of Baku unless merchant has
+     * "Can pay by binding without CVV2/CVC2". When absent, register.do is called
+     * with bindingId and the payer enters CVC on the bank formUrl.
+     */
+    private String cvc;
+
+    /**
      * Abunəlik paketi ID-si
      */
     @NotNull(message = "Package ID məcburidir")

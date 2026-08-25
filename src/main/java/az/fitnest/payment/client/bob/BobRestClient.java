@@ -41,13 +41,8 @@ public class BobRestClient {
     /**
      * SmartVista EPG register.do metodu vasitəsilə yeni ödəniş (Order) qeydə alır.
      *
-     * @param orderNumber Unikal tranzaksiya nömrəsi
-     * @param amountManiats Məbləğ (manat ilə, məs: 15.50)
-     * @param description Təsvir
-     * @param returnUrl Uğurlu yönləndirmə URL-i
-     * @param failUrl Uğursuz yönləndirmə URL-i
-     * @param clientId İstifadəçi ID-si (Kart saxlama üçün)
-     * @return Map cavab (orderId, formUrl, errorCode, errorMessage)
+     * @param bindingId optional — when set, order is payable only via that binding and
+     *                  formUrl asks the payer for CVC (see SmartVista register.do docs).
      */
     public Map<String, Object> registerOrder(String orderNumber,
                                              Double amountManiats,
@@ -56,6 +51,18 @@ public class BobRestClient {
                                              String failUrl,
                                              String clientId,
                                              Integer installmentMonths) {
+        return registerOrder(orderNumber, amountManiats, description, returnUrl, failUrl,
+                clientId, installmentMonths, null);
+    }
+
+    public Map<String, Object> registerOrder(String orderNumber,
+                                             Double amountManiats,
+                                             String description,
+                                             String returnUrl,
+                                             String failUrl,
+                                             String clientId,
+                                             Integer installmentMonths,
+                                             String bindingId) {
         String endpoint = getUrl("/register.do");
 
         long amountInQepik = Math.round(amountManiats * 100);
@@ -84,14 +91,18 @@ public class BobRestClient {
             params.put("clientId", clientId);
         }
 
+        if (bindingId != null && !bindingId.isBlank()) {
+            params.put("bindingId", bindingId);
+        }
+
         if (installmentMonths != null && installmentMonths >= 1) {
             // Bank of Baku installment key used by the merchant terminal.
             params.put("jsonParams", "{\"taxit\":" + installmentMonths + "}");
         }
 
-        log.warn("[BOB][Client] register.do orderNumber={}, amountQepik={}, clientIdPresent={}, features={}, installmentMonths={}",
+        log.warn("[BOB][Client] register.do orderNumber={}, amountQepik={}, clientIdPresent={}, bindingIdPresent={}, installmentMonths={}",
                 orderNumber, amountInQepik, clientId != null && !clientId.isBlank(),
-                params.get("features"), installmentMonths);
+                bindingId != null && !bindingId.isBlank(), installmentMonths);
         log.warn("[BOB][Client] register.do request params={}", maskParams(params));
 
         return sendFormRequest(endpoint, params);
@@ -103,17 +114,19 @@ public class BobRestClient {
                                              String returnUrl,
                                              String failUrl,
                                              String clientId) {
-        return registerOrder(orderNumber, amountManiats, description, returnUrl, failUrl, clientId, null);
+        return registerOrder(orderNumber, amountManiats, description, returnUrl, failUrl, clientId, null, null);
     }
 
     /**
      * Yadda saxlanılmış kartla (Binding) ödənişi icra etmək (paymentOrderBinding.do).
      *
-     * @param mdOrder SmartVista Order ID (register.do ilə alınan)
-     * @param bindingId Yadda saxlanılmış kartın tokeni
-     * @return Map cavab
+     * <p>Merchant-də "Can pay by binding without CVV2/CVC2" yoxdursa {@code cvc} məcburidir.</p>
      */
     public Map<String, Object> payWithBinding(String mdOrder, String bindingId) {
+        return payWithBinding(mdOrder, bindingId, null);
+    }
+
+    public Map<String, Object> payWithBinding(String mdOrder, String bindingId, String cvc) {
         String endpoint = getUrl("/paymentOrderBinding.do");
 
         Map<String, String> params = new HashMap<>();
@@ -121,6 +134,9 @@ public class BobRestClient {
         params.put("password", bobProperties.getPassword());
         params.put("mdOrder", mdOrder);
         params.put("bindingId", bindingId);
+        if (cvc != null && !cvc.isBlank()) {
+            params.put("cvc", cvc.trim());
+        }
         String language = bobProperties.getDefaultLanguage();
         if (language != null && !language.isBlank()) {
             params.put("language", language.trim().toLowerCase());
@@ -264,6 +280,9 @@ public class BobRestClient {
         if (masked.containsKey("password")) {
             masked.put("password", "***");
         }
+        if (masked.containsKey("cvc")) {
+            masked.put("cvc", "***");
+        }
         return masked;
     }
 
@@ -271,7 +290,9 @@ public class BobRestClient {
         if (requestBody == null || requestBody.isBlank()) {
             return requestBody;
         }
-        return requestBody.replaceAll("(?i)(password=)[^&]*", "$1***");
+        return requestBody
+                .replaceAll("(?i)(password=)[^&]*", "$1***")
+                .replaceAll("(?i)(cvc=)[^&]*", "$1***");
     }
 
     private String getCurrencyCode(String currencyStr) {

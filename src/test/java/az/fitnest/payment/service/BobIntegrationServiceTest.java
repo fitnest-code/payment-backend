@@ -111,7 +111,7 @@ class BobIntegrationServiceTest {
     }
 
     @Test
-    void testPayWithSavedCard_Success() {
+    void testPayWithSavedCard_WithoutCvc_ReturnsBankFormUrl() {
         Long userId = 1L;
         String cardId = "BINDING_999";
         UserCard userCard = UserCard.builder().userId(userId).cardId(cardId).cardMask("411111****1111").build();
@@ -126,17 +126,55 @@ class BobIntegrationServiceTest {
         when(paymentStore.createPending(eq(userId), anyString(), eq(15.00), eq("AZN"),
                 anyString(), eq(false), eq(cardId), eq("411111****1111"), eq("SAVED_CARD"))).thenReturn(pending);
 
-        Map<String, Object> registerResp = Map.of("errorCode", "0", "orderId", "ORDER_BIND_123");
-        when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(), anyString(), any()))
-                .thenReturn(registerResp);
-        when(bobRestClient.payWithBinding("ORDER_BIND_123", cardId)).thenReturn(Map.of("errorCode", "0"));
+        when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(),
+                anyString(), isNull(), eq(cardId)))
+                .thenReturn(Map.of(
+                        "errorCode", "0",
+                        "orderId", "ORDER_BIND_123",
+                        "formUrl", "https://epg.bankofbaku.com/payment/merchants/bob/payment_az.html?mdOrder=ORDER_BIND_123"
+                ));
+
+        BobInitiateResponse response = bobIntegrationService.payWithSavedCard(userId,
+                BobPayWithSavedCardRequest.builder().cardId(cardId).packageId(10L).optionId(20L).build());
+
+        assertEquals("ORDER_BIND_123", response.getOrderId());
+        assertEquals("https://epg.bankofbaku.com/payment/merchants/bob/payment_az.html?mdOrder=ORDER_BIND_123",
+                response.getFormUrl());
+        verify(bobRestClient, never()).payWithBinding(anyString(), anyString());
+        verify(bobRestClient, never()).payWithBinding(anyString(), anyString(), anyString());
+        verify(paymentStore).markRegistered(pending, "ORDER_BIND_123",
+                "https://epg.bankofbaku.com/payment/merchants/bob/payment_az.html?mdOrder=ORDER_BIND_123");
+        verify(paymentSubscriptionService, never()).assign(anyLong(), anyLong(), anyLong(), anyBoolean());
+    }
+
+    @Test
+    void testPayWithSavedCard_WithCvc_Success() {
+        Long userId = 1L;
+        String cardId = "BINDING_999";
+        UserCard userCard = UserCard.builder().userId(userId).cardId(cardId).cardMask("411111****1111").build();
+        when(bobCardService.requireSavedCard(userId, cardId)).thenReturn(userCard);
+        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(10L, 20L))
+                .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(15.00, "AZN", 1));
+        when(paymentStore.buildPackageDescription(10L, 20L, "FitNest Saved Card Payment"))
+                .thenReturn("FitNest Saved Card Payment,packageId:10,optionId:20");
+
+        Payment pending = new Payment();
+        pending.setDescription("FitNest Saved Card Payment,packageId:10,optionId:20");
+        when(paymentStore.createPending(eq(userId), anyString(), eq(15.00), eq("AZN"),
+                anyString(), eq(false), eq(cardId), eq("411111****1111"), eq("SAVED_CARD"))).thenReturn(pending);
+
+        when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(),
+                anyString(), isNull(), isNull()))
+                .thenReturn(Map.of("errorCode", "0", "orderId", "ORDER_BIND_123"));
+        when(bobRestClient.payWithBinding("ORDER_BIND_123", cardId, "123"))
+                .thenReturn(Map.of("errorCode", "0"));
 
         BobOrderStatusResponse statusResponse = BobOrderStatusResponse.builder().orderStatus(2).rrn("RRN123").build();
         when(bobRestClient.getOrderStatusExtended("ORDER_BIND_123")).thenReturn(statusResponse);
         when(statusMapper.toBobStatus(2)).thenReturn(az.fitnest.payment.model.enums.BobPaymentStatus.APPROVED);
 
         BobInitiateResponse response = bobIntegrationService.payWithSavedCard(userId,
-                BobPayWithSavedCardRequest.builder().cardId(cardId).packageId(10L).optionId(20L).build());
+                BobPayWithSavedCardRequest.builder().cardId(cardId).packageId(10L).optionId(20L).cvc("123").build());
 
         assertEquals("ORDER_BIND_123", response.getOrderId());
         verify(paymentSubscriptionService).assign(userId, 10L, 20L, true);
@@ -144,7 +182,7 @@ class BobIntegrationServiceTest {
     }
 
     @Test
-    void testPayWithSavedCard_ReturnsRedirectWhen3dsRequired() {
+    void testPayWithSavedCard_WithCvc_ReturnsRedirectWhen3dsRequired() {
         Long userId = 1L;
         String cardId = "5b849b75-3cbf-4899-a44d-6421d1b9e984";
         UserCard userCard = UserCard.builder().userId(userId).cardId(cardId).cardMask("531599**5217").build();
@@ -159,15 +197,16 @@ class BobIntegrationServiceTest {
         when(paymentStore.createPending(eq(userId), anyString(), eq(15.00), eq("AZN"),
                 anyString(), eq(false), eq(cardId), eq("531599**5217"), eq("SAVED_CARD"))).thenReturn(pending);
 
-        when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(), anyString(), any()))
+        when(bobRestClient.registerOrder(anyString(), anyDouble(), anyString(), anyString(), anyString(),
+                anyString(), isNull(), isNull()))
                 .thenReturn(Map.of("errorCode", "0", "orderId", "ORDER_3DS"));
-        when(bobRestClient.payWithBinding("ORDER_3DS", cardId)).thenReturn(Map.of(
+        when(bobRestClient.payWithBinding("ORDER_3DS", cardId, "456")).thenReturn(Map.of(
                 "errorCode", "0",
                 "redirect", "https://3ds2.bankofbaku.com/acs?mdOrder=ORDER_3DS"
         ));
 
         BobInitiateResponse response = bobIntegrationService.payWithSavedCard(userId,
-                BobPayWithSavedCardRequest.builder().cardId(cardId).packageId(10L).optionId(20L).build());
+                BobPayWithSavedCardRequest.builder().cardId(cardId).packageId(10L).optionId(20L).cvc("456").build());
 
         assertEquals("ORDER_3DS", response.getOrderId());
         assertEquals("https://3ds2.bankofbaku.com/acs?mdOrder=ORDER_3DS", response.getFormUrl());
