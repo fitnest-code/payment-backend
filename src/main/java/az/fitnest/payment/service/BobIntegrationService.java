@@ -164,12 +164,8 @@ public class BobIntegrationService {
         String returnUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=success";
         String failUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=fail";
 
-        // Without merchant "pay by binding without CVC": either collect CVC on bank page
-        // (register.do + bindingId → formUrl) or pass cvc into paymentOrderBinding.do.
-        String cvc = request.getCvc() != null ? request.getCvc().trim() : null;
-        boolean hasCvc = cvc != null && !cvc.isBlank();
-        String registerBindingId = hasCvc ? null : savedCard.getCardId();
-
+        // PCI DSS: never accept, log, or store CVC on FitNest. Merchant lacks
+        // pay-without-CVC, so register.do + bindingId returns bank formUrl for CVC entry.
         Map<String, Object> registerResponse = bobRestClient.registerOrder(
                 transactionId,
                 priceCurrency.amount,
@@ -178,7 +174,7 @@ public class BobIntegrationService {
                 failUrl,
                 String.valueOf(userId),
                 null,
-                registerBindingId);
+                savedCard.getCardId());
 
         String registerError = registerResponse.get("errorCode") != null
                 ? String.valueOf(registerResponse.get("errorCode"))
@@ -196,100 +192,24 @@ public class BobIntegrationService {
             throw new BobPaymentException("ORDER_REGISTRATION_FAILED", "Order qeydə alına bilmədi");
         }
 
-        // PCI-friendly path: bank payment page collects CVC for this binding.
-        if (!hasCvc) {
-            String formUrl = (String) registerResponse.get("formUrl");
-            if (formUrl == null || formUrl.isBlank()) {
-                paymentStore.markFailed(payment, "Missing formUrl for binding CVC entry", null,
-                        String.valueOf(registerResponse));
-                throw new BobPaymentException("MISSING_FORM_URL",
-                        "Saxlanılmış kartla ödəniş üçün bank səhifəsi alınmadı");
-            }
-            paymentStore.markRegistered(payment, orderId, formUrl);
-            log.warn("[BOB] Saved-card pay via bank CVC page orderId={} formUrlPresent=true", orderId);
-            return BobInitiateResponse.builder()
-                    .orderId(orderId)
-                    .transactionId(transactionId)
-                    .formUrl(formUrl)
-                    .provider(BobPaymentStore.PROVIDER_BOB)
-                    .amount(priceCurrency.amount)
-                    .currency(priceCurrency.currency)
-                    .build();
+        String formUrl = (String) registerResponse.get("formUrl");
+        if (formUrl == null || formUrl.isBlank()) {
+            paymentStore.markFailed(payment, "Missing formUrl for binding CVC entry", null,
+                    String.valueOf(registerResponse));
+            throw new BobPaymentException("MISSING_FORM_URL",
+                    "Saxlanılmış kartla ödəniş üçün bank səhifəsi alınmadı");
         }
 
-        paymentStore.markRegistered(payment, orderId, null);
-
-        Map<String, Object> bindingPayResponse = bobRestClient.payWithBinding(
-                orderId, savedCard.getCardId(), cvc);
-        log.warn("[BOB] Binding payment executed orderId={} (cvcPresent=true)", orderId);
-
-        String bindingError = bindingPayResponse.get("errorCode") != null
-                ? String.valueOf(bindingPayResponse.get("errorCode"))
-                : "0";
-        String redirectUrl = BobRestClient.extractRedirectUrl(bindingPayResponse);
-
-        // Bank may require 3DS challenge — return redirect and keep PENDING for callback/status.
-        if (redirectUrl != null) {
-            paymentStore.markRegistered(payment, orderId, redirectUrl);
-            log.warn("[BOB] Binding pay requires redirect/3DS orderId={} redirect={}", orderId, redirectUrl);
-            return BobInitiateResponse.builder()
-                    .orderId(orderId)
-                    .transactionId(transactionId)
-                    .formUrl(redirectUrl)
-                    .provider(BobPaymentStore.PROVIDER_BOB)
-                    .amount(priceCurrency.amount)
-                    .currency(priceCurrency.currency)
-                    .build();
-        }
-
-        if (!"0".equals(bindingError) && !"null".equalsIgnoreCase(bindingError)) {
-            String bindingMessage = bindingPayResponse.get("errorMessage") != null
-                    ? String.valueOf(bindingPayResponse.get("errorMessage"))
-                    : bindingPayResponse.get("info") != null
-                    ? String.valueOf(bindingPayResponse.get("info"))
-                    : "Binding payment failed";
-            paymentStore.markFailed(payment, bindingMessage, bindingError, String.valueOf(bindingPayResponse));
-            throw new BobPaymentException(bindingError,
-                    "Saxlanılmış kartla ödəniş imtina edildi: " + bindingMessage);
-        }
-
-        BobOrderStatusResponse statusResponse = bobRestClient.getOrderStatusExtended(orderId);
-        BobPaymentStatus bobStatus = statusMapper.toBobStatus(statusResponse.getOrderStatus());
-
-        if (bobStatus == BobPaymentStatus.APPROVED) {
-            paymentStore.markSuccess(payment, statusResponse);
-            paymentSubscriptionService.assign(
-                    userId, request.getPackageId(), request.getOptionId(), true);
-
-            return BobInitiateResponse.builder()
-                    .orderId(orderId)
-                    .transactionId(transactionId)
-                    .provider(BobPaymentStore.PROVIDER_BOB)
-                    .amount(priceCurrency.amount)
-                    .currency(priceCurrency.currency)
-                    .build();
-        }
-
-        if (statusMapper.isInProgress(statusResponse.getOrderStatus())) {
-            // Still open / ACS — client should poll status (or follow ACS if formUrl appears later).
-            log.warn("[BOB] Binding pay in progress orderId={} status={}",
-                    orderId, statusResponse.getOrderStatus());
-            return BobInitiateResponse.builder()
-                    .orderId(orderId)
-                    .transactionId(transactionId)
-                    .provider(BobPaymentStore.PROVIDER_BOB)
-                    .amount(priceCurrency.amount)
-                    .currency(priceCurrency.currency)
-                    .build();
-        }
-
-        paymentStore.markFailed(
-                payment,
-                statusMapper.declineMessage(statusResponse),
-                statusMapper.operationCode(statusResponse),
-                String.valueOf(statusResponse));
-        throw new BobPaymentException("BINDING_PAYMENT_FAILED",
-                "Saxlanılmış kartla ödəniş imtina edildi: " + statusMapper.declineMessage(statusResponse));
+        paymentStore.markRegistered(payment, orderId, formUrl);
+        log.warn("[BOB] Saved-card pay via bank CVC page orderId={} formUrlPresent=true", orderId);
+        return BobInitiateResponse.builder()
+                .orderId(orderId)
+                .transactionId(transactionId)
+                .formUrl(formUrl)
+                .provider(BobPaymentStore.PROVIDER_BOB)
+                .amount(priceCurrency.amount)
+                .currency(priceCurrency.currency)
+                .build();
     }
 
     @Transactional

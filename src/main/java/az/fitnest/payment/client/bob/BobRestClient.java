@@ -120,13 +120,10 @@ public class BobRestClient {
     /**
      * Yadda saxlanılmış kartla (Binding) ödənişi icra etmək (paymentOrderBinding.do).
      *
-     * <p>Merchant-də "Can pay by binding without CVV2/CVC2" yoxdursa {@code cvc} məcburidir.</p>
+     * <p>Do not pass CVC from FitNest — PCI forbids storing CVC, and our saved-card
+     * flow uses register.do + bindingId so the bank page collects CVC instead.</p>
      */
     public Map<String, Object> payWithBinding(String mdOrder, String bindingId) {
-        return payWithBinding(mdOrder, bindingId, null);
-    }
-
-    public Map<String, Object> payWithBinding(String mdOrder, String bindingId, String cvc) {
         String endpoint = getUrl("/paymentOrderBinding.do");
 
         Map<String, String> params = new HashMap<>();
@@ -134,9 +131,6 @@ public class BobRestClient {
         params.put("password", bobProperties.getPassword());
         params.put("mdOrder", mdOrder);
         params.put("bindingId", bindingId);
-        if (cvc != null && !cvc.isBlank()) {
-            params.put("cvc", cvc.trim());
-        }
         String language = bobProperties.getDefaultLanguage();
         if (language != null && !language.isBlank()) {
             params.put("language", language.trim().toLowerCase());
