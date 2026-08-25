@@ -387,7 +387,7 @@ public class BobIntegrationService {
                 + ",errorMessage=" + status.getErrorMessage()
                 + ",rrn=" + status.getRrn()
                 + ",authRefNum=" + status.getAuthRefNum()
-                + ",pan=" + status.getPan()
+                + ",pan=" + az.fitnest.payment.util.CardMaskUtil.toLast4(status.getPan())
                 + ",bindingId=" + status.getResolvedBindingId()
                 + ",approvalCode=" + status.getApprovalCode();
     }
