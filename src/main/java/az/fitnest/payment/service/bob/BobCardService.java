@@ -7,6 +7,7 @@ import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.entity.UserCard;
 import az.fitnest.payment.repository.UserCardRepository;
 import az.fitnest.payment.util.CardBrandDetector;
+import az.fitnest.payment.util.CardMaskUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -88,10 +89,11 @@ public class BobCardService {
                 ? statusResponse.getCardholderName()
                 : "Bank of Baku Card";
         String brand = resolveBrand(statusResponse, cardMask);
+        String displayMask = CardMaskUtil.toLast4(cardMask);
 
         log.warn("[BOB][Card] saving binding userId={} orderId={} bindingId={} mask={} brand={}",
-                payment.getUserId(), payment.getOrderId(), bindingId, cardMask, brand);
-        saveUserCard(payment.getUserId(), bindingId, cardMask, cardName, brand);
+                payment.getUserId(), payment.getOrderId(), bindingId, displayMask, brand);
+        saveUserCard(payment.getUserId(), bindingId, displayMask, cardName, brand);
     }
 
     private static String resolveBrand(BobOrderStatusResponse statusResponse, String cardMask) {
@@ -119,7 +121,7 @@ public class BobCardService {
                 UserCard userCard = UserCard.builder()
                         .userId(userId)
                         .cardId(bindingId)
-                        .cardMask(cardMask != null ? cardMask : "**** **** **** ****")
+                        .cardMask(cardMask != null ? CardMaskUtil.toLast4(cardMask) : CardMaskUtil.EMPTY_DISPLAY)
                         .cardName(cardName != null ? cardName : "Bank Card")
                         .brand(brand != null ? brand : "UNKNOWN")
                         .reccPmntId(bindingId)

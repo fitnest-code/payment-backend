@@ -12,6 +12,7 @@ import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
 import az.fitnest.payment.repository.CallbackLogRepository;
 import az.fitnest.payment.util.CardBrandDetector;
+import az.fitnest.payment.util.CardMaskUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -560,7 +561,7 @@ public class EpointIntegrationService {
         payment.setTransactionId(response.transaction() != null ? response.transaction() : payment.getTransactionId());
         payment.setBankTransaction(response.bankTransaction());
         payment.setRrn(response.rrn());
-        payment.setCardMask(response.cardMask());
+        payment.setCardMask(CardMaskUtil.toLast4(response.cardMask()));
         payment.setCardName(response.cardName());
         payment.setMessage(response.message());
         payment.setCode(response.code());
@@ -580,7 +581,7 @@ public class EpointIntegrationService {
             payment.setUserId(userId);
             payment.setDescription(description);
             payment.setRedirectUrl(response.redirectUrl());
-            payment.setCardMask(response.cardMask());
+            payment.setCardMask(CardMaskUtil.toLast4(response.cardMask()));
             payment.setCardName(response.cardName());
             payment.setRrn(response.rrn());
             payment.setBankTransaction(response.bankTransaction());
@@ -606,7 +607,7 @@ public class EpointIntegrationService {
         payment.setStatus(response.status() != null ? response.status().toUpperCase() : "UNKNOWN");
         payment.setUserId(userId);
         payment.setDescription(description);
-        payment.setCardMask(response.cardMask());
+        payment.setCardMask(CardMaskUtil.toLast4(response.cardMask()));
         payment.setCardName(response.cardName());
         payment.setRrn(response.rrn());
         payment.setBankTransaction(response.bankTransaction());
@@ -635,7 +636,7 @@ public class EpointIntegrationService {
                 .operationCode(payment.getOperationCode())
                 .rrn(payment.getRrn())
                 .cardName(payment.getCardName())
-                .cardMask(payment.getCardMask())
+                .cardMask(CardMaskUtil.toLast4(payment.getCardMask()))
                 .amount(payment.getAmount())
                 .splitAmount(null)
                 .cardId(payment.getCardId())
@@ -702,8 +703,11 @@ public class EpointIntegrationService {
 
         if (existingCard.isPresent()) {
             UserCard card = existingCard.get();
-            if (!card.getCardMask().equals(callbackData.cardMask())) {
-                log.warn("[CardSave] Card mask mismatch for cardId {}: existing={}, new={}. Skipping update.", callbackData.cardId(), card.getCardMask(), callbackData.cardMask());
+            String existingMask = CardMaskUtil.toLast4(card.getCardMask());
+            String incomingMask = CardMaskUtil.toLast4(callbackData.cardMask());
+            if (incomingMask != null && existingMask != null && !existingMask.equals(incomingMask)) {
+                log.warn("[CardSave] Card mask mismatch for cardId {}: existing={}, new={}. Skipping update.",
+                        callbackData.cardId(), existingMask, incomingMask);
                 return;
             }
             card.setCardName(getField.apply(callbackData.cardName(), "CARDNAME"));
@@ -711,30 +715,38 @@ public class EpointIntegrationService {
             card.setOperationCode(callbackData.operationCode());
             card.setRrn(getField.apply(callbackData.rrn(), "RRN"));
             card.setApprovalCode(getField.apply(callbackData.approvalCode(), "APPROVAL_CODE"));
-            card.setCardNumber(getField.apply(callbackData.cardNumber(), "CARD_NUMBER"));
+            card.setCardNumber(CardMaskUtil.toLast4(getField.apply(callbackData.cardNumber(), "CARD_NUMBER")));
             card.setReccPmntId(getField.apply(callbackData.reccPmntId(), "RECC_PMNT_ID"));
+            if (incomingMask != null && !incomingMask.isBlank()) {
+                card.setCardMask(incomingMask);
+            }
             userCardRepository.save(card);
             log.info("[CardSave] Updated existing card {} for user {}", callbackData.cardId(), userId);
         } else {
+            String incomingMask = CardMaskUtil.toLast4(callbackData.cardMask());
             boolean duplicateCard = userCardRepository.findAllByUserId(userId).stream()
-                    .anyMatch(card -> card.getCardMask().equals(callbackData.cardMask()) && card.getCardName().equals(callbackData.cardName()));
+                    .anyMatch(card -> {
+                        String stored = CardMaskUtil.toLast4(card.getCardMask());
+                        return stored != null && stored.equals(incomingMask)
+                                && java.util.Objects.equals(card.getCardName(), callbackData.cardName());
+                    });
 
             if (duplicateCard) {
-                log.warn("[CardSave] Duplicate card detected for user {} with cardMask {}. Skipping save.", userId, callbackData.cardMask());
+                log.warn("[CardSave] Duplicate card detected for user {} with cardMask {}. Skipping save.", userId, incomingMask);
                 return;
             }
 
             UserCard userCard = UserCard.builder()
                     .userId(userId)
                     .cardId(callbackData.cardId())
-                    .cardMask(callbackData.cardMask())
+                    .cardMask(incomingMask != null ? incomingMask : CardMaskUtil.EMPTY_DISPLAY)
                     .cardName(getField.apply(callbackData.cardName(), "CARDNAME"))
                     .brand(CardBrandDetector.detectBrand(callbackData.cardMask()))
                     .bankTransaction(callbackData.bankTransaction())
                     .operationCode(callbackData.operationCode())
                     .rrn(getField.apply(callbackData.rrn(), "RRN"))
                     .approvalCode(getField.apply(callbackData.approvalCode(), "APPROVAL_CODE"))
-                    .cardNumber(getField.apply(callbackData.cardNumber(), "CARD_NUMBER"))
+                    .cardNumber(CardMaskUtil.toLast4(getField.apply(callbackData.cardNumber(), "CARD_NUMBER")))
                     .reccPmntId(getField.apply(callbackData.reccPmntId(), "RECC_PMNT_ID"))
                     .build();
             userCardRepository.save(userCard);

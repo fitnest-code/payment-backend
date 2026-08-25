@@ -73,8 +73,8 @@ class BobStatusMapperTest {
 
         mapper.enrichStatusResponse(response, payment);
 
-        assertEquals("521097******0454", response.getPan());
-        assertEquals("521097******0454", response.getCardMask());
+        assertEquals("************0454", response.getPan());
+        assertEquals("************0454", response.getCardMask());
         assertEquals("JOHN DOE", response.getCardholderName());
         assertEquals("ABC123", response.getApprovalCode());
         assertEquals("123456789012", response.getRrn());

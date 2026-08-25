@@ -10,6 +10,7 @@ import az.fitnest.payment.model.entity.UserCard;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
 import az.fitnest.payment.util.CardBrandDetector;
+import az.fitnest.payment.util.CardMaskUtil;
 import az.fitnest.payment.util.PaymentTypeLabels;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -332,7 +333,8 @@ public class UserPaymentService {
     }
 
     private UserCardResponse mapToCardResponse(UserCard card) {
-        String bank = detectBank(card.getBrand(), card.getCardMask(), card.getCardId());
+        String rawMask = card.getCardMask();
+        String bank = detectBank(card.getBrand(), rawMask, card.getCardId());
         if (bank != null && ("BOB".equalsIgnoreCase(bank) || "BOB_PAYMENT".equalsIgnoreCase(bank) || "BANK_OF_BAKU".equalsIgnoreCase(bank))) {
             bank = "Bank of Baku";
         }
@@ -341,15 +343,20 @@ public class UserPaymentService {
             brand = "Bank of Baku";
         }
 
-        String detectedNetwork = CardBrandDetector.detectBrand(card.getCardMask());
-        if (brand == null || brand.isBlank() || "ABB".equalsIgnoreCase(brand) || "Bank of Baku".equalsIgnoreCase(brand) || "BOB".equalsIgnoreCase(brand)) {
-            brand = detectedNetwork != null && !"UNKNOWN".equalsIgnoreCase(detectedNetwork) ? detectedNetwork : (brand != null ? brand : "Bank of Baku");
+        // Only detect network from BIN when mask still has more than last 4 digits.
+        if (CardMaskUtil.hasMoreThanLast4(rawMask)) {
+            String detectedNetwork = CardBrandDetector.detectBrand(rawMask);
+            if (brand == null || brand.isBlank() || "ABB".equalsIgnoreCase(brand) || "Bank of Baku".equalsIgnoreCase(brand) || "BOB".equalsIgnoreCase(brand)) {
+                brand = detectedNetwork != null && !"UNKNOWN".equalsIgnoreCase(detectedNetwork)
+                        ? detectedNetwork
+                        : (brand != null ? brand : "Bank of Baku");
+            }
         }
 
         return new UserCardResponse(
             card.getCardId(),
             card.getCardName(),
-            card.getCardMask(),
+            CardMaskUtil.toLast4(rawMask),
             brand,
             bank
         );
@@ -657,7 +664,7 @@ public class UserPaymentService {
             payment.getCreatedDate() != null ? payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
             cardBrand,
             bank,
-            maskCardToLast4(payment.getCardMask()),
+            CardMaskUtil.toLast4(payment.getCardMask()),
             actualType,
             formattedStatus,
             payment.getCode(),
@@ -673,14 +680,4 @@ public class UserPaymentService {
                 payments.stream().map(Payment::getUserId).toList());
     }
 
-    private String maskCardToLast4(String cardMask) {
-        if (cardMask == null || cardMask.isBlank()) {
-            return cardMask;
-        }
-        String clean = cardMask.replaceAll("\\s+", "");
-        if (clean.length() < 4) {
-            return clean;
-        }
-        return "************" + clean.substring(clean.length() - 4);
-    }
 }

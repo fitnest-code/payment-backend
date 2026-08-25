@@ -8,6 +8,7 @@ import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.util.CardBrandDetector;
+import az.fitnest.payment.util.CardMaskUtil;
 import az.fitnest.payment.util.PaymentPackageRef;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -405,7 +406,7 @@ public class AbbIntegrationService {
             if (Boolean.TRUE.equals(payment.getCallbackProcessed()) || "SUCCESS".equals(payment.getStatus())) {
                 if ("SUCCESS".equals(payment.getStatus())) {
                     log.info("[ABB][TRTYPE=90] Payment for orderId={} was already processed locally as SUCCESS.", orderId);
-                    String maskedCard = maskCardToLast4(payment.getCardMask());
+                    String maskedCard = CardMaskUtil.toLast4(payment.getCardMask());
                     return buildSuccessResponse(
                             "0", // action = 0
                             payment.getCode() != null ? payment.getCode() : "00", // rc
@@ -417,7 +418,7 @@ public class AbbIntegrationService {
                     );
                 } else {
                     log.info("[ABB][TRTYPE=90] Payment for orderId={} was already processed locally as FAILED.", orderId);
-                    String maskedCard = maskCardToLast4(payment.getCardMask());
+                    String maskedCard = CardMaskUtil.toLast4(payment.getCardMask());
                     String action = "3";
                     if (payment.getBankResponse() != null && payment.getBankResponse().contains("ACTION=")) {
                         for (String line : payment.getBankResponse().split("\n")) {
@@ -532,13 +533,13 @@ public class AbbIntegrationService {
             });
 
             if ((action != null && !action.isBlank()) || (rc != null && !rc.isBlank())) {
-                String masked = paymentOpt.map(p -> maskCardToLast4(p.getCardMask())).orElse(null);
+                String masked = paymentOpt.map(p -> CardMaskUtil.toLast4(p.getCardMask())).orElse(null);
                 Payment updatedPayment = paymentRepository.findByOrderId(orderId).orElse(null);
                 return buildSuccessResponse(action, rc, approval, rrn, intRef, masked, updatedPayment);
             } else {
                 Payment updatedPayment = paymentRepository.findByOrderId(orderId).orElse(null);
                 if (updatedPayment != null && "FAILED".equals(updatedPayment.getStatus())) {
-                    String masked = maskCardToLast4(updatedPayment.getCardMask());
+                    String masked = CardMaskUtil.toLast4(updatedPayment.getCardMask());
                     return buildSuccessResponse("3", "96", null, null, null, masked, updatedPayment);
                 }
                 return AbbTransactionActionResponse.error(
@@ -668,7 +669,7 @@ public class AbbIntegrationService {
 
         // CARD → cardMask (maskalanmış kart məlumatı)
         if (callback.getCard() != null && !callback.getCard().isBlank()) {
-            payment.setCardMask(callback.getCard());
+            payment.setCardMask(CardMaskUtil.toLast4(callback.getCard()));
         }
     }
 
@@ -918,17 +919,6 @@ public class AbbIntegrationService {
         return body.substring(start + open.length(), end).trim();
     }
 
-    private String maskCardToLast4(String cardMask) {
-        if (cardMask == null || cardMask.isBlank()) {
-            return cardMask;
-        }
-        String clean = cardMask.replaceAll("\\s+", "");
-        if (clean.length() < 4) {
-            return clean;
-        }
-        return "************" + clean.substring(clean.length() - 4);
-    }
-
     private AbbTransactionActionResponse buildSuccessResponse(String action, String rc, String approval,
                                                               String rrn, String intRef, String maskedCard, Payment payment) {
         if (payment == null) {
@@ -1024,7 +1014,7 @@ public class AbbIntegrationService {
             payment.getCreatedDate() != null ? payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant() : null,
             cardBrand,
             bank,
-            maskCardToLast4(payment.getCardMask()),
+            CardMaskUtil.toLast4(payment.getCardMask()),
             actualType,
             formattedStatus,
             payment.getCode(),

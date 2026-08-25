@@ -4,6 +4,7 @@ import az.fitnest.payment.dto.bob.BobOrderStatusResponse;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.util.PaymentPackageRef;
+import az.fitnest.payment.util.CardMaskUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,7 +70,7 @@ public class BobPaymentStore {
             payment.setCardId(cardId);
         }
         if (cardMask != null) {
-            payment.setCardMask(cardMask);
+            payment.setCardMask(CardMaskUtil.toLast4(cardMask));
         }
         return paymentRepository.save(payment);
     }
@@ -146,7 +147,7 @@ public class BobPaymentStore {
             payment.setRrn(rrn);
         }
         if (statusResponse.getPan() != null && !statusResponse.getPan().isBlank()) {
-            payment.setCardMask(statusResponse.getPan());
+            payment.setCardMask(CardMaskUtil.toLast4(statusResponse.getPan()));
         }
         if (statusResponse.getCardholderName() != null && !statusResponse.getCardholderName().isBlank()) {
             payment.setCardName(statusResponse.getCardholderName());

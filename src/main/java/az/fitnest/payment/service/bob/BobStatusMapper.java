@@ -4,6 +4,7 @@ import az.fitnest.payment.dto.bob.BobOrderStatusResponse;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.enums.BobPaymentStatus;
 import az.fitnest.payment.util.CardBrandDetector;
+import az.fitnest.payment.util.CardMaskUtil;
 import az.fitnest.payment.util.PaymentTypeLabels;
 import org.springframework.stereotype.Component;
 
@@ -130,7 +131,11 @@ public class BobStatusMapper {
         if ((cardMask == null || cardMask.isBlank()) && payment != null) {
             cardMask = payment.getCardMask();
         }
-        statusResponse.setCardMask(cardMask);
+        // Resolve brand from bank PAN (may include BIN) before remasking to last-4.
+        statusResponse.setCardBrand(resolveCardBrand(statusResponse, cardMask));
+        String displayMask = CardMaskUtil.toLast4(cardMask);
+        statusResponse.setCardMask(displayMask);
+        statusResponse.setPan(displayMask);
 
         if ((statusResponse.getCardholderName() == null || statusResponse.getCardholderName().isBlank())
                 && payment != null && payment.getCardName() != null) {
@@ -142,7 +147,6 @@ public class BobStatusMapper {
             statusResponse.setApprovalCode(payment.getCode());
         }
 
-        statusResponse.setCardBrand(resolveCardBrand(statusResponse, cardMask));
         statusResponse.setBank("Bank of Baku");
         statusResponse.setType(resolvePaymentTypeLabel(payment, lang));
     }
