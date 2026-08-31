@@ -28,7 +28,7 @@ public class CoinSettings extends BaseAuditableEntity {
     private BigDecimal spendRateCoinToAzn = new BigDecimal("20.00");
 
     @Column(name = "max_discount_percentage", nullable = false)
-    private BigDecimal maxDiscountPercentage = new BigDecimal("20.00");
+    private BigDecimal maxDiscountPercentage = new BigDecimal("100.00");
 
     @Column(name = "expiry_months", nullable = false)
     private Integer expiryMonths = 12;

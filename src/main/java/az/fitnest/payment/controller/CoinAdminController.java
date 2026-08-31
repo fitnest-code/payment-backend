@@ -36,9 +36,15 @@ public class CoinAdminController {
     }
 
     @PostMapping("/adjust")
-    @Operation(summary = "Manual Coin korreksiyası", description = "Admin tərəfindən istifadəçi balansına manual Coin əlavə etmək və ya çıxarmaq")
+    @Operation(summary = "Manual Coin korreksiyası (Credit / Debit)", description = "Admin tərəfindən istifadəçi balansına manual Coin əlavə etmək (müsbət) və ya çıxarmaq (mənfi)")
     public ResponseEntity<CoinWalletResponse> adjustCoins(@Valid @RequestBody ManualCoinAdjustRequest request) {
         return ResponseEntity.ok(coinWalletService.manualAdjustCoins(request));
+    }
+
+    @PostMapping("/bulk-adjust")
+    @Operation(summary = "Toplu (Bulk) Coin artırılması / azaldılması", description = "Seçilmiş istifadəçi siyahısına toplu şəkildə Coin əlavə edilməsi və bildiriş göndərilməsi")
+    public ResponseEntity<BulkCoinAdjustResponse> bulkAdjustCoins(@Valid @RequestBody BulkCoinAdjustRequest request) {
+        return ResponseEntity.ok(coinWalletService.bulkAdjustCoins(request));
     }
 
     @GetMapping("/history")

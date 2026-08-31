@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 public class CoinWalletResponse {
     private BigDecimal totalBalance;
     private BigDecimal aznEquivalent;
-    private BigDecimal expiringSoonCoins;
-    private LocalDateTime nextExpiryDate;
+    private LocalDateTime firstCoinEarnedAt;
+    private LocalDateTime expiryDate;
+    private Long daysUntilExpiry;
 }

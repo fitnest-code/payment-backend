@@ -1,8 +1,5 @@
 package az.fitnest.payment.dto.coin;
 
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.PositiveOrZero;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,11 +13,15 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 public class CalculateDiscountRequest {
 
-    @NotNull(message = "Orijinal məbləğ icbari hissədir")
-    @Positive(message = "Orijinal məbləğ müsbət olmalıdır")
-    private BigDecimal originalPrice;
+    private Long subscriptionPlanId;
 
-    @NotNull(message = "Xərclənəcək Coin miqdarı icbari hissədir")
-    @PositiveOrZero(message = "Coin miqdarı mənfi ola bilməz")
+    private Long optionId;
+
+    private BigDecimal originalPrice; // Təhlükəsizlik mülahizələrinə görə backend qiyməti DB/gRPC-dən daxili hesablayır
+
+    private Boolean useCoin;
+
     private BigDecimal coinsToUse;
+
+    private Long promotionId; // Gələcək PromoCode / Kampaniya inteqrasiyası üçün
 }
