@@ -57,4 +57,19 @@ public class CoinTransaction extends BaseAuditableEntity {
 
     @Column(name = "description")
     private String description;
+
+    @Column(name = "formula_version", length = 50)
+    private String formulaVersion;
+
+    @Column(name = "eligible_cash_amount")
+    private BigDecimal eligibleCashAmount;
+
+    @Column(name = "raw_coins")
+    private BigDecimal rawCoins;
+
+    @Column(name = "awarded_coins")
+    private Integer awardedCoins;
+
+    @Column(name = "earn_breakdown", columnDefinition = "TEXT")
+    private String earnBreakdown;
 }

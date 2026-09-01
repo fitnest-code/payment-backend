@@ -4,6 +4,7 @@ import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.enums.CoinTransactionType;
 import az.fitnest.payment.repository.CoinTransactionRepository;
 import az.fitnest.payment.service.CoinWalletService;
+import az.fitnest.payment.util.PaymentPackageRef;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -39,12 +40,15 @@ public class CoinPaymentProcessor {
 
         BigDecimal coinsUsed = payment.getCoinsUsed() != null ? payment.getCoinsUsed() : BigDecimal.ZERO;
         BigDecimal netPaid = toAzn(payment.getAmount());
+        PaymentPackageRef.Ref pkgRef = PaymentPackageRef.parse(payment.getDescription());
         coinWalletService.processPaymentCoins(
                 payment.getUserId(),
                 payment.getOrderId(),
                 payment.getId(),
                 coinsUsed,
-                netPaid);
+                netPaid,
+                pkgRef.packageId(),
+                pkgRef.optionId());
         log.info("[Coin] Processed success orderId={} coinsUsed={} netPaidAzn={}",
                 payment.getOrderId(), coinsUsed, netPaid);
     }
@@ -61,11 +65,22 @@ public class CoinPaymentProcessor {
 
         BigDecimal coinsUsed = payment.getCoinsUsed() != null ? payment.getCoinsUsed() : BigDecimal.ZERO;
         BigDecimal netPaid = toAzn(payment.getAmount());
-        var settings = coinWalletService.getSettings();
-        BigDecimal earnRate = settings.getEarnRateAznToCoin() != null
-                ? settings.getEarnRateAznToCoin()
-                : BigDecimal.ONE;
-        BigDecimal coinsEarned = netPaid.multiply(earnRate).setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal coinsEarned = coinTransactionRepository
+                .findByUserIdAndOrderIdAndTypeIn(
+                        payment.getUserId(),
+                        payment.getOrderId(),
+                        List.of(CoinTransactionType.EARN))
+                .stream()
+                .findFirst()
+                .map(tx -> tx.getAmount() != null ? tx.getAmount() : BigDecimal.ZERO)
+                .orElseGet(() -> {
+                    var settings = coinWalletService.getSettings();
+                    BigDecimal earnRate = settings.getEarnRateAznToCoin() != null
+                            ? settings.getEarnRateAznToCoin()
+                            : BigDecimal.ONE;
+                    return netPaid.multiply(earnRate).setScale(2, RoundingMode.HALF_UP);
+                });
 
         coinWalletService.processRefundCoins(
                 payment.getUserId(),

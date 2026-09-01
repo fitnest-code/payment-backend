@@ -17,6 +17,7 @@ import az.fitnest.payment.repository.CoinTransactionRepository;
 import az.fitnest.payment.repository.CoinWalletRepository;
 import az.fitnest.payment.repository.WelcomeBonusIdentifierRepository;
 import az.fitnest.payment.service.impl.CoinWalletServiceImpl;
+import az.fitnest.payment.service.coin.CoinEarnCalculator;
 import az.fitnest.payment.service.coin.CoinNotificationPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -63,6 +64,9 @@ class CoinWalletServiceTest {
     @Mock
     private CoinNotificationPublisher coinNotificationPublisher;
 
+    @Mock
+    private CoinEarnCalculator coinEarnCalculator;
+
     @InjectMocks
     private CoinWalletServiceImpl coinWalletService;
 
@@ -77,6 +81,15 @@ class CoinWalletServiceTest {
         defaultSettings.setMaxDiscountPercentage(new BigDecimal("100.00"));
         defaultSettings.setExpiryMonths(12);
         defaultSettings.setActive(true);
+        when(coinEarnCalculator.isV2Formula(any())).thenReturn(false);
+        when(coinEarnCalculator.calculateV1(any(), any())).thenAnswer(inv -> {
+            BigDecimal amount = inv.getArgument(0);
+            BigDecimal rate = inv.getArgument(1);
+            if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+                return BigDecimal.ZERO;
+            }
+            return amount.multiply(rate != null ? rate : BigDecimal.ZERO);
+        });
     }
 
     @Test
@@ -169,7 +182,7 @@ class CoinWalletServiceTest {
         when(walletRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(wallet));
 
         // Spending 200 coins, net card paid 0.00 AZN
-        coinWalletService.processPaymentCoins(userId, "COIN-ORD-123", 1L, new BigDecimal("200.00"), BigDecimal.ZERO);
+        coinWalletService.processPaymentCoins(userId, "COIN-ORD-123", 1L, new BigDecimal("200.00"), BigDecimal.ZERO, null, null);
 
         // BigDecimal scale-agnostic comparison (0 == 0.00)
         assertEquals(0, wallet.getBalance().compareTo(BigDecimal.ZERO), "Balans sıfır olmalıdır");

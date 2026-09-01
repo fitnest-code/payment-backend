@@ -19,6 +19,7 @@ import az.fitnest.payment.repository.CoinTransactionRepository;
 import az.fitnest.payment.repository.CoinWalletRepository;
 import az.fitnest.payment.repository.WelcomeBonusIdentifierRepository;
 import az.fitnest.payment.service.CoinWalletService;
+import az.fitnest.payment.service.coin.CoinEarnCalculator;
 import az.fitnest.payment.service.coin.CoinNotificationPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,7 +36,9 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -51,6 +54,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     private final IdentityBackendClient identityBackendClient;
     private final UserGrpcClient userGrpcClient;
     private final CoinNotificationPublisher coinNotificationPublisher;
+    private final CoinEarnCalculator coinEarnCalculator;
 
     @Override
     @Transactional(readOnly = true)
@@ -322,7 +326,8 @@ public class CoinWalletServiceImpl implements CoinWalletService {
 
     @Override
     @Transactional
-    public void processPaymentCoins(Long userId, String orderId, Long paymentId, BigDecimal coinsUsed, BigDecimal netPaidAmount) {
+    public void processPaymentCoins(Long userId, String orderId, Long paymentId, BigDecimal coinsUsed,
+                                     BigDecimal netPaidAmount, Long packageId, Long optionId) {
         CoinSettings settings = getSettingsInternal();
         CoinWallet wallet = getOrCreateWalletWithLock(userId);
         LocalDateTime now = LocalDateTime.now();
@@ -355,25 +360,49 @@ public class CoinWalletServiceImpl implements CoinWalletService {
             transactionRepository.save(spendTx);
         }
 
-        // 2. Process Coins Earned (1 AZN net card payment = 1 Coin).
-        // QEYD: Coin ilə alınan ödənişdən təkrar Coin hesablanmır (netPaidAmount kartdan ödənilən faktiki məbləğdir).
+        // 2. Process Coins Earned — only on non-coin cash portion
         if (netPaidAmount != null && netPaidAmount.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal earnedCoins = netPaidAmount.multiply(settings.getEarnRateAznToCoin()).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal newBalance = wallet.getBalance().add(earnedCoins);
-            wallet.setBalance(newBalance);
+            BigDecimal earnedCoins;
+            CoinEarnCalculator.EarnResult earnResult = null;
 
-            CoinTransaction earnTx = new CoinTransaction();
-            earnTx.setWallet(wallet);
-            earnTx.setUserId(userId);
-            earnTx.setType(CoinTransactionType.EARN);
-            earnTx.setAmount(earnedCoins);
-            earnTx.setBalanceAfter(newBalance);
-            earnTx.setRemainingAmount(earnedCoins);
-            earnTx.setExpiryDate(wallet.getExpiryDate());
-            earnTx.setOrderId(orderId);
-            earnTx.setPaymentId(paymentId);
-            earnTx.setDescription("Uğurlu ödəniş üzrə Coin qazanıldı");
-            transactionRepository.save(earnTx);
+            if (coinEarnCalculator.isV2Formula(settings)) {
+                PackageContext ctx = resolvePackageContext(packageId, optionId);
+                earnResult = coinEarnCalculator.calculateV2(
+                        netPaidAmount,
+                        ctx.tierName(),
+                        ctx.durationMonths(),
+                        settings,
+                        settings.getTierMultipliers(),
+                        settings.getPeriodMultipliers());
+                earnedCoins = BigDecimal.valueOf(earnResult.getAwardedCoins());
+            } else {
+                earnedCoins = coinEarnCalculator.calculateV1(netPaidAmount, settings.getEarnRateAznToCoin());
+            }
+
+            if (earnedCoins.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal newBalance = wallet.getBalance().add(earnedCoins);
+                wallet.setBalance(newBalance);
+
+                CoinTransaction earnTx = new CoinTransaction();
+                earnTx.setWallet(wallet);
+                earnTx.setUserId(userId);
+                earnTx.setType(CoinTransactionType.EARN);
+                earnTx.setAmount(earnedCoins);
+                earnTx.setBalanceAfter(newBalance);
+                earnTx.setRemainingAmount(earnedCoins);
+                earnTx.setExpiryDate(wallet.getExpiryDate());
+                earnTx.setOrderId(orderId);
+                earnTx.setPaymentId(paymentId);
+                earnTx.setDescription("Uğurlu ödəniş üzrə Coin qazanıldı");
+                if (earnResult != null) {
+                    earnTx.setFormulaVersion(earnResult.getFormulaVersion());
+                    earnTx.setEligibleCashAmount(earnResult.getEligibleCashAmount());
+                    earnTx.setRawCoins(earnResult.getRawCoins());
+                    earnTx.setAwardedCoins(earnResult.getAwardedCoins());
+                    earnTx.setEarnBreakdown(buildEarnBreakdown(earnResult));
+                }
+                transactionRepository.save(earnTx);
+            }
         }
 
         walletRepository.save(wallet);
@@ -651,11 +680,35 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         CoinSettings settings = new CoinSettings();
         settings.setWelcomeBonusAmount(BigDecimal.ZERO);
         settings.setEarnRateAznToCoin(BigDecimal.ZERO);
-        settings.setSpendRateCoinToAzn(BigDecimal.ZERO);
+        settings.setSpendRateCoinToAzn(new BigDecimal("10.00"));
         settings.setMaxDiscountPercentage(BigDecimal.ZERO);
-        settings.setExpiryMonths(0);
+        settings.setExpiryMonths(12);
         settings.setActive(false);
+        settings.setFormulaVersion(CoinEarnCalculator.FORMULA_V2);
+        settings.setBaseEarnRate(new BigDecimal("0.020000"));
+        settings.setMaxGivebackRate(new BigDecimal("0.050000"));
+        settings.setEarnCoinFactor(new BigDecimal("10.00"));
+        settings.setTierMultipliers(defaultTierMultipliers());
+        settings.setPeriodMultipliers(defaultPeriodMultipliers());
         return settingsRepository.save(settings);
+    }
+
+    private static Map<String, BigDecimal> defaultTierMultipliers() {
+        Map<String, BigDecimal> map = new HashMap<>();
+        map.put("BRONZE", new BigDecimal("1.0000"));
+        map.put("SILVER", new BigDecimal("1.1000"));
+        map.put("GOLD", new BigDecimal("1.2000"));
+        map.put("PLATINUM", new BigDecimal("1.3000"));
+        return map;
+    }
+
+    private static Map<Integer, BigDecimal> defaultPeriodMultipliers() {
+        Map<Integer, BigDecimal> map = new HashMap<>();
+        map.put(1, new BigDecimal("1.0000"));
+        map.put(3, new BigDecimal("1.1500"));
+        map.put(6, new BigDecimal("1.3000"));
+        map.put(12, new BigDecimal("1.5000"));
+        return map;
     }
 
     private CoinTransactionResponse mapToTransactionResponse(CoinTransaction tx) {
@@ -733,5 +786,186 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         } catch (NoSuchAlgorithmException e) {
             return input;
         }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CoinSettingsV2Response getSettingsV2() {
+        return mapToSettingsV2Response(getSettingsInternal());
+    }
+
+    @Override
+    @Transactional
+    public CoinSettingsV2Response updateSettingsV2(CoinSettingsV2Request request) {
+        CoinSettings settings = getSettingsInternal();
+        settings.setFormulaVersion(request.getFormulaVersion());
+        settings.setActive(request.getActive());
+        settings.setWelcomeBonusAmount(request.getWelcomeBonusAmount());
+        settings.setBaseEarnRate(request.getBaseEarnRate());
+        settings.setMaxGivebackRate(request.getMaxGivebackRate());
+        settings.setEarnCoinFactor(request.getEarnCoinFactor());
+        settings.setSpendRateCoinToAzn(request.getSpendRateCoinToAzn());
+        settings.setMaxDiscountPercentage(request.getMaxDiscountPercentage());
+        settings.setExpiryMonths(request.getExpiryMonths());
+        settings.setTierMultipliers(normalizeTierMultipliers(request.getTierMultipliers()));
+        settings.setPeriodMultipliers(normalizePeriodMultipliers(request.getPeriodMultipliers()));
+        CoinSettings saved = settingsRepository.save(settings);
+        return mapToSettingsV2Response(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CoinEarnPreviewResponse previewEarn(CoinEarnPreviewRequest request) {
+        CoinSettings settings = getSettingsInternal();
+        PackageContext ctx = resolvePackageContext(
+                request.getPackageId(),
+                request.getOptionId(),
+                request.getTierName(),
+                request.getDurationMonths());
+
+        CoinEarnCalculator.EarnResult result = coinEarnCalculator.calculateV2(
+                request.getEligibleCashAmount(),
+                ctx.tierName(),
+                ctx.durationMonths(),
+                settings,
+                settings.getTierMultipliers(),
+                settings.getPeriodMultipliers());
+
+        return mapToEarnPreviewResponse(result, request.getEligibleCashAmount());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CoinEarnPreviewBatchResponse previewEarnBatch(CoinEarnPreviewBatchRequest request) {
+        CoinSettings settings = getSettingsInternal();
+        List<CoinEarnPreviewBatchResponse.PackageEarnPreview> previews = new ArrayList<>();
+
+        for (CoinEarnPreviewBatchRequest.PackageEarnItem item : request.getPackages()) {
+            PackageContext ctx = resolvePackageContext(
+                    item.getPackageId(),
+                    item.getOptionId(),
+                    item.getTierName(),
+                    item.getDurationMonths());
+
+            BigDecimal price = item.getPriceAzn() != null
+                    ? item.getPriceAzn()
+                    : resolvePackagePrice(item.getPackageId(), item.getOptionId(), null);
+
+            CoinEarnCalculator.EarnResult result = coinEarnCalculator.calculateV2(
+                    price,
+                    ctx.tierName(),
+                    ctx.durationMonths(),
+                    settings,
+                    settings.getTierMultipliers(),
+                    settings.getPeriodMultipliers());
+
+            previews.add(CoinEarnPreviewBatchResponse.PackageEarnPreview.builder()
+                    .packageId(item.getPackageId())
+                    .optionId(item.getOptionId())
+                    .tier(ctx.tierName())
+                    .durationMonths(ctx.durationMonths())
+                    .priceAzn(price)
+                    .appliedGivebackRate(result.getAppliedGivebackRate())
+                    .awardedCoins(result.getAwardedCoins())
+                    .build());
+        }
+
+        return CoinEarnPreviewBatchResponse.builder()
+                .formulaVersion(settings.getFormulaVersion())
+                .previews(previews)
+                .build();
+    }
+
+    private CoinSettingsV2Response mapToSettingsV2Response(CoinSettings settings) {
+        return CoinSettingsV2Response.builder()
+                .id(settings.getId())
+                .formulaVersion(settings.getFormulaVersion())
+                .active(settings.getActive())
+                .welcomeBonusAmount(settings.getWelcomeBonusAmount())
+                .baseEarnRate(settings.getBaseEarnRate())
+                .maxGivebackRate(settings.getMaxGivebackRate())
+                .earnCoinFactor(settings.getEarnCoinFactor())
+                .spendRateCoinToAzn(settings.getSpendRateCoinToAzn())
+                .maxDiscountPercentage(settings.getMaxDiscountPercentage())
+                .expiryMonths(settings.getExpiryMonths())
+                .tierMultipliers(settings.getTierMultipliers() != null
+                        ? new HashMap<>(settings.getTierMultipliers()) : defaultTierMultipliers())
+                .periodMultipliers(settings.getPeriodMultipliers() != null
+                        ? new HashMap<>(settings.getPeriodMultipliers()) : defaultPeriodMultipliers())
+                .build();
+    }
+
+    private CoinEarnPreviewResponse mapToEarnPreviewResponse(CoinEarnCalculator.EarnResult result, BigDecimal price) {
+        return CoinEarnPreviewResponse.builder()
+                .formulaVersion(result.getFormulaVersion())
+                .tier(result.getTierName())
+                .durationMonths(result.getDurationMonths())
+                .finalPackagePrice(price)
+                .eligibleCashAmount(result.getEligibleCashAmount())
+                .baseEarnRate(result.getBaseEarnRate())
+                .tierMultiplier(result.getTierMultiplier())
+                .periodMultiplier(result.getPeriodMultiplier())
+                .rawGivebackRate(result.getRawGivebackRate())
+                .appliedGivebackRate(result.getAppliedGivebackRate())
+                .earnCoinFactor(result.getEarnCoinFactor())
+                .rawCoins(result.getRawCoins())
+                .awardedCoins(result.getAwardedCoins())
+                .build();
+    }
+
+    private record PackageContext(String tierName, Integer durationMonths) {}
+
+    private PackageContext resolvePackageContext(Long packageId, Long optionId) {
+        return resolvePackageContext(packageId, optionId, null, null);
+    }
+
+    private PackageContext resolvePackageContext(Long packageId, Long optionId, String tierName, Integer durationMonths) {
+        if (tierName != null && durationMonths != null) {
+            return new PackageContext(CoinEarnCalculator.normalizeTier(tierName), durationMonths);
+        }
+        if (packageId != null && optionId != null) {
+            try {
+                var names = subscriptionPackageGrpcClient.getPackageNamesByIds(List.of(packageId));
+                String resolvedTier = names.isEmpty() || names.get(0).getName() == null
+                        ? "BRONZE"
+                        : names.get(0).getName();
+                var option = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+                return new PackageContext(
+                        CoinEarnCalculator.normalizeTier(resolvedTier),
+                        option.durationMonths);
+            } catch (Exception e) {
+                log.warn("Could not resolve package context for packageId={}, optionId={}", packageId, optionId, e);
+            }
+        }
+        return new PackageContext(
+                CoinEarnCalculator.normalizeTier(tierName),
+                durationMonths != null ? durationMonths : 1);
+    }
+
+    private Map<String, BigDecimal> normalizeTierMultipliers(Map<String, BigDecimal> input) {
+        Map<String, BigDecimal> normalized = new HashMap<>();
+        if (input != null) {
+            input.forEach((key, value) -> normalized.put(CoinEarnCalculator.normalizeTier(key), value));
+        }
+        return normalized;
+    }
+
+    private Map<Integer, BigDecimal> normalizePeriodMultipliers(Map<Integer, BigDecimal> input) {
+        return input != null ? new HashMap<>(input) : defaultPeriodMultipliers();
+    }
+
+    private String buildEarnBreakdown(CoinEarnCalculator.EarnResult result) {
+        return String.format(
+                "tier=%s,duration=%s,base=%s,tierMult=%s,periodMult=%s,appliedRate=%s,factor=%s,eligible=%s,raw=%s,awarded=%s",
+                result.getTierName(),
+                result.getDurationMonths(),
+                result.getBaseEarnRate(),
+                result.getTierMultiplier(),
+                result.getPeriodMultiplier(),
+                result.getAppliedGivebackRate(),
+                result.getEarnCoinFactor(),
+                result.getEligibleCashAmount(),
+                result.getRawCoins(),
+                result.getAwardedCoins());
     }
 }

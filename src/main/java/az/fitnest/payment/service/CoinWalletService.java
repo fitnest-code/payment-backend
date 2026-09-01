@@ -19,7 +19,8 @@ public interface CoinWalletService {
 
     CoinWalletResponse awardWelcomeBonus(Long userId, WelcomeBonusRequest request);
 
-    void processPaymentCoins(Long userId, String orderId, Long paymentId, BigDecimal coinsUsed, BigDecimal netPaidAmount);
+    void processPaymentCoins(Long userId, String orderId, Long paymentId, BigDecimal coinsUsed,
+                             BigDecimal netPaidAmount, Long packageId, Long optionId);
 
     void processRefundCoins(Long userId, String orderId, Long paymentId, BigDecimal coinsOriginallySpent, BigDecimal coinsOriginallyEarned);
 
@@ -37,4 +38,13 @@ public interface CoinWalletService {
     BulkCoinAdjustResponse bulkWelcomeBonus(BulkWelcomeBonusRequest request);
 
     Page<CoinTransactionResponse> getAllTransactionsForAdmin(Pageable pageable);
+
+    // V2 earn formula
+    CoinSettingsV2Response getSettingsV2();
+
+    CoinSettingsV2Response updateSettingsV2(CoinSettingsV2Request request);
+
+    CoinEarnPreviewResponse previewEarn(CoinEarnPreviewRequest request);
+
+    CoinEarnPreviewBatchResponse previewEarnBatch(CoinEarnPreviewBatchRequest request);
 }
