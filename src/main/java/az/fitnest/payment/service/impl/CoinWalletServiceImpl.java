@@ -368,14 +368,15 @@ public class CoinWalletServiceImpl implements CoinWalletService {
             if (coinEarnCalculator.isV2Formula(settings)) {
                 try {
                     PackageContext ctx = resolvePackageContext(packageId, optionId, null, null);
-                    if (ctx.tierName() == null || ctx.durationMonths() == null) {
-                        log.warn("[Coin] Skip earn — could not map packageId={} optionId={} to tier/period",
+                    if (ctx.packageId() == null || ctx.durationMonths() == null) {
+                        log.warn("[Coin] Skip earn — could not resolve packageId={} optionId={}",
                                 packageId, optionId);
                         earnedCoins = BigDecimal.ZERO;
                     } else {
                         earnResult = coinEarnCalculator.calculateV2(
                                 netPaidAmount,
-                                ctx.tierName(),
+                                ctx.packageId(),
+                                ctx.packageName(),
                                 ctx.durationMonths(),
                                 settings,
                                 settings.getTierMultipliers(),
@@ -700,27 +701,9 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         settings.setBaseEarnRate(new BigDecimal("0.020000"));
         settings.setMaxGivebackRate(new BigDecimal("0.050000"));
         settings.setEarnCoinFactor(new BigDecimal("10.00"));
-        settings.setTierMultipliers(defaultTierMultipliers());
-        settings.setPeriodMultipliers(defaultPeriodMultipliers());
+        settings.setTierMultipliers(new HashMap<>());
+        settings.setPeriodMultipliers(new HashMap<>());
         return settingsRepository.save(settings);
-    }
-
-    private static Map<String, BigDecimal> defaultTierMultipliers() {
-        Map<String, BigDecimal> map = new HashMap<>();
-        map.put("BRONZE", new BigDecimal("1.0000"));
-        map.put("SILVER", new BigDecimal("1.1000"));
-        map.put("GOLD", new BigDecimal("1.2000"));
-        map.put("PLATINUM", new BigDecimal("1.3000"));
-        return map;
-    }
-
-    private static Map<Integer, BigDecimal> defaultPeriodMultipliers() {
-        Map<Integer, BigDecimal> map = new HashMap<>();
-        map.put(1, new BigDecimal("1.0000"));
-        map.put(3, new BigDecimal("1.1500"));
-        map.put(6, new BigDecimal("1.3000"));
-        map.put(12, new BigDecimal("1.5000"));
-        return map;
     }
 
     private CoinTransactionResponse mapToTransactionResponse(CoinTransaction tx) {
@@ -840,7 +823,8 @@ public class CoinWalletServiceImpl implements CoinWalletService {
 
         CoinEarnCalculator.EarnResult result = coinEarnCalculator.calculateV2(
                 request.getEligibleCashAmount(),
-                ctx.tierName(),
+                ctx.packageId(),
+                ctx.packageName(),
                 ctx.durationMonths(),
                 settings,
                 settings.getTierMultipliers(),
@@ -869,17 +853,18 @@ public class CoinWalletServiceImpl implements CoinWalletService {
 
                 CoinEarnCalculator.EarnResult result = coinEarnCalculator.calculateV2(
                         price,
-                        ctx.tierName(),
+                        ctx.packageId(),
+                        ctx.packageName(),
                         ctx.durationMonths(),
                         settings,
                         settings.getTierMultipliers(),
                         settings.getPeriodMultipliers());
 
                 previews.add(CoinEarnPreviewBatchResponse.PackageEarnPreview.builder()
-                        .packageId(item.getPackageId())
+                        .packageId(item.getPackageId() != null ? item.getPackageId() : ctx.packageId())
                         .optionId(item.getOptionId())
-                        .tier(result.getTierName())
-                        .durationMonths(result.getDurationMonths())
+                        .tier(ctx.packageName())
+                        .durationMonths(ctx.durationMonths())
                         .priceAzn(price)
                         .appliedGivebackRate(result.getAppliedGivebackRate())
                         .awardedCoins(result.getAwardedCoins())
@@ -890,7 +875,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
                 previews.add(CoinEarnPreviewBatchResponse.PackageEarnPreview.builder()
                         .packageId(item.getPackageId())
                         .optionId(item.getOptionId())
-                        .tier(CoinEarnCalculator.normalizeTier(item.getTierName()))
+                        .tier(item.getTierName())
                         .durationMonths(item.getDurationMonths())
                         .priceAzn(item.getPriceAzn())
                         .appliedGivebackRate(BigDecimal.ZERO)
@@ -906,14 +891,6 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     }
 
     private CoinSettingsV2Response mapToSettingsV2Response(CoinSettings settings) {
-        Map<String, BigDecimal> tiers = defaultTierMultipliers();
-        if (settings.getTierMultipliers() != null) {
-            tiers.putAll(CoinEarnCalculator.normalizeMultiplierMap(settings.getTierMultipliers()));
-        }
-        Map<Integer, BigDecimal> periods = defaultPeriodMultipliers();
-        if (settings.getPeriodMultipliers() != null) {
-            periods.putAll(settings.getPeriodMultipliers());
-        }
         return CoinSettingsV2Response.builder()
                 .id(settings.getId())
                 .formulaVersion(settings.getFormulaVersion() != null
@@ -929,15 +906,16 @@ public class CoinWalletServiceImpl implements CoinWalletService {
                 .spendRateCoinToAzn(settings.getSpendRateCoinToAzn())
                 .maxDiscountPercentage(settings.getMaxDiscountPercentage())
                 .expiryMonths(settings.getExpiryMonths())
-                .tierMultipliers(tiers)
-                .periodMultipliers(periods)
+                .tierMultipliers(CoinEarnCalculator.copyTierMap(settings.getTierMultipliers()))
+                .periodMultipliers(settings.getPeriodMultipliers() != null
+                        ? new HashMap<>(settings.getPeriodMultipliers()) : new HashMap<>())
                 .build();
     }
 
     private CoinEarnPreviewResponse mapToEarnPreviewResponse(CoinEarnCalculator.EarnResult result, BigDecimal price) {
         return CoinEarnPreviewResponse.builder()
                 .formulaVersion(result.getFormulaVersion())
-                .tier(result.getTierName())
+                .tier(result.getPackageName())
                 .durationMonths(result.getDurationMonths())
                 .finalPackagePrice(price)
                 .eligibleCashAmount(result.getEligibleCashAmount())
@@ -952,10 +930,11 @@ public class CoinWalletServiceImpl implements CoinWalletService {
                 .build();
     }
 
-    private record PackageContext(String tierName, Integer durationMonths) {}
+    private record PackageContext(Long packageId, String packageName, Integer durationMonths) {}
 
     private PackageContext resolvePackageContext(Long packageId, Long optionId, String tierName, Integer durationMonths) {
-        String resolvedTier = CoinEarnCalculator.normalizeTier(tierName);
+        Long resolvedPackageId = packageId;
+        String resolvedName = tierName != null && !tierName.isBlank() ? tierName.trim() : null;
         Integer resolvedDuration = durationMonths;
 
         if (packageId != null && optionId != null) {
@@ -968,38 +947,34 @@ public class CoinWalletServiceImpl implements CoinWalletService {
                         .findFirst()
                         .orElse(null);
                 if (rawName != null) {
-                    resolvedTier = CoinEarnCalculator.normalizeTier(rawName);
+                    resolvedName = rawName.trim();
                 }
                 var option = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
                 if (option != null && option.durationMonths > 0) {
                     resolvedDuration = option.durationMonths;
                 }
+                resolvedPackageId = packageId;
             } catch (Exception e) {
                 log.warn("Could not resolve package context for packageId={}, optionId={}", packageId, optionId, e);
             }
         }
 
-        return new PackageContext(resolvedTier, resolvedDuration);
+        return new PackageContext(resolvedPackageId, resolvedName, resolvedDuration);
     }
 
     private Map<String, BigDecimal> normalizeTierMultipliers(Map<String, BigDecimal> input) {
-        Map<String, BigDecimal> normalized = CoinEarnCalculator.normalizeMultiplierMap(input);
-        if (normalized.isEmpty()) {
-            return defaultTierMultipliers();
-        }
-        Map<String, BigDecimal> merged = defaultTierMultipliers();
-        merged.putAll(normalized);
-        return merged;
+        return CoinEarnCalculator.copyTierMap(input);
     }
 
     private Map<Integer, BigDecimal> normalizePeriodMultipliers(Map<Integer, BigDecimal> input) {
-        return input != null ? new HashMap<>(input) : defaultPeriodMultipliers();
+        return input != null ? new HashMap<>(input) : new HashMap<>();
     }
 
     private String buildEarnBreakdown(CoinEarnCalculator.EarnResult result) {
         return String.format(
-                "tier=%s,duration=%s,base=%s,tierMult=%s,periodMult=%s,appliedRate=%s,factor=%s,eligible=%s,raw=%s,awarded=%s",
-                result.getTierName(),
+                "packageId=%s,package=%s,duration=%s,base=%s,tierMult=%s,periodMult=%s,appliedRate=%s,factor=%s,eligible=%s,raw=%s,awarded=%s",
+                result.getPackageId(),
+                result.getPackageName(),
                 result.getDurationMonths(),
                 result.getBaseEarnRate(),
                 result.getTierMultiplier(),

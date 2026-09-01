@@ -8,20 +8,13 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.text.Normalizer;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 @Component
 public class CoinEarnCalculator {
 
     public static final String FORMULA_V2 = "EARN_V2_20260901";
-    public static final Set<String> CANONICAL_TIERS = Set.of("BRONZE", "SILVER", "GOLD", "PLATINUM");
-    public static final Set<Integer> CANONICAL_PERIODS = Set.of(1, 3, 6, 12);
-
-    private static final Map<String, String> TIER_ALIASES = buildTierAliases();
 
     @Value
     @Builder
@@ -36,29 +29,32 @@ public class CoinEarnCalculator {
         BigDecimal eligibleCashAmount;
         BigDecimal rawCoins;
         int awardedCoins;
-        String tierName;
+        Long packageId;
+        String packageName;
         Integer durationMonths;
     }
 
     public EarnResult calculateV2(
             BigDecimal eligibleCashAmount,
-            String tierName,
+            Long packageId,
+            String packageName,
             Integer durationMonths,
             CoinSettings settings,
             Map<String, BigDecimal> tierMultipliers,
             Map<Integer, BigDecimal> periodMultipliers) {
 
         if (eligibleCashAmount == null || eligibleCashAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            return zeroResult(settings, tierName, durationMonths, eligibleCashAmount);
+            return zeroResult(settings, packageId, packageName, durationMonths, eligibleCashAmount);
+        }
+        if (packageId == null && (packageName == null || packageName.isBlank())) {
+            throw new BadRequestException("Paket müəyyən edilməyib");
+        }
+        if (durationMonths == null || durationMonths <= 0) {
+            throw new BadRequestException("Müddət (durationMonths) müəyyən edilməyib");
         }
 
-        String canonicalTier = requireCanonicalTier(tierName);
-        Integer canonicalPeriod = requireCanonicalPeriod(durationMonths);
-        Map<String, BigDecimal> tierMap = normalizeMultiplierMap(tierMultipliers);
-        Map<Integer, BigDecimal> periodMap = periodMultipliers != null ? periodMultipliers : Map.of();
-
-        BigDecimal tierMult = resolveTierMultiplier(canonicalTier, tierMap);
-        BigDecimal periodMult = resolvePeriodMultiplier(canonicalPeriod, periodMap);
+        BigDecimal tierMult = resolveTierMultiplier(packageId, packageName, tierMultipliers);
+        BigDecimal periodMult = resolvePeriodMultiplier(durationMonths, periodMultipliers);
 
         BigDecimal baseEarnRate = settings.getBaseEarnRate() != null
                 ? settings.getBaseEarnRate()
@@ -91,8 +87,9 @@ public class CoinEarnCalculator {
                 .eligibleCashAmount(eligibleCashAmount.setScale(2, RoundingMode.HALF_UP))
                 .rawCoins(rawCoins.setScale(6, RoundingMode.HALF_UP))
                 .awardedCoins(awardedCoins)
-                .tierName(canonicalTier)
-                .durationMonths(canonicalPeriod)
+                .packageId(packageId)
+                .packageName(packageName)
+                .durationMonths(durationMonths)
                 .build();
     }
 
@@ -109,7 +106,12 @@ public class CoinEarnCalculator {
                 && settings.getFormulaVersion().startsWith("EARN_V2");
     }
 
-    private EarnResult zeroResult(CoinSettings settings, String tierName, Integer durationMonths, BigDecimal amount) {
+    private EarnResult zeroResult(
+            CoinSettings settings,
+            Long packageId,
+            String packageName,
+            Integer durationMonths,
+            BigDecimal amount) {
         return EarnResult.builder()
                 .formulaVersion(settings.getFormulaVersion())
                 .baseEarnRate(settings.getBaseEarnRate())
@@ -121,112 +123,60 @@ public class CoinEarnCalculator {
                 .eligibleCashAmount(amount != null ? amount.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO)
                 .rawCoins(BigDecimal.ZERO)
                 .awardedCoins(0)
-                .tierName(normalizeTier(tierName))
+                .packageId(packageId)
+                .packageName(packageName)
                 .durationMonths(durationMonths)
                 .build();
     }
 
-    private BigDecimal resolveTierMultiplier(String tierName, Map<String, BigDecimal> tierMultipliers) {
+    /**
+     * Multipliers are keyed by packageId ("1", "2", …) from admin settings.
+     * Falls back to package name key, then 1.0 if not configured yet.
+     */
+    public static BigDecimal resolveTierMultiplier(
+            Long packageId,
+            String packageName,
+            Map<String, BigDecimal> tierMultipliers) {
         if (tierMultipliers == null || tierMultipliers.isEmpty()) {
-            throw new BadRequestException("Tier multiplier konfiqurasiyası tapılmadı: " + tierName);
+            return BigDecimal.ONE;
         }
-        BigDecimal mult = tierMultipliers.get(tierName);
-        if (mult == null) {
-            throw new BadRequestException("Dəstəklənməyən tier: " + tierName);
+        if (packageId != null) {
+            BigDecimal byId = tierMultipliers.get(String.valueOf(packageId));
+            if (byId != null) {
+                return byId;
+            }
         }
-        return mult;
+        if (packageName != null && !packageName.isBlank()) {
+            BigDecimal byName = tierMultipliers.get(packageName.trim());
+            if (byName != null) {
+                return byName;
+            }
+        }
+        return BigDecimal.ONE;
     }
 
-    private BigDecimal resolvePeriodMultiplier(Integer durationMonths, Map<Integer, BigDecimal> periodMultipliers) {
-        if (durationMonths == null) {
+    public static BigDecimal resolvePeriodMultiplier(
+            Integer durationMonths,
+            Map<Integer, BigDecimal> periodMultipliers) {
+        if (durationMonths == null || durationMonths <= 0) {
             throw new BadRequestException("Müddət (durationMonths) müəyyən edilməyib");
         }
         if (periodMultipliers == null || periodMultipliers.isEmpty()) {
-            throw new BadRequestException("Müddət multiplier konfiqurasiyası tapılmadı");
+            return BigDecimal.ONE;
         }
         BigDecimal mult = periodMultipliers.get(durationMonths);
-        if (mult == null) {
-            throw new BadRequestException("Dəstəklənməyən müddət: " + durationMonths + " ay");
+        return mult != null ? mult : BigDecimal.ONE;
+    }
+
+    public static Map<String, BigDecimal> copyTierMap(Map<String, BigDecimal> input) {
+        Map<String, BigDecimal> copy = new HashMap<>();
+        if (input != null) {
+            input.forEach((key, value) -> {
+                if (key != null && !key.isBlank() && value != null) {
+                    copy.put(key.trim(), value);
+                }
+            });
         }
-        return mult;
-    }
-
-    public static String requireCanonicalTier(String tierName) {
-        String canonical = normalizeTier(tierName);
-        if (canonical == null || !CANONICAL_TIERS.contains(canonical)) {
-            throw new BadRequestException("Dəstəklənməyən tier: " + tierName);
-        }
-        return canonical;
-    }
-
-    public static Integer requireCanonicalPeriod(Integer durationMonths) {
-        if (durationMonths == null || !CANONICAL_PERIODS.contains(durationMonths)) {
-            throw new BadRequestException("Dəstəklənməyən müddət: " + durationMonths + " ay");
-        }
-        return durationMonths;
-    }
-
-    /**
-     * Maps subscription package names (Bronze, Bürünc, Silver, …) to BRONZE/SILVER/GOLD/PLATINUM.
-     * Uses Locale.ROOT so az/tr JVMs do not turn Silver into SİLVER.
-     */
-    public static String normalizeTier(String tierName) {
-        if (tierName == null || tierName.isBlank()) {
-            return null;
-        }
-        String folded = foldKey(tierName);
-        return TIER_ALIASES.get(folded);
-    }
-
-    public static Map<String, BigDecimal> normalizeMultiplierMap(Map<String, BigDecimal> input) {
-        Map<String, BigDecimal> normalized = new HashMap<>();
-        if (input == null) {
-            return normalized;
-        }
-        input.forEach((key, value) -> {
-            String canonical = normalizeTier(key);
-            if (canonical != null && value != null) {
-                normalized.put(canonical, value);
-            }
-        });
-        return normalized;
-    }
-
-    public static String foldKey(String value) {
-        String replaced = value.trim()
-                .replace('İ', 'I')
-                .replace('ı', 'I');
-        String upper = replaced.toUpperCase(Locale.ROOT);
-        String nfd = Normalizer.normalize(upper, Normalizer.Form.NFD);
-        return nfd.replaceAll("\\p{M}+", "");
-    }
-
-    private static Map<String, String> buildTierAliases() {
-        Map<String, String> aliases = new HashMap<>();
-        putAlias(aliases, "BRONZE", "BRONZE");
-        putAlias(aliases, "SILVER", "SILVER");
-        putAlias(aliases, "GOLD", "GOLD");
-        putAlias(aliases, "PLATINUM", "PLATINUM");
-
-        putAlias(aliases, "BURUNC", "BRONZE");
-        putAlias(aliases, "BRONZA", "BRONZE");
-        putAlias(aliases, "БРОНЗА", "BRONZE");
-
-        putAlias(aliases, "GUMUS", "SILVER");
-        putAlias(aliases, "SEREBRO", "SILVER");
-        putAlias(aliases, "СЕРЕБРО", "SILVER");
-
-        putAlias(aliases, "QIZIL", "GOLD");
-        putAlias(aliases, "ZOLOTO", "GOLD");
-        putAlias(aliases, "ЗОЛОТО", "GOLD");
-
-        putAlias(aliases, "PLATIN", "PLATINUM");
-        putAlias(aliases, "PLATINA", "PLATINUM");
-        putAlias(aliases, "ПЛАТИНА", "PLATINUM");
-        return Map.copyOf(aliases);
-    }
-
-    private static void putAlias(Map<String, String> aliases, String raw, String canonical) {
-        aliases.put(foldKey(raw), canonical);
+        return copy;
     }
 }
