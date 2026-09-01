@@ -93,7 +93,8 @@ public class PaymentController {
                     userId,
                     currencyRequest.packageId(),
                     currencyRequest.optionId(),
-                    currencyRequest.autoPaymentEnabled()
+                    currencyRequest.autoPaymentEnabled(),
+                    currencyRequest.isCoinUsed()
             );
             log.info("[PaymentInit] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), response.status(), response.message());
             return ResponseEntity.ok(response);

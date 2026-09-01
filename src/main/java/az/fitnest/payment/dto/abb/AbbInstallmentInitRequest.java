@@ -22,5 +22,8 @@ public record AbbInstallmentInitRequest(
          * {@code null} və ya {@code 0} göndərildikdə taksitsiz ödəniş başladılır
          * (ACQ_INST_PAYIN=X).
          */
-        Integer installmentMonths
+        Integer installmentMonths,
+
+        /** FitNest Coin balansından endirim istifadə et. */
+        Boolean isCoinUsed
 ) {}

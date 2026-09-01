@@ -29,6 +29,8 @@ import az.fitnest.payment.dto.common.ApplePaySubmitRequest;
 import az.fitnest.payment.dto.common.ApplePaySubmitResponse;
 import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.client.epoint.EpointHttpClient;
+import az.fitnest.payment.service.coin.CoinCheckoutHelper;
+import az.fitnest.payment.service.coin.CoinPaymentProcessor;
 import az.fitnest.payment.util.PaymentPackageRef;
 
 @Service
@@ -63,6 +65,8 @@ public class EpointIntegrationService {
     private final PaymentSubscriptionService paymentSubscriptionService;
     private final UserGrpcClient userGrpcClient;
     private final EpointHttpClient httpClient;
+    private final CoinCheckoutHelper coinCheckoutHelper;
+    private final CoinPaymentProcessor coinPaymentProcessor;
 
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
         log.info("[PaymentInit] (SERVICE ENTRY) userId={}, orderId={}, amount={}, currency={}, description={}, otherAttr={}, publicKey={}",
@@ -193,6 +197,7 @@ public class EpointIntegrationService {
         paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
             if ("success".equalsIgnoreCase(response.status())) {
                 payment.setStatus("REVERSED");
+                coinPaymentProcessor.onPaymentRefund(payment);
             }
             payment.setMessage(response.message());
             paymentRepository.save(payment);
@@ -887,18 +892,22 @@ public class EpointIntegrationService {
     }
 
     public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled) {
+        return initiatePayment(userId, packageId, optionId, autoPaymentEnabled, false);
+    }
+
+    public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled, Boolean isCoinUsed) {
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        Double amount = priceCurrency.amount;
-        String currency = priceCurrency.currency;
-        validatePaymentRequest(amount, currency);
+        var applied = coinCheckoutHelper.applyForSubscription(
+                userId, packageId, optionId, isCoinUsed, priceCurrency.amount);
+        validatePaymentRequest(applied.finalAmountAzn(), priceCurrency.currency);
         String orderId = java.util.UUID.randomUUID().toString();
         String otherAttr = (packageId != null && optionId != null)
                 ? PaymentPackageRef.encode(packageId, optionId)
                 : null;
         String description = Boolean.TRUE.equals(autoPaymentEnabled) ? "Fitness package monthly payment" : "Fitness package payment";
         EpointPaymentRequest request = EpointPaymentRequest.builder()
-                .currency(currency != null ? currency : "AZN")
-                .amount(amount)
+                .currency(priceCurrency.currency != null ? priceCurrency.currency : "AZN")
+                .amount(applied.finalAmountAzn())
                 .language("az")
                 .orderId(orderId)
                 .description(description)
@@ -907,7 +916,12 @@ public class EpointIntegrationService {
                 .otherAttr(otherAttr)
                 .autoPaymentEnabled(autoPaymentEnabled)
                 .build();
-        return initiatePayment(request, userId);
+        EpointResponse response = initiatePayment(request, userId);
+        paymentRepository.findByOrderId(orderId).ifPresent(payment -> {
+            payment.setCoinsUsed(applied.coinsUsed());
+            paymentRepository.save(payment);
+        });
+        return response;
     }
 
     public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId) {

@@ -12,4 +12,7 @@ import lombok.NoArgsConstructor;
 public class WelcomeBonusRequest {
     private String phone;
     private String email;
+    private String notificationTitle;
+    private String notificationBody;
+    private Boolean sendNotification;
 }

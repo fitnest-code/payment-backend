@@ -42,8 +42,8 @@ public class PaymentEventListener {
                     userCardRepository.deleteByUserId(userId);
                     paymentRepository.deleteByUserId(userId);
                 }
-                case "REGISTRATION_COMPLETED" -> {
-                    log.info("Received REGISTRATION_COMPLETED event for userId: {}. Awarding Welcome Bonus.", userId);
+                case "REGISTRATION_COMPLETED", "WELCOME_BONUS_ELIGIBLE" -> {
+                    log.info("Received {} event for userId: {}. Awarding Welcome Bonus.", eventType, userId);
                     handleWelcomeBonusEvent(userId, event);
                 }
                 default -> log.debug("Unhandled user event type: {}", eventType);

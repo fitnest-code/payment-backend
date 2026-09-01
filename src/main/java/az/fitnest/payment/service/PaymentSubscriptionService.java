@@ -2,6 +2,7 @@ package az.fitnest.payment.service;
 
 import az.fitnest.payment.client.UserSubscriptionGrpcClient;
 import az.fitnest.payment.model.entity.Payment;
+import az.fitnest.payment.service.coin.CoinPaymentProcessor;
 import az.fitnest.payment.util.PaymentPackageRef;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 public class PaymentSubscriptionService {
 
     private final UserSubscriptionGrpcClient userSubscriptionGrpcClient;
+    private final CoinPaymentProcessor coinPaymentProcessor;
 
     public void assignFromPaymentDescription(Payment payment) {
         if (payment == null) {
@@ -63,6 +65,7 @@ public class PaymentSubscriptionService {
                     payment.getDescription(), fallbackAttr);
 
             if (ref.isComplete() && userId != null) {
+                coinPaymentProcessor.onPaymentSuccess(payment);
                 assign(userId, ref.packageId(), ref.optionId(), autoPaymentEnabled);
                 log.info("[Subscription] Assigned userId={}, packageId={}, optionId={}, autoPay={}",
                         userId, ref.packageId(), ref.optionId(), autoPaymentEnabled);

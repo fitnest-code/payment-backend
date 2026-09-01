@@ -34,5 +34,7 @@ public interface CoinWalletService {
 
     BulkCoinAdjustResponse bulkAdjustCoins(BulkCoinAdjustRequest request);
 
+    BulkCoinAdjustResponse bulkWelcomeBonus(BulkWelcomeBonusRequest request);
+
     Page<CoinTransactionResponse> getAllTransactionsForAdmin(Pageable pageable);
 }

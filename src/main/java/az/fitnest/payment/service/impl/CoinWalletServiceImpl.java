@@ -1,6 +1,8 @@
 package az.fitnest.payment.service.impl;
 
+import az.fitnest.payment.client.IdentityBackendClient;
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
+import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.dto.coin.*;
 import az.fitnest.payment.exception.BadRequestException;
 import az.fitnest.payment.exception.ConflictException;
@@ -17,6 +19,7 @@ import az.fitnest.payment.repository.CoinTransactionRepository;
 import az.fitnest.payment.repository.CoinWalletRepository;
 import az.fitnest.payment.repository.WelcomeBonusIdentifierRepository;
 import az.fitnest.payment.service.CoinWalletService;
+import az.fitnest.payment.service.coin.CoinNotificationPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -45,6 +48,9 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     private final CoinSettingsRepository settingsRepository;
     private final WelcomeBonusIdentifierRepository welcomeBonusIdentifierRepository;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
+    private final IdentityBackendClient identityBackendClient;
+    private final UserGrpcClient userGrpcClient;
+    private final CoinNotificationPublisher coinNotificationPublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -238,15 +244,33 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     @Transactional
     public CoinWalletResponse awardWelcomeBonus(Long userId, WelcomeBonusRequest request) {
         CoinSettings settings = getSettingsInternal();
+        if (!Boolean.TRUE.equals(settings.getActive())) {
+            log.info("Welcome bonus skipped for userId={}: coin program is inactive", userId);
+            return getWalletInfo(userId);
+        }
+
+        BigDecimal configuredBonus = settings.getWelcomeBonusAmount();
+        if (configuredBonus == null || configuredBonus.compareTo(BigDecimal.ZERO) <= 0) {
+            log.info("Welcome bonus skipped for userId={}: welcomeBonusAmount not configured in admin settings", userId);
+            return getWalletInfo(userId);
+        }
+
+        if (identityBackendClient.isWelcomeBonusReceived(userId)) {
+            log.info("Welcome bonus already received for userId={} (identity flag)", userId);
+            return getWalletInfo(userId);
+        }
+
+        if (welcomeBonusIdentifierRepository.existsByUserId(userId)) {
+            identityBackendClient.markWelcomeBonusReceived(userId);
+            log.info("Synced welcome bonus received flag for userId={} from existing identifier", userId);
+            return getWalletInfo(userId);
+        }
 
         String phoneHash = (request != null && request.getPhone() != null && !request.getPhone().isBlank())
                 ? hashString(request.getPhone().trim()) : null;
         String emailHash = (request != null && request.getEmail() != null && !request.getEmail().isBlank())
                 ? hashString(request.getEmail().trim().toLowerCase()) : null;
 
-        if (welcomeBonusIdentifierRepository.existsByUserId(userId)) {
-            throw new ConflictException("Welcome bonus bu istifadəçiyə artıq verilib");
-        }
         if (phoneHash != null && welcomeBonusIdentifierRepository.existsByPhoneHash(phoneHash)) {
             throw new ConflictException("Bu telefon nömrəsinə Welcome bonus artıq verilib");
         }
@@ -255,7 +279,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         }
 
         CoinWallet wallet = getOrCreateWalletWithLock(userId);
-        BigDecimal bonusAmount = settings.getWelcomeBonusAmount();
+        BigDecimal bonusAmount = configuredBonus;
         BigDecimal newBalance = wallet.getBalance().add(bonusAmount);
         wallet.setBalance(newBalance);
 
@@ -274,7 +298,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         transaction.setBalanceAfter(newBalance);
         transaction.setRemainingAmount(bonusAmount);
         transaction.setExpiryDate(wallet.getExpiryDate());
-        transaction.setDescription("Welcome Bonus (50 Coin)");
+        transaction.setDescription(null);
         transactionRepository.save(transaction);
 
         WelcomeBonusIdentifier identifier = new WelcomeBonusIdentifier();
@@ -282,6 +306,15 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         identifier.setPhoneHash(phoneHash);
         identifier.setEmailHash(emailHash);
         welcomeBonusIdentifierRepository.save(identifier);
+
+        identityBackendClient.markWelcomeBonusReceived(userId);
+
+        if (request != null && Boolean.TRUE.equals(request.getSendNotification())) {
+            coinNotificationPublisher.sendPush(
+                    userId,
+                    request.getNotificationTitle(),
+                    request.getNotificationBody());
+        }
 
         log.info("Welcome bonus awarded to userId: {}, bonusAmount: {}", userId, bonusAmount);
         return getWalletInfo(userId);
@@ -484,11 +517,47 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         transactionRepository.save(tx);
 
         if (Boolean.TRUE.equals(request.getSendNotification())) {
-            log.info("Notification triggered for userId: {}, title: {}, body: {}",
-                    request.getUserId(), request.getNotificationTitle(), request.getNotificationBody());
+            coinNotificationPublisher.sendPush(
+                    request.getUserId(),
+                    request.getNotificationTitle(),
+                    request.getNotificationBody());
         }
 
         return getWalletInfo(request.getUserId());
+    }
+
+    @Override
+    @Transactional
+    public BulkCoinAdjustResponse bulkWelcomeBonus(BulkWelcomeBonusRequest request) {
+        List<Long> pendingUserIds = identityBackendClient.findPendingWelcomeBonusUserIds();
+        List<Long> successUserIds = new ArrayList<>();
+        List<Long> failedUserIds = new ArrayList<>();
+
+        for (Long userId : pendingUserIds) {
+            try {
+                var user = userGrpcClient.getUser(userId);
+                WelcomeBonusRequest bonusRequest = WelcomeBonusRequest.builder()
+                        .phone(user != null ? user.getMobile() : null)
+                        .email(user != null ? user.getEmail() : null)
+                        .notificationTitle(request.getNotificationTitle())
+                        .notificationBody(request.getNotificationBody())
+                        .sendNotification(request.getSendNotification())
+                        .build();
+                awardWelcomeBonus(userId, bonusRequest);
+                successUserIds.add(userId);
+            } catch (Exception e) {
+                log.warn("Welcome bonus bulk send failed for userId={}: {}", userId, e.getMessage());
+                failedUserIds.add(userId);
+            }
+        }
+
+        return BulkCoinAdjustResponse.builder()
+                .totalRequested(pendingUserIds.size())
+                .totalSuccess(successUserIds.size())
+                .totalFailed(failedUserIds.size())
+                .successUserIds(successUserIds)
+                .failedUserIds(failedUserIds)
+                .build();
     }
 
     @Override
@@ -574,10 +643,9 @@ public class CoinWalletServiceImpl implements CoinWalletService {
 
     private CoinSettings getSettingsInternal() {
         return settingsRepository.findFirstByActiveTrueOrderByIdDesc()
-                .orElseGet(() -> {
-                    CoinSettings defaultSettings = new CoinSettings();
-                    return settingsRepository.save(defaultSettings);
-                });
+                .or(() -> settingsRepository.findFirstByOrderByIdDesc())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Coin ayarları tapılmadı. Admin panelində Kampaniya bölməsindən konfiqurasiya edin."));
     }
 
     private CoinTransactionResponse mapToTransactionResponse(CoinTransaction tx) {

@@ -32,4 +32,10 @@ public class BobPayWithSavedCardRequest {
      * Paket seçimi ID-si
      */
     private Long optionId;
+
+    /**
+     * FitNest Coin balansından endirim istifadə et.
+     */
+    @Builder.Default
+    private Boolean isCoinUsed = false;
 }

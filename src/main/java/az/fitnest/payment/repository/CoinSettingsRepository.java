@@ -10,4 +10,6 @@ import java.util.Optional;
 public interface CoinSettingsRepository extends JpaRepository<CoinSettings, Long> {
 
     Optional<CoinSettings> findFirstByActiveTrueOrderByIdDesc();
+
+    Optional<CoinSettings> findFirstByOrderByIdDesc();
 }

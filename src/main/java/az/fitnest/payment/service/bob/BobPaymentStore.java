@@ -75,6 +75,11 @@ public class BobPaymentStore {
         return paymentRepository.save(payment);
     }
 
+    @Transactional
+    public Payment savePayment(Payment payment) {
+        return paymentRepository.save(payment);
+    }
+
     @Transactional(readOnly = true)
     public Optional<Payment> findByOrderIdOrTransactionId(String orderId, String transactionId) {
         if (orderId != null && !orderId.isBlank()) {

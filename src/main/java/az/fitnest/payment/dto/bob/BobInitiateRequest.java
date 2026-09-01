@@ -46,4 +46,10 @@ public class BobInitiateRequest {
      * Taksit ayları (məs: 3, 6, 12). Boş olduqda və ya null/0 olduqda birdəfəlik ödənişdir.
      */
     private Integer installmentMonths;
+
+    /**
+     * true olduqda mövcud Coin balansından endirim tətbiq olunur (20 Coin = 1 AZN).
+     */
+  @Builder.Default
+    private Boolean isCoinUsed = false;
 }

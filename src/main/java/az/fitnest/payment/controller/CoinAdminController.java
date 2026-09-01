@@ -47,6 +47,12 @@ public class CoinAdminController {
         return ResponseEntity.ok(coinWalletService.bulkAdjustCoins(request));
     }
 
+    @PostMapping("/bulk-welcome-bonus")
+    @Operation(summary = "Mövcud userlər üçün xoş gəldin bonusu", description = "isWelcomeBonusReceived=false olan bütün istifadəçilərə admin ayarlarındakı qeydiyyat bonusunu verir")
+    public ResponseEntity<BulkCoinAdjustResponse> bulkWelcomeBonus(@Valid @RequestBody BulkWelcomeBonusRequest request) {
+        return ResponseEntity.ok(coinWalletService.bulkWelcomeBonus(request));
+    }
+
     @GetMapping("/history")
     @Operation(summary = "Bütün Coin əməliyyat tarixçəsi", description = "Monitorinq üçün sistemdəki bütün istifadəçi Coin tranzaksiyalarının siyahısı")
     public ResponseEntity<PaginatedResponse<CoinTransactionResponse>> getAllTransactions(@ParameterObject Pageable pageable) {

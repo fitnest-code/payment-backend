@@ -8,5 +8,7 @@ public record CurrencyRequest(
     @Schema(description = "Seçim ID-si", example = "456")
     Long optionId,
     @Schema(description = "Avtomatik ödəniş aktivdir", example = "true")
-    Boolean autoPaymentEnabled
+    Boolean autoPaymentEnabled,
+    @Schema(description = "FitNest Coin balansından endirim istifadə et", example = "false")
+    Boolean isCoinUsed
 ) {}

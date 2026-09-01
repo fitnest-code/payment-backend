@@ -41,4 +41,7 @@ public class BnplInitRequest {
 
     /** Optional coins to apply before sending net price to ABB. */
     private java.math.BigDecimal coinsToUse;
+
+    /** true: apply maximum available coins (overrides coinsToUse when set). */
+    private Boolean isCoinUsed;
 }

@@ -1,6 +1,8 @@
 package az.fitnest.payment.service;
 
+import az.fitnest.payment.client.IdentityBackendClient;
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
+import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.dto.coin.*;
 import az.fitnest.payment.exception.ConflictException;
 import az.fitnest.payment.model.entity.CoinSettings;
@@ -15,6 +17,7 @@ import az.fitnest.payment.repository.CoinTransactionRepository;
 import az.fitnest.payment.repository.CoinWalletRepository;
 import az.fitnest.payment.repository.WelcomeBonusIdentifierRepository;
 import az.fitnest.payment.service.impl.CoinWalletServiceImpl;
+import az.fitnest.payment.service.coin.CoinNotificationPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,6 +54,15 @@ class CoinWalletServiceTest {
     @Mock
     private SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
 
+    @Mock
+    private IdentityBackendClient identityBackendClient;
+
+    @Mock
+    private UserGrpcClient userGrpcClient;
+
+    @Mock
+    private CoinNotificationPublisher coinNotificationPublisher;
+
     @InjectMocks
     private CoinWalletServiceImpl coinWalletService;
 
@@ -74,6 +86,7 @@ class CoinWalletServiceTest {
         WelcomeBonusRequest request = new WelcomeBonusRequest("+994501234567", "test@fitnest.az");
 
         when(settingsRepository.findFirstByActiveTrueOrderByIdDesc()).thenReturn(Optional.of(defaultSettings));
+        when(identityBackendClient.isWelcomeBonusReceived(userId)).thenReturn(false);
         when(welcomeBonusIdentifierRepository.existsByUserId(userId)).thenReturn(false);
 
         CoinWallet wallet = new CoinWallet(userId, BigDecimal.ZERO);
@@ -89,6 +102,7 @@ class CoinWalletServiceTest {
         verify(walletRepository).save(wallet);
         verify(transactionRepository).save(any(CoinTransaction.class));
         verify(welcomeBonusIdentifierRepository).save(any());
+        verify(identityBackendClient).markWelcomeBonusReceived(userId);
     }
 
     @Test

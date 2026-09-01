@@ -19,20 +19,20 @@ import java.math.BigDecimal;
 public class CoinSettings extends BaseAuditableEntity {
 
     @Column(name = "welcome_bonus_amount", nullable = false)
-    private BigDecimal welcomeBonusAmount = new BigDecimal("50.00");
+    private BigDecimal welcomeBonusAmount;
 
     @Column(name = "earn_rate_azn_to_coin", nullable = false)
-    private BigDecimal earnRateAznToCoin = new BigDecimal("1.00");
+    private BigDecimal earnRateAznToCoin;
 
     @Column(name = "spend_rate_coin_to_azn", nullable = false)
-    private BigDecimal spendRateCoinToAzn = new BigDecimal("20.00");
+    private BigDecimal spendRateCoinToAzn;
 
     @Column(name = "max_discount_percentage", nullable = false)
-    private BigDecimal maxDiscountPercentage = new BigDecimal("100.00");
+    private BigDecimal maxDiscountPercentage;
 
     @Column(name = "expiry_months", nullable = false)
-    private Integer expiryMonths = 12;
+    private Integer expiryMonths;
 
     @Column(name = "active", nullable = false)
-    private Boolean active = true;
+    private Boolean active;
 }
