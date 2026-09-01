@@ -798,7 +798,10 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     @Transactional
     public CoinSettingsV2Response updateSettingsV2(CoinSettingsV2Request request) {
         CoinSettings settings = getSettingsInternal();
-        settings.setFormulaVersion(request.getFormulaVersion());
+        settings.setFormulaVersion(
+                request.getFormulaVersion() != null && !request.getFormulaVersion().isBlank()
+                        ? request.getFormulaVersion()
+                        : CoinEarnCalculator.FORMULA_V2);
         settings.setActive(request.getActive());
         settings.setWelcomeBonusAmount(request.getWelcomeBonusAmount());
         settings.setBaseEarnRate(request.getBaseEarnRate());
@@ -877,21 +880,32 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     }
 
     private CoinSettingsV2Response mapToSettingsV2Response(CoinSettings settings) {
+        Map<String, BigDecimal> tiers = defaultTierMultipliers();
+        if (settings.getTierMultipliers() != null) {
+            settings.getTierMultipliers().forEach((key, value) ->
+                    tiers.put(CoinEarnCalculator.normalizeTier(key), value));
+        }
+        Map<Integer, BigDecimal> periods = defaultPeriodMultipliers();
+        if (settings.getPeriodMultipliers() != null) {
+            periods.putAll(settings.getPeriodMultipliers());
+        }
         return CoinSettingsV2Response.builder()
                 .id(settings.getId())
-                .formulaVersion(settings.getFormulaVersion())
+                .formulaVersion(settings.getFormulaVersion() != null
+                        ? settings.getFormulaVersion() : CoinEarnCalculator.FORMULA_V2)
                 .active(settings.getActive())
                 .welcomeBonusAmount(settings.getWelcomeBonusAmount())
-                .baseEarnRate(settings.getBaseEarnRate())
-                .maxGivebackRate(settings.getMaxGivebackRate())
-                .earnCoinFactor(settings.getEarnCoinFactor())
+                .baseEarnRate(settings.getBaseEarnRate() != null
+                        ? settings.getBaseEarnRate() : new BigDecimal("0.020000"))
+                .maxGivebackRate(settings.getMaxGivebackRate() != null
+                        ? settings.getMaxGivebackRate() : new BigDecimal("0.050000"))
+                .earnCoinFactor(settings.getEarnCoinFactor() != null
+                        ? settings.getEarnCoinFactor() : new BigDecimal("10.00"))
                 .spendRateCoinToAzn(settings.getSpendRateCoinToAzn())
                 .maxDiscountPercentage(settings.getMaxDiscountPercentage())
                 .expiryMonths(settings.getExpiryMonths())
-                .tierMultipliers(settings.getTierMultipliers() != null
-                        ? new HashMap<>(settings.getTierMultipliers()) : defaultTierMultipliers())
-                .periodMultipliers(settings.getPeriodMultipliers() != null
-                        ? new HashMap<>(settings.getPeriodMultipliers()) : defaultPeriodMultipliers())
+                .tierMultipliers(tiers)
+                .periodMultipliers(periods)
                 .build();
     }
 

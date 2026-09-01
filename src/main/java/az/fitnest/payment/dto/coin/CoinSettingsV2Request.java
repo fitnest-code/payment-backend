@@ -1,7 +1,8 @@
 package az.fitnest.payment.dto.coin;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,38 +17,37 @@ import java.util.Map;
 @AllArgsConstructor
 public class CoinSettingsV2Request {
 
-    @NotNull
     private String formulaVersion;
 
     @NotNull
     private Boolean active;
 
     @NotNull
-    @Positive
+    @DecimalMin("0.0")
     private BigDecimal welcomeBonusAmount;
 
     @NotNull
-    @Positive
+    @DecimalMin("0.0")
     private BigDecimal baseEarnRate;
 
     @NotNull
-    @Positive
+    @DecimalMin("0.0")
     private BigDecimal maxGivebackRate;
 
     @NotNull
-    @Positive
+    @DecimalMin("0.0")
     private BigDecimal earnCoinFactor;
 
     @NotNull
-    @Positive
+    @DecimalMin("0.0")
     private BigDecimal spendRateCoinToAzn;
 
     @NotNull
-    @Positive
+    @DecimalMin("0.0")
     private BigDecimal maxDiscountPercentage;
 
     @NotNull
-    @Positive
+    @Min(1)
     private Integer expiryMonths;
 
     @NotNull
