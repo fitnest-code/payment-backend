@@ -459,7 +459,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public CoinSettingsResponse getSettings() {
         return mapToSettingsResponse(getSettingsInternal());
     }
@@ -644,8 +644,18 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     private CoinSettings getSettingsInternal() {
         return settingsRepository.findFirstByActiveTrueOrderByIdDesc()
                 .or(() -> settingsRepository.findFirstByOrderByIdDesc())
-                .orElseThrow(() -> new IllegalStateException(
-                        "Coin ayarları tapılmadı. Admin panelində Kampaniya bölməsindən konfiqurasiya edin."));
+                .orElseGet(this::createDefaultSettings);
+    }
+
+    private CoinSettings createDefaultSettings() {
+        CoinSettings settings = new CoinSettings();
+        settings.setWelcomeBonusAmount(new BigDecimal("50.00"));
+        settings.setEarnRateAznToCoin(new BigDecimal("1.00"));
+        settings.setSpendRateCoinToAzn(new BigDecimal("20.00"));
+        settings.setMaxDiscountPercentage(new BigDecimal("100.00"));
+        settings.setExpiryMonths(12);
+        settings.setActive(true);
+        return settingsRepository.save(settings);
     }
 
     private CoinTransactionResponse mapToTransactionResponse(CoinTransaction tx) {
