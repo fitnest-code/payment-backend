@@ -366,15 +366,27 @@ public class CoinWalletServiceImpl implements CoinWalletService {
             CoinEarnCalculator.EarnResult earnResult = null;
 
             if (coinEarnCalculator.isV2Formula(settings)) {
-                PackageContext ctx = resolvePackageContext(packageId, optionId);
-                earnResult = coinEarnCalculator.calculateV2(
-                        netPaidAmount,
-                        ctx.tierName(),
-                        ctx.durationMonths(),
-                        settings,
-                        settings.getTierMultipliers(),
-                        settings.getPeriodMultipliers());
-                earnedCoins = BigDecimal.valueOf(earnResult.getAwardedCoins());
+                try {
+                    PackageContext ctx = resolvePackageContext(packageId, optionId, null, null);
+                    if (ctx.tierName() == null || ctx.durationMonths() == null) {
+                        log.warn("[Coin] Skip earn — could not map packageId={} optionId={} to tier/period",
+                                packageId, optionId);
+                        earnedCoins = BigDecimal.ZERO;
+                    } else {
+                        earnResult = coinEarnCalculator.calculateV2(
+                                netPaidAmount,
+                                ctx.tierName(),
+                                ctx.durationMonths(),
+                                settings,
+                                settings.getTierMultipliers(),
+                                settings.getPeriodMultipliers());
+                        earnedCoins = BigDecimal.valueOf(earnResult.getAwardedCoins());
+                    }
+                } catch (Exception e) {
+                    log.warn("[Coin] Skip earn for packageId={} optionId={}: {}",
+                            packageId, optionId, e.getMessage());
+                    earnedCoins = BigDecimal.ZERO;
+                }
             } else {
                 earnedCoins = coinEarnCalculator.calculateV1(netPaidAmount, settings.getEarnRateAznToCoin());
             }
@@ -844,33 +856,47 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         List<CoinEarnPreviewBatchResponse.PackageEarnPreview> previews = new ArrayList<>();
 
         for (CoinEarnPreviewBatchRequest.PackageEarnItem item : request.getPackages()) {
-            PackageContext ctx = resolvePackageContext(
-                    item.getPackageId(),
-                    item.getOptionId(),
-                    item.getTierName(),
-                    item.getDurationMonths());
+            try {
+                PackageContext ctx = resolvePackageContext(
+                        item.getPackageId(),
+                        item.getOptionId(),
+                        item.getTierName(),
+                        item.getDurationMonths());
 
-            BigDecimal price = item.getPriceAzn() != null
-                    ? item.getPriceAzn()
-                    : resolvePackagePrice(item.getPackageId(), item.getOptionId(), null);
+                BigDecimal price = item.getPriceAzn() != null
+                        ? item.getPriceAzn()
+                        : resolvePackagePrice(item.getPackageId(), item.getOptionId(), null);
 
-            CoinEarnCalculator.EarnResult result = coinEarnCalculator.calculateV2(
-                    price,
-                    ctx.tierName(),
-                    ctx.durationMonths(),
-                    settings,
-                    settings.getTierMultipliers(),
-                    settings.getPeriodMultipliers());
+                CoinEarnCalculator.EarnResult result = coinEarnCalculator.calculateV2(
+                        price,
+                        ctx.tierName(),
+                        ctx.durationMonths(),
+                        settings,
+                        settings.getTierMultipliers(),
+                        settings.getPeriodMultipliers());
 
-            previews.add(CoinEarnPreviewBatchResponse.PackageEarnPreview.builder()
-                    .packageId(item.getPackageId())
-                    .optionId(item.getOptionId())
-                    .tier(ctx.tierName())
-                    .durationMonths(ctx.durationMonths())
-                    .priceAzn(price)
-                    .appliedGivebackRate(result.getAppliedGivebackRate())
-                    .awardedCoins(result.getAwardedCoins())
-                    .build());
+                previews.add(CoinEarnPreviewBatchResponse.PackageEarnPreview.builder()
+                        .packageId(item.getPackageId())
+                        .optionId(item.getOptionId())
+                        .tier(result.getTierName())
+                        .durationMonths(result.getDurationMonths())
+                        .priceAzn(price)
+                        .appliedGivebackRate(result.getAppliedGivebackRate())
+                        .awardedCoins(result.getAwardedCoins())
+                        .build());
+            } catch (Exception e) {
+                log.warn("[Coin] Preview skipped packageId={} optionId={}: {}",
+                        item.getPackageId(), item.getOptionId(), e.getMessage());
+                previews.add(CoinEarnPreviewBatchResponse.PackageEarnPreview.builder()
+                        .packageId(item.getPackageId())
+                        .optionId(item.getOptionId())
+                        .tier(CoinEarnCalculator.normalizeTier(item.getTierName()))
+                        .durationMonths(item.getDurationMonths())
+                        .priceAzn(item.getPriceAzn())
+                        .appliedGivebackRate(BigDecimal.ZERO)
+                        .awardedCoins(0)
+                        .build());
+            }
         }
 
         return CoinEarnPreviewBatchResponse.builder()
@@ -882,8 +908,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     private CoinSettingsV2Response mapToSettingsV2Response(CoinSettings settings) {
         Map<String, BigDecimal> tiers = defaultTierMultipliers();
         if (settings.getTierMultipliers() != null) {
-            settings.getTierMultipliers().forEach((key, value) ->
-                    tiers.put(CoinEarnCalculator.normalizeTier(key), value));
+            tiers.putAll(CoinEarnCalculator.normalizeMultiplierMap(settings.getTierMultipliers()));
         }
         Map<Integer, BigDecimal> periods = defaultPeriodMultipliers();
         if (settings.getPeriodMultipliers() != null) {
@@ -929,39 +954,42 @@ public class CoinWalletServiceImpl implements CoinWalletService {
 
     private record PackageContext(String tierName, Integer durationMonths) {}
 
-    private PackageContext resolvePackageContext(Long packageId, Long optionId) {
-        return resolvePackageContext(packageId, optionId, null, null);
-    }
-
     private PackageContext resolvePackageContext(Long packageId, Long optionId, String tierName, Integer durationMonths) {
-        if (tierName != null && durationMonths != null) {
-            return new PackageContext(CoinEarnCalculator.normalizeTier(tierName), durationMonths);
-        }
+        String resolvedTier = CoinEarnCalculator.normalizeTier(tierName);
+        Integer resolvedDuration = durationMonths;
+
         if (packageId != null && optionId != null) {
             try {
                 var names = subscriptionPackageGrpcClient.getPackageNamesByIds(List.of(packageId));
-                String resolvedTier = names.isEmpty() || names.get(0).getName() == null
-                        ? "BRONZE"
-                        : names.get(0).getName();
+                String rawName = names.stream()
+                        .filter(pkg -> pkg.getPackageId() == packageId)
+                        .map(az.fitnest.order.grpc.PackageNameInfo::getName)
+                        .filter(name -> name != null && !name.isBlank())
+                        .findFirst()
+                        .orElse(null);
+                if (rawName != null) {
+                    resolvedTier = CoinEarnCalculator.normalizeTier(rawName);
+                }
                 var option = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-                return new PackageContext(
-                        CoinEarnCalculator.normalizeTier(resolvedTier),
-                        option.durationMonths);
+                if (option != null && option.durationMonths > 0) {
+                    resolvedDuration = option.durationMonths;
+                }
             } catch (Exception e) {
                 log.warn("Could not resolve package context for packageId={}, optionId={}", packageId, optionId, e);
             }
         }
-        return new PackageContext(
-                CoinEarnCalculator.normalizeTier(tierName),
-                durationMonths != null ? durationMonths : 1);
+
+        return new PackageContext(resolvedTier, resolvedDuration);
     }
 
     private Map<String, BigDecimal> normalizeTierMultipliers(Map<String, BigDecimal> input) {
-        Map<String, BigDecimal> normalized = new HashMap<>();
-        if (input != null) {
-            input.forEach((key, value) -> normalized.put(CoinEarnCalculator.normalizeTier(key), value));
+        Map<String, BigDecimal> normalized = CoinEarnCalculator.normalizeMultiplierMap(input);
+        if (normalized.isEmpty()) {
+            return defaultTierMultipliers();
         }
-        return normalized;
+        Map<String, BigDecimal> merged = defaultTierMultipliers();
+        merged.putAll(normalized);
+        return merged;
     }
 
     private Map<Integer, BigDecimal> normalizePeriodMultipliers(Map<Integer, BigDecimal> input) {
