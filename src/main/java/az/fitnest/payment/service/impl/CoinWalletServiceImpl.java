@@ -649,12 +649,12 @@ public class CoinWalletServiceImpl implements CoinWalletService {
 
     private CoinSettings createDefaultSettings() {
         CoinSettings settings = new CoinSettings();
-        settings.setWelcomeBonusAmount(new BigDecimal("50.00"));
-        settings.setEarnRateAznToCoin(new BigDecimal("1.00"));
-        settings.setSpendRateCoinToAzn(new BigDecimal("20.00"));
-        settings.setMaxDiscountPercentage(new BigDecimal("100.00"));
-        settings.setExpiryMonths(12);
-        settings.setActive(true);
+        settings.setWelcomeBonusAmount(BigDecimal.ZERO);
+        settings.setEarnRateAznToCoin(BigDecimal.ZERO);
+        settings.setSpendRateCoinToAzn(BigDecimal.ZERO);
+        settings.setMaxDiscountPercentage(BigDecimal.ZERO);
+        settings.setExpiryMonths(0);
+        settings.setActive(false);
         return settingsRepository.save(settings);
     }
 
