@@ -83,7 +83,10 @@ class CoinWalletServiceTest {
     @DisplayName("Welcome bonus verilməsi - Wallet-level Expiry set olunması (365 gün)")
     void testAwardWelcomeBonus_Success() {
         Long userId = 100L;
-        WelcomeBonusRequest request = new WelcomeBonusRequest("+994501234567", "test@fitnest.az");
+        WelcomeBonusRequest request = WelcomeBonusRequest.builder()
+                .phone("+994501234567")
+                .email("test@fitnest.az")
+                .build();
 
         when(settingsRepository.findFirstByActiveTrueOrderByIdDesc()).thenReturn(Optional.of(defaultSettings));
         when(identityBackendClient.isWelcomeBonusReceived(userId)).thenReturn(false);

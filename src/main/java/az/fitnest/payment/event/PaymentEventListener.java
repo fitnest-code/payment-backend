@@ -62,7 +62,10 @@ public class PaymentEventListener {
         try {
             String phone = (String) event.getOrDefault("phone", null);
             String email = (String) event.getOrDefault("email", null);
-            WelcomeBonusRequest bonusRequest = new WelcomeBonusRequest(phone, email);
+            WelcomeBonusRequest bonusRequest = WelcomeBonusRequest.builder()
+                    .phone(phone)
+                    .email(email)
+                    .build();
             coinWalletService.awardWelcomeBonus(userId, bonusRequest);
             log.info("Welcome Bonus successfully awarded to userId: {}", userId);
         } catch (Exception e) {
