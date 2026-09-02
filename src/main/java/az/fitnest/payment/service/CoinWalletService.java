@@ -11,6 +11,8 @@ public interface CoinWalletService {
 
     CoinWalletResponse getWalletInfo(Long userId);
 
+    CoinBalanceResponse getCoinBalance(Long userId);
+
     Page<CoinTransactionResponse> getTransactionHistory(Long userId, CoinTransactionCategory category, Pageable pageable);
 
     CalculateDiscountResponse calculateCheckoutDiscount(Long userId, CalculateDiscountRequest request);

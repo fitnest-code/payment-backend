@@ -125,6 +125,24 @@ class CoinWalletControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/v1/coins/balance - Coin balans və AZN ekvivalenti")
+    void testGetCoinBalance() {
+        CoinBalanceResponse expected = CoinBalanceResponse.builder()
+                .coinBalance(new BigDecimal("320.00"))
+                .aznEquivalent(new BigDecimal("32.00"))
+                .build();
+
+        when(coinWalletService.getCoinBalance(any())).thenReturn(expected);
+
+        ResponseEntity<CoinBalanceResponse> response = coinWalletController.getCoinBalance();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(new BigDecimal("320.00"), response.getBody().getCoinBalance());
+        assertEquals(new BigDecimal("32.00"), response.getBody().getAznEquivalent());
+    }
+
+    @Test
     @DisplayName("POST /api/v1/coins/full-payment-eligibility - Uyğunluq yoxlanışı")
     void testCheckFullPaymentEligibility() {
         FullPaymentEligibilityRequest request = FullPaymentEligibilityRequest.builder()
@@ -133,8 +151,6 @@ class CoinWalletControllerTest {
                 .build();
 
         FullPaymentEligibilityResponse expected = FullPaymentEligibilityResponse.builder()
-                .coinBalance(new BigDecimal("320.00"))
-                .aznEquivalent(new BigDecimal("32.00"))
                 .isEligibleForFullPayment(true)
                 .build();
 
@@ -145,8 +161,6 @@ class CoinWalletControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
-        assertEquals(new BigDecimal("320.00"), response.getBody().getCoinBalance());
-        assertEquals(new BigDecimal("32.00"), response.getBody().getAznEquivalent());
         assertTrue(response.getBody().getIsEligibleForFullPayment());
     }
 

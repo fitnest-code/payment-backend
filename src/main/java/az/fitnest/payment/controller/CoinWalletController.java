@@ -34,6 +34,13 @@ public class CoinWalletController {
         return ResponseEntity.ok(coinWalletService.getWalletInfo(userId));
     }
 
+    @GetMapping("/balance")
+    @Operation(summary = "Coin balans və AZN ekvivalenti", description = "İstifadəçinin cari coin balansı və admin spend rate üzrə AZN ekvivalentini qaytarır")
+    public ResponseEntity<CoinBalanceResponse> getCoinBalance() {
+        Long userId = UserContext.getCurrentUserId();
+        return ResponseEntity.ok(coinWalletService.getCoinBalance(userId));
+    }
+
     @GetMapping("/terms")
     @Operation(summary = "Coin qaydaları (HTML)", description = "İstifadəçi dilinə uyğun Coin terms HTML sənədini qaytarır")
     public ResponseEntity<CoinTermsResponse> getTerms(
@@ -64,7 +71,7 @@ public class CoinWalletController {
     @PostMapping("/full-payment-eligibility")
     @Operation(
             summary = "100% Coin ödəniş uyğunluğu",
-            description = "İstifadəçinin coin balansı, AZN ekvivalenti və seçilmiş paket/option qiymətini tam ödəyə bilib-bilmədiyini qaytarır. isEligibleForFullPayment=true olanda AZN ekvivalenti paket qiymətinə bərabər və ya ondan böyükdür."
+            description = "Seçilmiş paket/option qiymətini AZN ekvivalenti ilə müqayisə edir. isEligibleForFullPayment=true olanda balans paket qiymətini tam ödəyə bilər."
     )
     public ResponseEntity<FullPaymentEligibilityResponse> checkFullPaymentEligibility(
             @Valid @RequestBody FullPaymentEligibilityRequest request) {

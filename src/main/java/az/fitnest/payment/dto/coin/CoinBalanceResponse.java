@@ -5,11 +5,14 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class FullPaymentEligibilityResponse {
+public class CoinBalanceResponse {
 
-    private Boolean isEligibleForFullPayment;
+    private BigDecimal coinBalance;
+    private BigDecimal aznEquivalent;
 }

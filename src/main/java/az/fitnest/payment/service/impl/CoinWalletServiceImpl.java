@@ -91,6 +91,25 @@ public class CoinWalletServiceImpl implements CoinWalletService {
 
     @Override
     @Transactional(readOnly = true)
+    public CoinBalanceResponse getCoinBalance(Long userId) {
+        CoinSettings settings = getSettingsInternal();
+        CoinWallet wallet = getOrCreateWallet(userId);
+
+        BigDecimal coinBalance = wallet.getBalance();
+        BigDecimal spendRate = settings.getSpendRateCoinToAzn();
+        BigDecimal aznEquivalent = BigDecimal.ZERO;
+        if (spendRate != null && spendRate.compareTo(BigDecimal.ZERO) > 0) {
+            aznEquivalent = coinBalance.divide(spendRate, 2, RoundingMode.HALF_UP);
+        }
+
+        return CoinBalanceResponse.builder()
+                .coinBalance(coinBalance)
+                .aznEquivalent(aznEquivalent)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Page<CoinTransactionResponse> getTransactionHistory(Long userId, CoinTransactionCategory category, Pageable pageable) {
         if (category == null || category == CoinTransactionCategory.ALL) {
             return transactionRepository.findByUserIdOrderByCreatedDateDesc(userId, pageable)
@@ -212,22 +231,11 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     @Override
     @Transactional(readOnly = true)
     public FullPaymentEligibilityResponse checkFullPaymentEligibility(Long userId, FullPaymentEligibilityRequest request) {
-        CoinSettings settings = getSettingsInternal();
-        CoinWallet wallet = getOrCreateWallet(userId);
-
-        BigDecimal coinBalance = wallet.getBalance();
-        BigDecimal spendRate = settings.getSpendRateCoinToAzn();
-        BigDecimal aznEquivalent = BigDecimal.ZERO;
-        if (spendRate != null && spendRate.compareTo(BigDecimal.ZERO) > 0) {
-            aznEquivalent = coinBalance.divide(spendRate, 2, RoundingMode.HALF_UP);
-        }
-
+        CoinBalanceResponse balance = getCoinBalance(userId);
         BigDecimal packagePrice = resolvePackagePrice(request.getPackageId(), request.getOptionId(), null);
-        boolean isEligible = aznEquivalent.compareTo(packagePrice) >= 0;
+        boolean isEligible = balance.getAznEquivalent().compareTo(packagePrice) >= 0;
 
         return FullPaymentEligibilityResponse.builder()
-                .coinBalance(coinBalance)
-                .aznEquivalent(aznEquivalent)
                 .isEligibleForFullPayment(isEligible)
                 .build();
     }
