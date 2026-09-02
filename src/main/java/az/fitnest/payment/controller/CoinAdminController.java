@@ -2,6 +2,7 @@ package az.fitnest.payment.controller;
 
 import az.fitnest.payment.dto.coin.*;
 import az.fitnest.payment.dto.common.PaginatedResponse;
+import az.fitnest.payment.service.CoinTermsService;
 import az.fitnest.payment.service.CoinWalletService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 public class CoinAdminController {
 
     private final CoinWalletService coinWalletService;
+    private final CoinTermsService coinTermsService;
 
     @GetMapping("/settings")
     @Operation(summary = "Coin sistem tənzimləmələri", description = "Cari Welcome bonus miqdarı, konvertasiya dərəcəsi, max endirim % və etibarlılıq müddətini qaytarır")
@@ -33,6 +35,25 @@ public class CoinAdminController {
     @Operation(summary = "Coin tənzimləmələrini yeniləmək", description = "Coin sisteminin parametr konfiqurasiyalarını yeniləyir")
     public ResponseEntity<CoinSettingsResponse> updateSettings(@Valid @RequestBody CoinSettingsRequest request) {
         return ResponseEntity.ok(coinWalletService.updateSettings(request));
+    }
+
+    @GetMapping("/terms")
+    @Operation(summary = "Coin qaydaları (HTML)", description = "Admin üçün Coin terms HTML sənədini AZ/EN/RU dillərində qaytarır")
+    public ResponseEntity<CoinTermsAdminResponse> getTerms() {
+        return ResponseEntity.ok(coinTermsService.getAdminTerms());
+    }
+
+    @PutMapping("/terms")
+    @Operation(summary = "Coin qaydalarını saxla", description = "Singleton Coin terms HTML sənədini AZ/EN/RU dillərində upsert edir")
+    public ResponseEntity<CoinTermsAdminResponse> saveTerms(@Valid @RequestBody CoinTermsAdminRequest request) {
+        return ResponseEntity.ok(coinTermsService.saveAdminTerms(request));
+    }
+
+    @DeleteMapping("/terms")
+    @Operation(summary = "Coin qaydalarını sil", description = "Coin terms HTML sənədini silir")
+    public ResponseEntity<Void> deleteTerms() {
+        coinTermsService.deleteTerms();
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/adjust")

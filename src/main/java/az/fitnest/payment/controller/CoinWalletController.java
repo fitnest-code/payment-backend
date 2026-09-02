@@ -3,6 +3,7 @@ package az.fitnest.payment.controller;
 import az.fitnest.payment.dto.coin.*;
 import az.fitnest.payment.dto.common.PaginatedResponse;
 import az.fitnest.payment.model.enums.CoinTransactionCategory;
+import az.fitnest.payment.service.CoinTermsService;
 import az.fitnest.payment.service.CoinWalletService;
 import az.fitnest.payment.util.UserContext;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,12 +25,22 @@ import org.springframework.web.bind.annotation.*;
 public class CoinWalletController {
 
     private final CoinWalletService coinWalletService;
+    private final CoinTermsService coinTermsService;
 
     @GetMapping("/wallet")
     @Operation(summary = "Coin balans və etibarlılıq məlumatı", description = "İstifadəçinin Coin balansı, AZN ekvivalenti, ilk coin qazanıldığı tarix, 365 günlük vahid expiryDate və qalan gün sayını qaytarır")
     public ResponseEntity<CoinWalletResponse> getWalletInfo() {
         Long userId = UserContext.getCurrentUserId();
         return ResponseEntity.ok(coinWalletService.getWalletInfo(userId));
+    }
+
+    @GetMapping("/terms")
+    @Operation(summary = "Coin qaydaları (HTML)", description = "İstifadəçi dilinə uyğun Coin terms HTML sənədini qaytarır")
+    public ResponseEntity<CoinTermsResponse> getTerms(
+            @RequestParam(required = false) String lang,
+            @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage) {
+        String language = lang != null && !lang.isBlank() ? lang : acceptLanguage;
+        return ResponseEntity.ok(coinTermsService.getLocalizedTerms(language));
     }
 
     @GetMapping("/history")
