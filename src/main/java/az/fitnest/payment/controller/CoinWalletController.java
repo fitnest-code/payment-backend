@@ -61,6 +61,17 @@ public class CoinWalletController {
         return ResponseEntity.ok(coinWalletService.calculateCheckoutDiscount(userId, request));
     }
 
+    @PostMapping("/full-payment-eligibility")
+    @Operation(
+            summary = "100% Coin ödəniş uyğunluğu",
+            description = "İstifadəçinin coin balansı, AZN ekvivalenti və seçilmiş paket/option qiymətini tam ödəyə bilib-bilmədiyini qaytarır. isEligibleForFullPayment=true olanda AZN ekvivalenti paket qiymətinə bərabər və ya ondan böyükdür."
+    )
+    public ResponseEntity<FullPaymentEligibilityResponse> checkFullPaymentEligibility(
+            @Valid @RequestBody FullPaymentEligibilityRequest request) {
+        Long userId = UserContext.getCurrentUserId();
+        return ResponseEntity.ok(coinWalletService.checkFullPaymentEligibility(userId, request));
+    }
+
     @PostMapping("/pay-full")
     @Operation(summary = "100% Coin İlə Ödəniş", description = "Balansda paket qiymətini 100% qarşılayan Coin olduqda kart ödənişinə getmədən birbaşa Coin ilə ödəniş edib abunəliyi aktivləşdirir")
     public ResponseEntity<PayFullWithCoinsResponse> payFullWithCoins(@Valid @RequestBody PayFullWithCoinsRequest request) {

@@ -15,6 +15,8 @@ public interface CoinWalletService {
 
     CalculateDiscountResponse calculateCheckoutDiscount(Long userId, CalculateDiscountRequest request);
 
+    FullPaymentEligibilityResponse checkFullPaymentEligibility(Long userId, FullPaymentEligibilityRequest request);
+
     PayFullWithCoinsResponse payFullWithCoins(Long userId, PayFullWithCoinsRequest request);
 
     CoinWalletResponse awardWelcomeBonus(Long userId, WelcomeBonusRequest request);

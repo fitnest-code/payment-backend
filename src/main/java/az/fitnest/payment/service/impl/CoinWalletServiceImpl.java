@@ -210,6 +210,29 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public FullPaymentEligibilityResponse checkFullPaymentEligibility(Long userId, FullPaymentEligibilityRequest request) {
+        CoinSettings settings = getSettingsInternal();
+        CoinWallet wallet = getOrCreateWallet(userId);
+
+        BigDecimal coinBalance = wallet.getBalance();
+        BigDecimal spendRate = settings.getSpendRateCoinToAzn();
+        BigDecimal aznEquivalent = BigDecimal.ZERO;
+        if (spendRate != null && spendRate.compareTo(BigDecimal.ZERO) > 0) {
+            aznEquivalent = coinBalance.divide(spendRate, 2, RoundingMode.HALF_UP);
+        }
+
+        BigDecimal packagePrice = resolvePackagePrice(request.getPackageId(), request.getOptionId(), null);
+        boolean isEligible = aznEquivalent.compareTo(packagePrice) >= 0;
+
+        return FullPaymentEligibilityResponse.builder()
+                .coinBalance(coinBalance)
+                .aznEquivalent(aznEquivalent)
+                .isEligibleForFullPayment(isEligible)
+                .build();
+    }
+
+    @Override
     @Transactional
     public PayFullWithCoinsResponse payFullWithCoins(Long userId, PayFullWithCoinsRequest request) {
         CoinSettings settings = getSettingsInternal();

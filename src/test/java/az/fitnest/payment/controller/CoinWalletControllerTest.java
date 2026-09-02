@@ -125,6 +125,32 @@ class CoinWalletControllerTest {
     }
 
     @Test
+    @DisplayName("POST /api/v1/coins/full-payment-eligibility - Uyğunluq yoxlanışı")
+    void testCheckFullPaymentEligibility() {
+        FullPaymentEligibilityRequest request = FullPaymentEligibilityRequest.builder()
+                .packageId(10L)
+                .optionId(20L)
+                .build();
+
+        FullPaymentEligibilityResponse expected = FullPaymentEligibilityResponse.builder()
+                .coinBalance(new BigDecimal("320.00"))
+                .aznEquivalent(new BigDecimal("32.00"))
+                .isEligibleForFullPayment(true)
+                .build();
+
+        when(coinWalletService.checkFullPaymentEligibility(any(), eq(request))).thenReturn(expected);
+
+        ResponseEntity<FullPaymentEligibilityResponse> response =
+                coinWalletController.checkFullPaymentEligibility(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(new BigDecimal("320.00"), response.getBody().getCoinBalance());
+        assertEquals(new BigDecimal("32.00"), response.getBody().getAznEquivalent());
+        assertTrue(response.getBody().getIsEligibleForFullPayment());
+    }
+
+    @Test
     @DisplayName("POST /api/v1/coins/pay-full - 100% Coin ilə ödəniş")
     void testPayFullWithCoins() {
         PayFullWithCoinsRequest request = PayFullWithCoinsRequest.builder()
