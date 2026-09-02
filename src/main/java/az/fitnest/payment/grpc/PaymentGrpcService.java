@@ -1,7 +1,9 @@
 package az.fitnest.payment.grpc;
 
+import az.fitnest.payment.dto.coin.CoinWalletResponse;
 import az.fitnest.payment.dto.epoint.EpointPaymentRequest;
 import az.fitnest.payment.dto.epoint.EpointResponse;
+import az.fitnest.payment.service.CoinWalletService;
 import az.fitnest.payment.service.EpointIntegrationService;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +27,7 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
     private final EpointIntegrationService integrationService;
     private final UserPaymentService userPaymentService;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
+    private final CoinWalletService coinWalletService;
 
     @Override
     public void createPayment(CreatePaymentRequest request, StreamObserver<CreatePaymentResponse> responseObserver) {
@@ -93,6 +96,24 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
             responseObserver.onCompleted();
         } catch (Exception e) {
             log.error("Error in payWithCard", e);
+            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    @Override
+    public void getCoinWallet(GetCoinWalletRequest request, StreamObserver<GetCoinWalletResponse> responseObserver) {
+        log.debug("Received gRPC GetCoinWallet request for userId: {}", request.getUserId());
+        try {
+            CoinWalletResponse wallet = coinWalletService.getWalletInfo(request.getUserId());
+            GetCoinWalletResponse response = GetCoinWalletResponse.newBuilder()
+                    .setCoinBalance(wallet.getTotalBalance() != null ? wallet.getTotalBalance().toPlainString() : "0")
+                    .setAznEquivalent(wallet.getAznEquivalent() != null ? wallet.getAznEquivalent().toPlainString() : "0")
+                    .setValidityDate(wallet.getExpiryDate() != null ? wallet.getExpiryDate().toString() : "")
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (Exception e) {
+            log.error("Error in getCoinWallet for userId={}", request.getUserId(), e);
             responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
         }
     }

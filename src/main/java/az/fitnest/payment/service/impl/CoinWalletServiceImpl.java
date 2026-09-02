@@ -63,12 +63,20 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         CoinSettings settings = getSettingsInternal();
 
         BigDecimal balance = wallet.getBalance();
-        BigDecimal aznEquivalent = balance.divide(settings.getSpendRateCoinToAzn(), 2, RoundingMode.HALF_UP);
+        BigDecimal spendRate = settings.getSpendRateCoinToAzn();
+        BigDecimal aznEquivalent = BigDecimal.ZERO;
+        if (spendRate != null && spendRate.compareTo(BigDecimal.ZERO) > 0) {
+            aznEquivalent = balance.divide(spendRate, 2, RoundingMode.HALF_UP);
+        }
 
         LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expiryDate = wallet.getExpiryDate();
+        if (expiryDate == null && wallet.getFirstCoinEarnedAt() != null) {
+            expiryDate = computeExpiryDate(wallet.getFirstCoinEarnedAt(), settings);
+        }
         Long daysUntilExpiry = null;
-        if (wallet.getExpiryDate() != null) {
-            long days = Duration.between(now, wallet.getExpiryDate()).toDays();
+        if (expiryDate != null) {
+            long days = Duration.between(now, expiryDate).toDays();
             daysUntilExpiry = days > 0 ? days : 0L;
         }
 
@@ -76,7 +84,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
                 .totalBalance(balance)
                 .aznEquivalent(aznEquivalent)
                 .firstCoinEarnedAt(wallet.getFirstCoinEarnedAt())
-                .expiryDate(wallet.getExpiryDate())
+                .expiryDate(expiryDate)
                 .daysUntilExpiry(daysUntilExpiry)
                 .build();
     }
@@ -290,7 +298,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         LocalDateTime now = LocalDateTime.now();
         if (wallet.getFirstCoinEarnedAt() == null) {
             wallet.setFirstCoinEarnedAt(now);
-            wallet.setExpiryDate(now.plusDays(365));
+            wallet.setExpiryDate(computeExpiryDate(now, getSettingsInternal()));
         }
         walletRepository.save(wallet);
 
@@ -336,7 +344,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
                 (coinsUsed != null && coinsUsed.compareTo(BigDecimal.ZERO) > 0) ||
                 (netPaidAmount != null && netPaidAmount.compareTo(BigDecimal.ZERO) > 0))) {
             wallet.setFirstCoinEarnedAt(now);
-            wallet.setExpiryDate(now.plusDays(365));
+            wallet.setExpiryDate(computeExpiryDate(now, settings));
         }
 
         // 1. Process Coins Spent
@@ -524,6 +532,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     @Override
     @Transactional
     public CoinWalletResponse manualAdjustCoins(ManualCoinAdjustRequest request) {
+        CoinSettings settings = getSettingsInternal();
         CoinWallet wallet = getOrCreateWalletWithLock(request.getUserId());
         BigDecimal amount = request.getAmount();
 
@@ -540,7 +549,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         LocalDateTime now = LocalDateTime.now();
         if (wallet.getFirstCoinEarnedAt() == null && newBalance.compareTo(BigDecimal.ZERO) > 0) {
             wallet.setFirstCoinEarnedAt(now);
-            wallet.setExpiryDate(now.plusDays(365));
+            wallet.setExpiryDate(computeExpiryDate(now, settings));
         }
 
         wallet.setBalance(newBalance);
@@ -681,6 +690,13 @@ public class CoinWalletServiceImpl implements CoinWalletService {
                     newWallet.setBalance(BigDecimal.ZERO);
                     return walletRepository.save(newWallet);
                 });
+    }
+
+    private LocalDateTime computeExpiryDate(LocalDateTime from, CoinSettings settings) {
+        int months = settings.getExpiryMonths() != null && settings.getExpiryMonths() > 0
+                ? settings.getExpiryMonths()
+                : 12;
+        return from.plusMonths(months);
     }
 
     private CoinSettings getSettingsInternal() {
