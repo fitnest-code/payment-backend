@@ -275,12 +275,12 @@ grpc:
   server:
     port: 9090
   client:
-    # ✅ Updated gRPC client from order-service to order-backend
+    # Same-namespace K8s DNS by default; override per env via Vault/env vars.
     order-backend:
-      address: 'dns:///order-backend.fitnest-production.svc.cluster.local:9090'
+      address: ${ORDER_BACKEND_GRPC_ADDRESS:dns:///order-backend:9090}
       negotiation-type: plaintext
     user-backend:
-      address: 'dns:///user-backend.fitnest-production.svc.cluster.local:9090'
+      address: ${USER_BACKEND_GRPC_ADDRESS:dns:///user-backend:9090}
       negotiation-type: plaintext
 
 logging:
