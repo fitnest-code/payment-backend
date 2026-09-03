@@ -4,6 +4,7 @@ import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.dto.abb.AbbCallbackResponse;
 import az.fitnest.payment.dto.abb.AbbInitiateResponse;
 import az.fitnest.payment.dto.abb.AbbInstallmentInitRequest;
+import az.fitnest.payment.dto.abb.AbbInstallmentInitRequestV2;
 import az.fitnest.payment.dto.abb.AbbInstallmentOption;
 import az.fitnest.payment.dto.abb.AbbTransactionActionRequest;
 import az.fitnest.payment.dto.abb.AbbTransactionActionResponse;
@@ -39,7 +40,6 @@ import java.net.URI;
  */
 @Slf4j
 @RestController
-@RequestMapping("/payment/abb")
 @RequiredArgsConstructor
 @Tag(name = "ABB Taksit Ödənişləri", description = "ABB (Azericard) E-Commerce Gateway inteqrasiyası")
 public class AbbPaymentController {
@@ -68,19 +68,37 @@ public class AbbPaymentController {
     // ══════════════════════════════════════════════════════════════════════════
 
     @Operation(
-            summary = "ABB ödənişi başlat (taksitsiz)",
-            description = "Azericard ödəniş səhifəsinə yönləndirilmə URL-i qaytarır."
+            summary = "ABB ödənişi başlat (v1, taksitsiz)",
+            description = "Köhnə axın: Coin endirimi yoxdur."
     )
-    @PostMapping("/init")
+    @PostMapping("/payment/abb/init")
     public ResponseEntity<AbbInitiateResponse> initiatePayment(
             @RequestBody AbbInstallmentInitRequest request,
             Authentication authentication) {
+        return initiatePaymentInternal(request, authentication, false);
+    }
+
+    @Operation(
+            summary = "ABB ödənişi başlat (v2, taksitsiz)",
+            description = "Yeni axın / AbbInstallmentInitRequestV2: isCoinUsed ilə Coin endirimi."
+    )
+    @PostMapping("/api/v2/payment/abb/init")
+    public ResponseEntity<AbbInitiateResponse> initiatePaymentV2(
+            @RequestBody AbbInstallmentInitRequestV2 request,
+            Authentication authentication) {
+        return initiatePaymentInternal(request.toV1(), authentication, request.isCoinUsed());
+    }
+
+    private ResponseEntity<AbbInitiateResponse> initiatePaymentInternal(
+            AbbInstallmentInitRequest request,
+            Authentication authentication,
+            Boolean isCoinUsed) {
 
         checkMaintenance("/init");
 
         Long userId = extractUserId(authentication);
-        log.info("[ABB][Controller] /init called: userId={}, packageId={}, optionId={}",
-                userId, request.packageId(), request.optionId());
+        log.info("[ABB][Controller] /init called: userId={}, packageId={}, optionId={}, isCoinUsed={}",
+                userId, request.packageId(), request.optionId(), isCoinUsed);
 
         if (!validatePackageOption(request.packageId(), request.optionId())) {
             return ResponseEntity.badRequest()
@@ -89,7 +107,7 @@ public class AbbPaymentController {
 
         try {
             AbbInitiateResponse response = abbIntegrationService.initiatePayment(
-                    userId, request.packageId(), request.optionId(), request.isCoinUsed());
+                    userId, request.packageId(), request.optionId(), isCoinUsed);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[ABB][Controller] /init error: {}", e.getMessage(), e);
@@ -99,33 +117,37 @@ public class AbbPaymentController {
     }
 
     @Operation(
-            summary = "ABB taksit ödənişi başlat",
-            description = """
-                    Müəyyən taksit sayı ilə Azericard ödəniş səhifəsinə yönləndirilmə URL-i qaytarır.
-
-                    installmentMonths dəyərləri:
-                    - Test terminal aktiv dövrlər: 2, 3, 6, 9, 12
-                    - Production terminal: bank konfiqurasiyasına əsasən
-                    - null və ya 0: taksitsiz ödəniş (ACQ_INST_PAYIN=X)
-
-                    Xəta kodları (taksit konfiqurasiya səhvləri):
-                    U1=boş konfiqurasiya, U3=kart BIN tapılmadı, U4=BIN üçün taksit yoxdur,
-                    U5=terminal üçün taksit yoxdur, U6=terminal üçün həmin dövr yoxdur,
-                    U7=kart BIN üçün həmin dövr yoxdur.
-
-                    Taksit kartı: 4127214121630724 (test).
-                    """
+            summary = "ABB taksit ödənişi başlat (v1)",
+            description = "Köhnə axın: Coin endirimi yoxdur."
     )
-    @PostMapping("/installment")
+    @PostMapping("/payment/abb/installment")
     public ResponseEntity<AbbInitiateResponse> initiateInstallmentPayment(
             @RequestBody AbbInstallmentInitRequest request,
             Authentication authentication) {
+        return initiateInstallmentInternal(request, authentication, false);
+    }
+
+    @Operation(
+            summary = "ABB taksit ödənişi başlat (v2)",
+            description = "Yeni axın / AbbInstallmentInitRequestV2: isCoinUsed ilə Coin endirimi."
+    )
+    @PostMapping("/api/v2/payment/abb/installment")
+    public ResponseEntity<AbbInitiateResponse> initiateInstallmentPaymentV2(
+            @RequestBody AbbInstallmentInitRequestV2 request,
+            Authentication authentication) {
+        return initiateInstallmentInternal(request.toV1(), authentication, request.isCoinUsed());
+    }
+
+    private ResponseEntity<AbbInitiateResponse> initiateInstallmentInternal(
+            AbbInstallmentInitRequest request,
+            Authentication authentication,
+            Boolean isCoinUsed) {
 
         checkMaintenance("/installment POST");
 
         Long userId = extractUserId(authentication);
-        log.info("[ABB][Controller] /installment called: userId={}, packageId={}, optionId={}, months={}",
-                userId, request.packageId(), request.optionId(), request.installmentMonths());
+        log.info("[ABB][Controller] /installment called: userId={}, packageId={}, optionId={}, months={}, isCoinUsed={}",
+                userId, request.packageId(), request.optionId(), request.installmentMonths(), isCoinUsed);
 
         if (!validatePackageOption(request.packageId(), request.optionId())) {
             return ResponseEntity.badRequest()
@@ -136,7 +158,7 @@ public class AbbPaymentController {
 
         try {
             AbbInitiateResponse response = abbIntegrationService.initiateInstallmentPayment(
-                    userId, request.packageId(), request.optionId(), installment, request.isCoinUsed());
+                    userId, request.packageId(), request.optionId(), installment, isCoinUsed);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[ABB][Controller] /installment error: {}", e.getMessage(), e);
@@ -149,7 +171,7 @@ public class AbbPaymentController {
             summary = "Dəstəklənən ABB taksit ayları",
             description = "Sistemdə aktiv olan və bank tərəfindən dəstəklənən taksit aylarının siyahısını qaytarır."
     )
-    @GetMapping("/installment")
+    @GetMapping("/payment/abb/installment")
     public ResponseEntity<java.util.List<Integer>> getSupportedInstallments() {
         checkMaintenance("/installment GET");
         log.info("[ABB][Controller] /installment GET called");
@@ -175,7 +197,7 @@ public class AbbPaymentController {
             description = "Azericard E-Commerce Gateway-dən BACKREF POST callback-i. " +
                     "Bu endpoint JWT autentifikasiyasından muafdır."
     )
-    @PostMapping(value = "/callback", consumes = {"application/x-www-form-urlencoded", "*/*"})
+    @PostMapping(value = "/payment/abb/callback", consumes = {"application/x-www-form-urlencoded", "*/*"})
     public ResponseEntity<Void> handleCallback(
             @RequestParam(value = "TERMINAL",  required = false) String terminal,
             @RequestParam(value = "TRTYPE",    required = false) String trtype,
@@ -255,7 +277,7 @@ public class AbbPaymentController {
     /**
      * Azericard-ın GET probe-ı üçün (bank bəzən callback URL-ini GET ilə yoxlayır).
      */
-    @GetMapping("/callback")
+    @GetMapping("/payment/abb/callback")
     public ResponseEntity<String> handleCallbackGet() {
         log.debug("[ABB][Callback] GET probe received — returning OK");
         return ResponseEntity.ok("OK");
@@ -269,7 +291,7 @@ public class AbbPaymentController {
             summary = "ABB uğurlu ödəniş yönləndirmə",
             description = "Azericard ödənişi tamamladıqdan sonra istifadəçini uğur səhifəsinə yönləndirir."
     )
-    @GetMapping("/redirect/success")
+    @GetMapping("/payment/abb/redirect/success")
     public ResponseEntity<Void> redirectSuccess() {
         String targetUrl = abbIntegrationService.getSuccessRedirectUrl();
         log.info("[ABB][Redirect] Success redirect to: {}", targetUrl);
@@ -282,7 +304,7 @@ public class AbbPaymentController {
             summary = "ABB uğursuz ödəniş yönləndirmə",
             description = "Azericard ödənişi rədd etdikdən sonra istifadəçini xəta səhifəsinə yönləndirir."
     )
-    @GetMapping("/redirect/error")
+    @GetMapping("/payment/abb/redirect/error")
     public ResponseEntity<Void> redirectError() {
         String targetUrl = abbIntegrationService.getErrorRedirectUrl();
         log.info("[ABB][Redirect] Error redirect to: {}", targetUrl);
@@ -300,7 +322,7 @@ public class AbbPaymentController {
             description = "Pre-auth (TRTYPE=0) ilə başladılmış ödənişi tamamlayır. " +
                     "Callback-dən alınmış RRN və INT_REF tələb olunur."
     )
-    @PostMapping("/action/complete")
+    @PostMapping("/payment/abb/action/complete")
     public ResponseEntity<AbbTransactionActionResponse> completePayment(
             @RequestBody AbbTransactionActionRequest request) {
         log.info("[ABB][Controller] /action/complete called: orderId={}", request.orderId());
@@ -318,7 +340,7 @@ public class AbbPaymentController {
             description = "Eyni bank günündə əməliyyatı geri qaytarır. " +
                     "Callback-dən alınmış RRN, INT_REF tələb olunur."
     )
-    @PostMapping("/action/reverse-online")
+    @PostMapping("/payment/abb/action/reverse-online")
     public ResponseEntity<AbbTransactionActionResponse> onlineReversal(
             @RequestBody AbbTransactionActionRequest request) {
         log.info("[ABB][Controller] /action/reverse-online called: orderId={}", request.orderId());
@@ -336,7 +358,7 @@ public class AbbPaymentController {
             description = "Bank günü keçdikdən sonra əməliyyatı geri qaytarır (refund). " +
                     "Callback-dən alınmış RRN, INT_REF tələb olunur."
     )
-    @PostMapping("/action/reverse-offline")
+    @PostMapping("/payment/abb/action/reverse-offline")
     public ResponseEntity<AbbTransactionActionResponse> offlineReversal(
             @RequestBody AbbTransactionActionRequest request) {
         log.info("[ABB][Controller] /action/reverse-offline called: orderId={}", request.orderId());
@@ -354,7 +376,7 @@ public class AbbPaymentController {
             description = "Bankdan müəyyən əməliyyatın mövcud statusunu soruşur. " +
                     "orderId: orijinal ORDER, originalTrtype: orijinal əməliyyatın TRTYPE-ı (məs: '1')."
     )
-    @GetMapping("/action/status/{orderId}")
+    @GetMapping("/payment/abb/action/status/{orderId}")
     public ResponseEntity<AbbTransactionActionResponse> getTransactionStatus(
             @PathVariable String orderId,
             @RequestParam(defaultValue = "1") String originalTrtype) {

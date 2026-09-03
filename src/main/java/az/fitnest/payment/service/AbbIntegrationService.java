@@ -1,13 +1,11 @@
 package az.fitnest.payment.service;
 
-import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.client.abb.AbbProperties;
 import az.fitnest.payment.client.abb.AbbSigner;
 import az.fitnest.payment.dto.abb.*;
 import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.repository.PaymentRepository;
-import az.fitnest.payment.service.coin.CoinCheckoutHelper;
 import az.fitnest.payment.util.CardBrandDetector;
 import az.fitnest.payment.util.CardMaskUtil;
 import az.fitnest.payment.util.PaymentPackageRef;
@@ -67,11 +65,10 @@ public class AbbIntegrationService {
     private final AbbSigner abbSigner;
     private final PaymentRepository paymentRepository;
     private final StringRedisTemplate redisTemplate;
-    private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final PaymentSubscriptionService paymentSubscriptionService;
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final az.fitnest.payment.client.UserGrpcClient userGrpcClient;
-    private final CoinCheckoutHelper coinCheckoutHelper;
+    private final az.fitnest.payment.service.checkout.SubscriptionCheckoutService subscriptionCheckoutService;
 
     /** Paylaşılan HTTP client instance (thread-safe, yenidən istifadə edilir) */
     private static final java.net.http.HttpClient HTTP_CLIENT =
@@ -118,16 +115,13 @@ public class AbbIntegrationService {
         log.info("[ABB][Init] userId={}, packageId={}, optionId={}, installment={}, isCoinUsed={}",
                 userId, packageId, optionId, installment, isCoinUsed);
 
-        // 1. Qiyməti gRPC vasitəsilə al + optional coin endirimi
-        var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        var applied = coinCheckoutHelper.applyForSubscription(
-                userId, packageId, optionId, isCoinUsed, priceCurrency.amount);
-        double amount = applied.finalAmountAzn();
-        String currency = priceCurrency.currency != null ? priceCurrency.currency : abbProperties.getDefaultCurrency();
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed);
+        double amount = quote.chargeAmountAzn();
+        String currency = quote.currency() != null ? quote.currency() : abbProperties.getDefaultCurrency();
 
         // 2. Unikal orderId yarat (8 rəqəmli sıralı format – spec: 6-32 rəqəm)
         String orderId = generateOrderId();
-        String description = buildDescription(packageId, optionId);
+        String description = quote.packageRefDescription();
 
         // 3. Timestamp + Nonce yarat
         String timestamp = abbSigner.generateTimestamp();
@@ -179,10 +173,10 @@ public class AbbIntegrationService {
 
         // 8. Pending Payment entity-ni saxla
         Payment payment = createPendingPayment(orderId, amount, currency, userId, description, inst);
-        payment.setCoinsUsed(applied.coinsUsed());
+        payment.setCoinsUsed(quote.coinsUsed());
         paymentRepository.save(payment);
         log.info("[ABB][Init] Pending payment saved: id={}, orderId={}, amount={}, coinsUsed={}",
-                payment.getId(), orderId, amount, applied.coinsUsed());
+                payment.getId(), orderId, amount, quote.coinsUsed());
 
         // 9. userId-ni Redis-ə yaz (callback zamanı istifadə üçün)
         String redisKey = "abb-payment-user:" + orderId;
@@ -310,6 +304,7 @@ public class AbbIntegrationService {
         } else {
             log.info("[ABB][Callback] Payment not successful: action={}, rc={} for order={}",
                     callback.getAction(), callback.getRc(), callback.getOrder());
+            paymentSubscriptionService.onPaymentFailed(payment);
         }
     }
 
@@ -540,6 +535,7 @@ public class AbbIntegrationService {
                     payment.setCode(rc);
                     payment.setCallbackProcessed(true);
                     paymentRepository.save(payment);
+                    paymentSubscriptionService.onPaymentFailed(payment);
                 } else {
                     java.time.Instant thirtyMinutesAgo = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.MINUTES);
                     if (payment.getCreatedDate() != null && payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant().isBefore(thirtyMinutesAgo)) {
@@ -547,6 +543,7 @@ public class AbbIntegrationService {
                         payment.setStatus("FAILED");
                         payment.setCallbackProcessed(true);
                         paymentRepository.save(payment);
+                        paymentSubscriptionService.onPaymentFailed(payment);
                     } else {
                         log.warn("[ABB][TRTYPE=90] Sync: Status unresolved for orderId={}", orderId);
                     }
@@ -700,13 +697,6 @@ public class AbbIntegrationService {
      */
     private void assignSubscriptionIfPossible(Payment payment) {
         paymentSubscriptionService.assignFromPaymentDescription(payment, false);
-    }
-
-    /**
-     * Ödəniş açıqlaması qurur (packageId/optionId məlumatları daxil).
-     */
-    private String buildDescription(Long packageId, Long optionId) {
-        return PaymentPackageRef.encode(packageId, optionId);
     }
 
     /**

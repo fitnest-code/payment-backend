@@ -58,13 +58,29 @@ public class PaymentController {
         }
     }
 
-    @Operation(summary = "Ödənişi başladın", description = "Yeni bir ödəniş sorğusu yaradır. Yalnız packageId və optionId göndərilir, məbləğ və valyuta serverdə müəyyən edilir.")
+    @Operation(summary = "Ödənişi başladın (v1)", description = "Köhnə axın / köhnə DTO: Coin endirimi yoxdur.")
     @PostMapping("/payment/payment/init")
     public ResponseEntity<EpointResponse> initiatePayment(
             @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
+        return initiatePaymentInternal(currencyRequest, authentication, false);
+    }
+
+    @Operation(summary = "Ödənişi başladın (v2)", description = "Yeni axın / CurrencyRequestV2: isCoinUsed ilə Coin endirimi.")
+    @PostMapping("/api/v2/payment/epoint/init")
+    public ResponseEntity<EpointResponse> initiatePaymentV2(
+            @RequestBody CurrencyRequestV2 currencyRequest,
+            Authentication authentication) {
+        return initiatePaymentInternal(currencyRequest.toV1(), authentication, currencyRequest.isCoinUsed());
+    }
+
+    private ResponseEntity<EpointResponse> initiatePaymentInternal(
+            CurrencyRequest currencyRequest,
+            Authentication authentication,
+            Boolean isCoinUsed) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        log.info("[PaymentInit] (ENTRY) userId={}, packageId={}, optionId={}", userId, currencyRequest.packageId(), currencyRequest.optionId());
+        log.info("[PaymentInit] (ENTRY) userId={}, packageId={}, optionId={}, isCoinUsed={}",
+                userId, currencyRequest.packageId(), currencyRequest.optionId(), isCoinUsed);
         boolean hasPackageId = currencyRequest.packageId() != null;
         boolean hasOptionId = currencyRequest.optionId() != null;
         if (hasPackageId ^ hasOptionId) {
@@ -94,9 +110,10 @@ public class PaymentController {
                     currencyRequest.packageId(),
                     currencyRequest.optionId(),
                     currencyRequest.autoPaymentEnabled(),
-                    currencyRequest.isCoinUsed()
+                    isCoinUsed
             );
-            log.info("[PaymentInit] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), response.status(), response.message());
+            log.info("[PaymentInit] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, isCoinUsed={}, status={}, message={}",
+                    userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), isCoinUsed, response.status(), response.message());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[PaymentInit] (ERROR) Exception occurred: {}", e.getMessage(), e);
@@ -125,11 +142,26 @@ public class PaymentController {
         return ResponseEntity.ok(response);
     }
 
-    @Operation(summary = "Ödənişlə kartın qeydiyyatı", description = "Ödəniş zamanı kartı qeydiyyatdan keçirir. Yalnız məbləğ və valyuta göndərilir, digər sahələr serverdə doldurulur.")
+    @Operation(summary = "Ödənişlə kartın qeydiyyatı (v1)", description = "Köhnə axın / köhnə DTO: Coin endirimi yoxdur.")
     @PostMapping("/payment/payment/save-and-pay")
     public ResponseEntity<EpointResponse> cardRegistrationWithPay(
             @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
+        return cardRegistrationWithPayInternal(currencyRequest, authentication, false);
+    }
+
+    @Operation(summary = "Ödənişlə kartın qeydiyyatı (v2)", description = "Yeni axın / CurrencyRequestV2: isCoinUsed ilə Coin endirimi.")
+    @PostMapping("/api/v2/payment/epoint/save-and-pay")
+    public ResponseEntity<EpointResponse> cardRegistrationWithPayV2(
+            @RequestBody CurrencyRequestV2 currencyRequest,
+            Authentication authentication) {
+        return cardRegistrationWithPayInternal(currencyRequest.toV1(), authentication, currencyRequest.isCoinUsed());
+    }
+
+    private ResponseEntity<EpointResponse> cardRegistrationWithPayInternal(
+            CurrencyRequest currencyRequest,
+            Authentication authentication,
+            Boolean isCoinUsed) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
         boolean hasPackageId = currencyRequest.packageId() != null;
         boolean hasOptionId = currencyRequest.optionId() != null;
@@ -158,8 +190,9 @@ public class PaymentController {
                     currencyRequest.packageId(),
                     currencyRequest.optionId(),
                     currencyRequest.autoPaymentEnabled(),
-                    currencyRequest.isCoinUsed());
-            log.info("[SaveAndPay] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, isCoinUsed={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), currencyRequest.isCoinUsed(), response.status(), response.message());
+                    isCoinUsed);
+            log.info("[SaveAndPay] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, isCoinUsed={}, status={}, message={}",
+                    userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), isCoinUsed, response.status(), response.message());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[SaveAndPay] (ERROR) Exception occurred: {}", e.getMessage(), e);
@@ -168,12 +201,29 @@ public class PaymentController {
         }
     }
 
-    @Operation(summary = "Yadda saxlanmış kartla ödəniş", description = "Yadda saxlanmış kartla ödəniş edir. CardId, packageId və optionId göndərilir, məbləğ və valyuta serverdə müəyyən edilir.")
+    @Operation(summary = "Yadda saxlanmış kartla ödəniş (v1)", description = "Köhnə axın / köhnə DTO: Coin endirimi yoxdur.")
     @PostMapping("/api/v1/payment/with-card")
     public ResponseEntity<ApiResponse<EpointResponse>> executePayWithCard(
             @RequestBody WithCardRequest withCardRequest,
             Authentication authentication,
             jakarta.servlet.http.HttpServletRequest httpRequest) {
+        return executePayWithCardInternal(withCardRequest, authentication, httpRequest, false);
+    }
+
+    @Operation(summary = "Yadda saxlanmış kartla ödəniş (v2)", description = "Yeni axın / WithCardRequestV2: isCoinUsed ilə Coin endirimi.")
+    @PostMapping("/api/v2/payment/epoint/with-card")
+    public ResponseEntity<ApiResponse<EpointResponse>> executePayWithCardV2(
+            @RequestBody WithCardRequestV2 withCardRequest,
+            Authentication authentication,
+            jakarta.servlet.http.HttpServletRequest httpRequest) {
+        return executePayWithCardInternal(withCardRequest.toV1(), authentication, httpRequest, withCardRequest.isCoinUsed());
+    }
+
+    private ResponseEntity<ApiResponse<EpointResponse>> executePayWithCardInternal(
+            WithCardRequest withCardRequest,
+            Authentication authentication,
+            jakarta.servlet.http.HttpServletRequest httpRequest,
+            Boolean isCoinUsed) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
         boolean hasPackageId = withCardRequest.packageId() != null;
         boolean hasOptionId = withCardRequest.optionId() != null;
@@ -220,9 +270,10 @@ public class PaymentController {
                     withCardRequest.packageId(),
                     withCardRequest.optionId(),
                     withCardRequest.autoPaymentEnabled(),
-                    withCardRequest.isCoinUsed());
-            log.info("[WithCard] (EXIT) userId={}, cardId={}, packageId={}, optionId={}, autoPay={}, isCoinUsed={}, status={}, message={}", userId, withCardRequest.cardId(), withCardRequest.packageId(), withCardRequest.optionId(), withCardRequest.autoPaymentEnabled(), withCardRequest.isCoinUsed(), response.status(), response.message());
-            
+                    isCoinUsed);
+            log.info("[WithCard] (EXIT) userId={}, cardId={}, packageId={}, optionId={}, autoPay={}, isCoinUsed={}, status={}, message={}",
+                    userId, withCardRequest.cardId(), withCardRequest.packageId(), withCardRequest.optionId(), withCardRequest.autoPaymentEnabled(), isCoinUsed, response.status(), response.message());
+
             if (!"success".equalsIgnoreCase(response.status())) {
                 String errorCode = response.code() != null ? response.code() : "error.payment.failed";
                 String errorMessage = response.message() != null ? response.message() : "Payment failed";
@@ -235,7 +286,7 @@ public class PaymentController {
                         .build();
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(apiError));
             }
-            
+
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (Exception e) {
             log.error("[WithCard] (ERROR) Exception occurred: {}", e.getMessage(), e);
@@ -250,13 +301,29 @@ public class PaymentController {
         }
     }
 
-    @Operation(summary = "Vidcet URL-i yaradın", description = "Apple Pay və Google Pay üçün ödəniş vidceti linki yaradır.")
+    @Operation(summary = "Vidcet URL-i yaradın (v1)", description = "Köhnə axın / köhnə DTO: Coin endirimi yoxdur.")
     @PostMapping("/payment/widget-url")
     public ResponseEntity<EpointResponse> createWidgetUrl(
             @RequestBody CurrencyRequest currencyRequest,
             Authentication authentication) {
+        return createWidgetUrlInternal(currencyRequest, authentication, false);
+    }
+
+    @Operation(summary = "Vidcet URL-i yaradın (v2)", description = "Yeni axın / CurrencyRequestV2: isCoinUsed ilə Coin endirimi.")
+    @PostMapping("/api/v2/payment/epoint/widget-url")
+    public ResponseEntity<EpointResponse> createWidgetUrlV2(
+            @RequestBody CurrencyRequestV2 currencyRequest,
+            Authentication authentication) {
+        return createWidgetUrlInternal(currencyRequest.toV1(), authentication, currencyRequest.isCoinUsed());
+    }
+
+    private ResponseEntity<EpointResponse> createWidgetUrlInternal(
+            CurrencyRequest currencyRequest,
+            Authentication authentication,
+            Boolean isCoinUsed) {
         Long userId = authentication != null ? (Long) authentication.getPrincipal() : null;
-        log.info("[WidgetUrl] (ENTRY) userId={}, packageId={}, optionId={}", userId, currencyRequest.packageId(), currencyRequest.optionId());
+        log.info("[WidgetUrl] (ENTRY) userId={}, packageId={}, optionId={}, isCoinUsed={}",
+                userId, currencyRequest.packageId(), currencyRequest.optionId(), isCoinUsed);
 
         if (currencyRequest.packageId() == null || currencyRequest.optionId() == null) {
             log.warn("[WidgetUrl] (ERROR) Both packageId and optionId must be provided.");
@@ -283,8 +350,9 @@ public class PaymentController {
                     currencyRequest.packageId(),
                     currencyRequest.optionId(),
                     currencyRequest.autoPaymentEnabled(),
-                    currencyRequest.isCoinUsed());
-            log.info("[WidgetUrl] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, isCoinUsed={}, status={}, widgetUrl={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), currencyRequest.isCoinUsed(), response.status(), response.widgetUrl());
+                    isCoinUsed);
+            log.info("[WidgetUrl] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, isCoinUsed={}, status={}, widgetUrl={}",
+                    userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), isCoinUsed, response.status(), response.widgetUrl());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[WidgetUrl] (ERROR) Exception occurred: {}", e.getMessage(), e);

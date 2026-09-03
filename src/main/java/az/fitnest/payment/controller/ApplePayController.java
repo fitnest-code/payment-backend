@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.*;
 import java.security.Principal;
 
 @RestController
-@RequestMapping("/api/v1/payments/apple-pay")
 @RequiredArgsConstructor
 @Tag(name = "Apple Pay Ödənişləri", description = "Apple Pay inteqrasiyası üçün ucluqlar")
 @SecurityRequirement(name = "bearerAuth")
@@ -31,13 +30,26 @@ public class ApplePayController {
     private final EpointIntegrationService integrationService;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
 
-    @Operation(summary = "Apple Pay ödənişini başladın", description = "Apple Pay üçün payment token yaradır.")
-    @PostMapping("/create")
+    @Operation(summary = "Apple Pay ödənişini başladın (v1)", description = "Köhnə axın / köhnə DTO: Coin endirimi yoxdur.")
+    @PostMapping("/api/v1/payments/apple-pay/create")
     public ResponseEntity<?> createPayment(
             @Valid @RequestBody ApplePayCreateRequest request,
             @AuthenticationPrincipal Principal user) {
+        return createPaymentInternal(request.packageId(), request.optionId(), false);
+    }
+
+    @Operation(summary = "Apple Pay ödənişini başladın (v2)", description = "Yeni axın / ApplePayCreateRequestV2: isCoinUsed ilə Coin endirimi.")
+    @PostMapping("/api/v2/payment/apple-pay/create")
+    public ResponseEntity<?> createPaymentV2(
+            @Valid @RequestBody ApplePayCreateRequestV2 request,
+            @AuthenticationPrincipal Principal user) {
+        return createPaymentInternal(request.packageId(), request.optionId(), request.isCoinUsed());
+    }
+
+    private ResponseEntity<?> createPaymentInternal(Long packageId, Long optionId, Boolean isCoinUsed) {
         Long userId = UserContext.getCurrentUserId();
-        log.info("[ApplePayCreate] (CONTROLLER ENTRY) userId={}, packageId={}, optionId={}", userId, request.packageId(), request.optionId());
+        log.info("[ApplePayCreate] (CONTROLLER ENTRY) userId={}, packageId={}, optionId={}, isCoinUsed={}",
+                userId, packageId, optionId, isCoinUsed);
 
         if (userId == null) {
             log.warn("[ApplePayCreate] Unauthorized: User ID not found");
@@ -45,15 +57,15 @@ public class ApplePayController {
         }
 
         try {
-            var details = subscriptionPackageGrpcClient.getOptionPriceCurrency(request.packageId(), request.optionId());
+            var details = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
             if (details == null) {
-                log.warn("[ApplePayCreate] Invalid packageId or optionId. packageId={}, optionId={}", request.packageId(), request.optionId());
+                log.warn("[ApplePayCreate] Invalid packageId or optionId. packageId={}, optionId={}", packageId, optionId);
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body(new ErrorResponse("Invalid packageId or optionId"));
             }
 
             EpointTokenResponse tokenResponse = integrationService.createApplePayPayment(
-                    userId, request.packageId(), request.optionId(), request.isCoinUsed());
+                    userId, packageId, optionId, isCoinUsed);
             ApplePayCreateResponse createResponse = new ApplePayCreateResponse(tokenResponse.getPaymentId());
             log.info("[ApplePayCreate] (CONTROLLER EXIT) Created paymentId={} for userId={}", createResponse.paymentId(), userId);
             return ResponseEntity.ok(createResponse);
@@ -65,7 +77,7 @@ public class ApplePayController {
     }
 
     @Operation(summary = "Apple Pay ödənişini tamamlamaq", description = "Apple Pay-dən gələn token-i Epoint-ə göndərərək ödənişi təsdiqləyir.")
-    @PostMapping("/submit")
+    @PostMapping({"/api/v1/payments/apple-pay/submit", "/api/v2/payment/apple-pay/submit"})
     public ResponseEntity<?> submitPayment(
             @Valid @RequestBody ApplePaySubmitRequest request,
             @AuthenticationPrincipal Principal user) {
@@ -95,7 +107,7 @@ public class ApplePayController {
     }
 
     @Operation(summary = "Apple Pay Merchant Session", description = "Apple Pay merchant session məlumatlarını əldə edir.")
-    @PostMapping("/session")
+    @PostMapping("/api/v1/payments/apple-pay/session")
     public ResponseEntity<?> getSession(
             @RequestHeader(value = "Origin", required = false) String originHeader,
             @RequestBody(required = false) ApplePaySessionRequest request,

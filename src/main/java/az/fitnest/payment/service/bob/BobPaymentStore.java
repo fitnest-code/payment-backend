@@ -1,6 +1,7 @@
 package az.fitnest.payment.service.bob;
 
 import az.fitnest.payment.dto.bob.BobOrderStatusResponse;
+import az.fitnest.payment.event.PaymentOutboxService;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.util.PaymentPackageRef;
@@ -27,6 +28,7 @@ public class BobPaymentStore {
     private static final int BANK_RESPONSE_MAX_LEN = 4000;
 
     private final PaymentRepository paymentRepository;
+    private final PaymentOutboxService paymentOutboxService;
 
     public String buildPackageDescription(Long packageId, Long optionId, String requestDescription) {
         return PaymentPackageRef.appendToDescription(requestDescription, packageId, optionId);
@@ -121,7 +123,9 @@ public class BobPaymentStore {
         if (bankResponse != null && !bankResponse.isBlank()) {
             payment.setBankResponse(truncate(bankResponse));
         }
-        return paymentRepository.save(payment);
+        Payment saved = paymentRepository.save(payment);
+        paymentOutboxService.recordPaymentOutcome(saved);
+        return saved;
     }
 
     @Transactional

@@ -1,13 +1,14 @@
 package az.fitnest.payment.dto.epoint;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
- * V1 saved-card pay body — pre-coin contract.
+ * V2 saved-card pay body — adds FitNest Coin discount flag.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record WithCardRequest(
+public record WithCardRequestV2(
     @Schema(description = "Card ID", example = "1234567890")
     String cardId,
     @Schema(description = "Paket ID-si", example = "123")
@@ -15,5 +16,12 @@ public record WithCardRequest(
     @Schema(description = "Seçim ID-si", example = "456")
     Long optionId,
     @Schema(description = "Avtomatik ödəniş aktivdir", example = "true")
-    Boolean autoPaymentEnabled
-) {}
+    Boolean autoPaymentEnabled,
+    @Schema(description = "FitNest Coin endirimi aktivdir", example = "false")
+    @JsonAlias({"coinPaymentEnabled", "coin_payment_enabled", "is_coin_used"})
+    Boolean isCoinUsed
+) {
+    public WithCardRequest toV1() {
+        return new WithCardRequest(cardId, packageId, optionId, autoPaymentEnabled);
+    }
+}

@@ -144,6 +144,13 @@ app:
   warmup:
     enabled: ${APP_WARMUP_ENABLED:true}
     db: ${APP_WARMUP_DB:true}
+  outbox:
+    enabled: ${APP_OUTBOX_ENABLED:true}
+    batch-size: ${APP_OUTBOX_BATCH_SIZE:100}
+    max-attempts: ${APP_OUTBOX_MAX_ATTEMPTS:10}
+    retention-hours: ${APP_OUTBOX_RETENTION_HOURS:168}
+    poll-delay-ms: ${APP_OUTBOX_POLL_DELAY_MS:1000}
+    cleanup-cron: ${APP_OUTBOX_CLEANUP_CRON:0 30 * * * *}
 
 # Epoint Configuration
 epoint:

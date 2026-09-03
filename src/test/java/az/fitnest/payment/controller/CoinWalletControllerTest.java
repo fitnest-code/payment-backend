@@ -125,7 +125,7 @@ class CoinWalletControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/coins/balance - Coin balans və AZN ekvivalenti")
+    @DisplayName("GET /api/v2/coins/balance - Coin balans və AZN ekvivalenti")
     void testGetCoinBalance() {
         CoinBalanceResponse expected = CoinBalanceResponse.builder()
                 .coinBalance(new BigDecimal("320.00"))
@@ -143,7 +143,7 @@ class CoinWalletControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/coins/full-payment-eligibility - Uyğunluq yoxlanışı")
+    @DisplayName("POST /api/v2/coins/full-payment-eligibility - Uyğunluq yoxlanışı")
     void testCheckFullPaymentEligibility() {
         FullPaymentEligibilityRequest request = FullPaymentEligibilityRequest.builder()
                 .packageId(10L)

@@ -193,11 +193,14 @@ public class BnplIntegrationService {
         }
 
         boolean alreadyCompleted = "SUCCESS".equals(payment.getStatus());
+        boolean alreadyFailed = "FAILED".equals(payment.getStatus());
         paymentStore.applyAbbStatus(payment, next, payload.getPartialReverseCount(), rawBody);
 
         if (next.isSuccess() && !alreadyCompleted) {
             paymentSubscriptionService.assignFromPaymentDescription(payment, false);
             log.info("[BNPL][Callback] COMPLETED → subscription assigned orderId={}", payload.getOrderId());
+        } else if (next.isTerminal() && !next.isSuccess() && "FAILED".equals(payment.getStatus()) && !alreadyFailed) {
+            paymentSubscriptionService.onPaymentFailed(payment);
         }
 
         log.info("[BNPL][Callback] Processed orderId={} status={} partialReverseCount={}",
@@ -226,9 +229,13 @@ public class BnplIntegrationService {
             BnplOrderStatus remote = BnplOrderStatus.from(detail.getStatus());
             if (remote != null) {
                 boolean alreadyCompleted = "SUCCESS".equals(payment.getStatus());
+                boolean alreadyFailed = "FAILED".equals(payment.getStatus());
                 paymentStore.applyAbbStatus(payment, remote, null, writeSafe(detail));
                 if (remote.isSuccess() && !alreadyCompleted) {
                     paymentSubscriptionService.assignFromPaymentDescription(payment, false);
+                } else if (remote.isTerminal() && !remote.isSuccess()
+                        && "FAILED".equals(payment.getStatus()) && !alreadyFailed) {
+                    paymentSubscriptionService.onPaymentFailed(payment);
                 }
                 local = remote;
             }

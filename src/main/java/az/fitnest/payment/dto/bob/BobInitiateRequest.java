@@ -8,11 +8,13 @@ import lombok.NoArgsConstructor;
 
 /**
  * Bank of Baku vasitəsilə ödəniş başlatma sorğusu.
+ * V1 endpoints force isCoinUsed=false; V2 honors the flag.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
 public class BobInitiateRequest {
 
     /**

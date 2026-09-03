@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.*;
 import java.security.Principal;
 
 @RestController
-@RequestMapping("/api/v1/payments/google-pay")
 @RequiredArgsConstructor
 @Tag(name = "Google Pay Ödənişləri", description = "Google Pay inteqrasiyası üçün ucluqlar")
 @SecurityRequirement(name = "bearerAuth")
@@ -31,30 +30,42 @@ public class GooglePayController {
     private final EpointIntegrationService integrationService;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
 
-    @Operation(summary = "Google Pay ödənişini başladın", description = "Google Pay üçün payment token yaradır.")
-    @PostMapping("/create")
+    @Operation(summary = "Google Pay ödənişini başladın (v1)", description = "Köhnə axın / köhnə DTO: Coin endirimi yoxdur.")
+    @PostMapping("/api/v1/payments/google-pay/create")
     public ResponseEntity<?> createPayment(
             @Valid @RequestBody GooglePayCreateRequest request,
             @AuthenticationPrincipal Principal user) {
+        return createPaymentInternal(request.packageId(), request.optionId(), false);
+    }
+
+    @Operation(summary = "Google Pay ödənişini başladın (v2)", description = "Yeni axın / GooglePayCreateRequestV2: isCoinUsed ilə Coin endirimi.")
+    @PostMapping("/api/v2/payment/google-pay/create")
+    public ResponseEntity<?> createPaymentV2(
+            @Valid @RequestBody GooglePayCreateRequestV2 request,
+            @AuthenticationPrincipal Principal user) {
+        return createPaymentInternal(request.packageId(), request.optionId(), request.isCoinUsed());
+    }
+
+    private ResponseEntity<?> createPaymentInternal(Long packageId, Long optionId, Boolean isCoinUsed) {
         Long userId = UserContext.getCurrentUserId();
-        log.info("[GooglePayCreate] (CONTROLLER ENTRY) userId={}, packageId={}, optionId={}", userId, request.packageId(), request.optionId());
+        log.info("[GooglePayCreate] (CONTROLLER ENTRY) userId={}, packageId={}, optionId={}, isCoinUsed={}",
+                userId, packageId, optionId, isCoinUsed);
 
         if (userId == null) {
             log.warn("[GooglePayCreate] Unauthorized: User ID not found");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        // Validate package & option exists
-        boolean valid = subscriptionPackageGrpcClient.checkOptionInPackageExists(request.packageId(), request.optionId());
+        boolean valid = subscriptionPackageGrpcClient.checkOptionInPackageExists(packageId, optionId);
         if (!valid) {
-            log.warn("[GooglePayCreate] Invalid packageId or optionId. packageId={}, optionId={}", request.packageId(), request.optionId());
+            log.warn("[GooglePayCreate] Invalid packageId or optionId. packageId={}, optionId={}", packageId, optionId);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(new ErrorResponse("Invalid packageId or optionId"));
         }
 
         try {
             EpointTokenResponse tokenResponse = integrationService.createGooglePayPayment(
-                    userId, request.packageId(), request.optionId(), request.isCoinUsed());
+                    userId, packageId, optionId, isCoinUsed);
             GooglePayCreateResponse createResponse = new GooglePayCreateResponse(tokenResponse.getPaymentId());
             log.info("[GooglePayCreate] (CONTROLLER EXIT) Created paymentId={} for userId={}", createResponse.paymentId(), userId);
             return ResponseEntity.ok(createResponse);
@@ -66,7 +77,7 @@ public class GooglePayController {
     }
 
     @Operation(summary = "Google Pay ödənişini tamamlamaq", description = "Google Pay-dən gələn token-i Epoint-ə göndərərək ödənişi təsdiqləyir.")
-    @PostMapping("/submit")
+    @PostMapping({"/api/v1/payments/google-pay/submit", "/api/v2/payment/google-pay/submit"})
     public ResponseEntity<?> submitPayment(
             @Valid @RequestBody GooglePaySubmitRequest request,
             @AuthenticationPrincipal Principal user) {

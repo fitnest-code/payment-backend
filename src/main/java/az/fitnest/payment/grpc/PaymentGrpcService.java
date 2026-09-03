@@ -34,15 +34,48 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
         log.info("Received gRPC CreatePayment request for orderId: {}", request.getOrderId());
 
         try {
+            // Prefer server-side package pricing when package/option are present; never trust client amount alone.
+            Double amount = request.getAmount();
+            String currency = request.getCurrency();
+            String otherAttr = request.getOtherAttrList().isEmpty()
+                    ? null
+                    : String.join(",", request.getOtherAttrList());
+
+            Long packageId = null;
+            Long optionId = null;
+            try {
+                var ref = PaymentPackageRef.parseWithFallback(request.getDescription(), otherAttr);
+                if (ref.isComplete()) {
+                    packageId = ref.packageId();
+                    optionId = ref.optionId();
+                }
+            } catch (Exception ignored) {
+                // fall through to amount validation
+            }
+
+            if (packageId != null && optionId != null) {
+                var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+                amount = priceCurrency.amount;
+                currency = priceCurrency.currency != null ? priceCurrency.currency : currency;
+                otherAttr = PaymentPackageRef.encode(packageId, optionId);
+            }
+
+            if (amount == null || amount <= 0) {
+                responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
+                        .withDescription("Amount must be resolved from package/option or provided as positive")
+                        .asRuntimeException());
+                return;
+            }
+
             EpointPaymentRequest paymentRequest = EpointPaymentRequest.builder()
                     .orderId(request.getOrderId())
-                    .amount(request.getAmount())
-                    .currency(request.getCurrency())
+                    .amount(amount)
+                    .currency(currency)
                     .description(request.getDescription())
                     .language(request.getLanguage())
                     .isInstallment(request.getIsInstallment())
                     .refund(request.getRefund())
-                    .otherAttr(request.getOtherAttrList().isEmpty() ? null : String.join(",", request.getOtherAttrList()))
+                    .otherAttr(otherAttr)
                     .build();
 
             EpointResponse epointResponse = integrationService.initiatePayment(paymentRequest, null);

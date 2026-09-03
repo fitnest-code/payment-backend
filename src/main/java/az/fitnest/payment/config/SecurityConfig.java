@@ -42,6 +42,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/internal/**").authenticated()
                         .requestMatchers("/epoint/result").permitAll()
+                        .requestMatchers("/payment/result").permitAll()
                         .requestMatchers("/payment/callback").permitAll()
                         .requestMatchers("/payment/epoint/callback").permitAll()
                         .requestMatchers("/payment/redirect/**").permitAll()

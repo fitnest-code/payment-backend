@@ -1,5 +1,6 @@
 package az.fitnest.payment.service.bnpl;
 
+import az.fitnest.payment.event.PaymentOutboxService;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.enums.BnplOrderStatus;
 import az.fitnest.payment.repository.PaymentRepository;
@@ -23,6 +24,7 @@ public class BnplPaymentStore {
 
     private final PaymentRepository paymentRepository;
     private final ObjectMapper objectMapper;
+    private final PaymentOutboxService paymentOutboxService;
 
     @Transactional
     public Payment createPending(Long userId,
@@ -72,7 +74,9 @@ public class BnplPaymentStore {
         if (bankResponse != null) {
             payment.setBankResponse(truncate(bankResponse));
         }
-        return paymentRepository.save(payment);
+        Payment saved = paymentRepository.save(payment);
+        paymentOutboxService.recordPaymentOutcome(saved);
+        return saved;
     }
 
     @Transactional

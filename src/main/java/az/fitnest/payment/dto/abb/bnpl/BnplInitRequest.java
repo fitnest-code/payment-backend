@@ -9,11 +9,13 @@ import lombok.NoArgsConstructor;
 
 /**
  * Mobile → FitNest: start BNPL credit request.
+ * V1 endpoints force isCoinUsed=false and clear coinsToUse; V2 honors coin fields.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
 public class BnplInitRequest {
 
     @NotNull(message = "Package ID məcburidir")

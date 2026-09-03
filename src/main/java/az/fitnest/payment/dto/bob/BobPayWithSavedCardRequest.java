@@ -9,11 +9,13 @@ import lombok.NoArgsConstructor;
 
 /**
  * Yadda saxlanılmış kartla (Binding) ödəniş etmək üçün sorğu DTO.
+ * V1 endpoints force isCoinUsed=false; V2 honors the flag.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
 public class BobPayWithSavedCardRequest {
 
     /**
