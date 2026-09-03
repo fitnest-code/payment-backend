@@ -4,10 +4,12 @@ import az.fitnest.payment.client.IdentityBackendClient;
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.dto.coin.*;
+import az.fitnest.payment.event.PaymentOutboxService;
 import az.fitnest.payment.exception.ConflictException;
 import az.fitnest.payment.model.entity.CoinSettings;
 import az.fitnest.payment.model.entity.CoinTransaction;
 import az.fitnest.payment.model.entity.CoinWallet;
+import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.enums.CoinRefundAction;
 import az.fitnest.payment.model.enums.CoinTransactionCategory;
 import az.fitnest.payment.model.enums.CoinTransactionSourceType;
@@ -15,6 +17,7 @@ import az.fitnest.payment.model.enums.CoinTransactionType;
 import az.fitnest.payment.repository.CoinSettingsRepository;
 import az.fitnest.payment.repository.CoinTransactionRepository;
 import az.fitnest.payment.repository.CoinWalletRepository;
+import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.WelcomeBonusIdentifierRepository;
 import az.fitnest.payment.service.impl.CoinWalletServiceImpl;
 import az.fitnest.payment.service.coin.CoinEarnCalculator;
@@ -67,6 +70,12 @@ class CoinWalletServiceTest {
     @Mock
     private CoinEarnCalculator coinEarnCalculator;
 
+    @Mock
+    private PaymentRepository paymentRepository;
+
+    @Mock
+    private PaymentOutboxService paymentOutboxService;
+
     @InjectMocks
     private CoinWalletServiceImpl coinWalletService;
 
@@ -81,8 +90,8 @@ class CoinWalletServiceTest {
         defaultSettings.setMaxDiscountPercentage(new BigDecimal("100.00"));
         defaultSettings.setExpiryMonths(12);
         defaultSettings.setActive(true);
-        when(coinEarnCalculator.isV2Formula(any())).thenReturn(false);
-        when(coinEarnCalculator.calculateV1(any(), any())).thenAnswer(inv -> {
+        lenient().when(coinEarnCalculator.isV2Formula(any())).thenReturn(false);
+        lenient().when(coinEarnCalculator.calculateV1(any(), any())).thenAnswer(inv -> {
             BigDecimal amount = inv.getArgument(0);
             BigDecimal rate = inv.getArgument(1);
             if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -155,6 +164,7 @@ class CoinWalletServiceTest {
         Long userId = 100L;
         PayFullWithCoinsRequest request = PayFullWithCoinsRequest.builder()
                 .subscriptionPlanId(123L)
+                .optionId(1L)
                 .build();
 
         when(settingsRepository.findFirstByActiveTrueOrderByIdDesc()).thenReturn(Optional.of(defaultSettings));
@@ -164,13 +174,23 @@ class CoinWalletServiceTest {
         when(subscriptionPackageGrpcClient.getOptionPriceCurrency(eq(123L), any()))
                 .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(10.0, "AZN", 1)); // 10 AZN = 200 coins
 
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> {
+            Payment p = inv.getArgument(0);
+            p.setId(55L);
+            return p;
+        });
+
         PayFullWithCoinsResponse response = coinWalletService.payFullWithCoins(userId, request);
 
         assertTrue(response.getSuccess());
         assertNotNull(response.getOrderId());
         assertEquals(new BigDecimal("200.00"), response.getCoinsDeducted());
         assertEquals(new BigDecimal("100.00"), response.getRemainingBalance());
-        verify(transactionRepository).save(any(CoinTransaction.class));
+        verify(transactionRepository, atLeastOnce()).save(any(CoinTransaction.class));
+        verify(paymentRepository).save(any(Payment.class));
+        verify(paymentOutboxService).recordPaymentOutcome(any(Payment.class));
+        verify(paymentOutboxService).requestSubscriptionAssignment(
+                eq(userId), eq(123L), eq(1L), eq(false), eq(response.getOrderId()));
     }
 
     @Test

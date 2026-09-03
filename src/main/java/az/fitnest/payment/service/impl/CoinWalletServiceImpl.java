@@ -4,11 +4,13 @@ import az.fitnest.payment.client.IdentityBackendClient;
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.dto.coin.*;
+import az.fitnest.payment.event.PaymentOutboxService;
 import az.fitnest.payment.exception.BadRequestException;
 import az.fitnest.payment.exception.ConflictException;
 import az.fitnest.payment.model.entity.CoinSettings;
 import az.fitnest.payment.model.entity.CoinTransaction;
 import az.fitnest.payment.model.entity.CoinWallet;
+import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.entity.WelcomeBonusIdentifier;
 import az.fitnest.payment.model.enums.CoinRefundAction;
 import az.fitnest.payment.model.enums.CoinTransactionCategory;
@@ -17,10 +19,12 @@ import az.fitnest.payment.model.enums.CoinTransactionType;
 import az.fitnest.payment.repository.CoinSettingsRepository;
 import az.fitnest.payment.repository.CoinTransactionRepository;
 import az.fitnest.payment.repository.CoinWalletRepository;
+import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.WelcomeBonusIdentifierRepository;
 import az.fitnest.payment.service.CoinWalletService;
 import az.fitnest.payment.service.coin.CoinEarnCalculator;
 import az.fitnest.payment.service.coin.CoinNotificationPublisher;
+import az.fitnest.payment.util.PaymentPackageRef;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -55,6 +59,8 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     private final UserGrpcClient userGrpcClient;
     private final CoinNotificationPublisher coinNotificationPublisher;
     private final CoinEarnCalculator coinEarnCalculator;
+    private final PaymentRepository paymentRepository;
+    private final PaymentOutboxService paymentOutboxService;
 
     @Override
     @Transactional(readOnly = true)
@@ -246,7 +252,9 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         CoinSettings settings = getSettingsInternal();
         CoinWallet wallet = getOrCreateWalletWithLock(userId);
 
-        BigDecimal originalPrice = resolvePackagePrice(request.getSubscriptionPlanId(), request.getOptionId(), request.getOriginalPrice());
+        Long packageId = request.getSubscriptionPlanId();
+        Long optionId = request.getOptionId() != null ? request.getOptionId() : 1L;
+        BigDecimal originalPrice = resolvePackagePrice(packageId, optionId, request.getOriginalPrice());
         BigDecimal coinsNeeded = originalPrice.multiply(settings.getSpendRateCoinToAzn()).setScale(2, RoundingMode.HALF_UP);
 
         if (wallet.getBalance().compareTo(coinsNeeded) < 0) {
@@ -258,6 +266,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         walletRepository.save(wallet);
 
         String orderId = "COIN-ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        String description = PaymentPackageRef.encode(packageId, optionId);
 
         CoinTransaction spendTx = new CoinTransaction();
         spendTx.setWallet(wallet);
@@ -270,13 +279,37 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         spendTx.setDescription("100% Coin ilə paket ödənişi edildi");
         transactionRepository.save(spendTx);
 
-        log.info("Full coin payment executed for userId: {}, planId: {}, coinsDeducted: {}, orderId: {}",
-                userId, request.getSubscriptionPlanId(), coinsNeeded, orderId);
+        Payment payment = new Payment();
+        payment.setProvider("COIN");
+        payment.setOrderId(orderId);
+        payment.setTransactionId(orderId);
+        payment.setAmount(0.0);
+        payment.setCurrency("AZN");
+        payment.setStatus("SUCCESS");
+        payment.setUserId(userId);
+        payment.setDescription(description);
+        payment.setType("FULL_COIN_PAYMENT");
+        payment.setAutoPaymentEnabled(false);
+        payment.setCoinsUsed(coinsNeeded);
+        payment.setCallbackProcessed(true);
+        payment.setMessage("Paid fully with FitNest Coins");
+        payment = paymentRepository.save(payment);
+
+        spendTx.setPaymentId(payment.getId());
+        transactionRepository.save(spendTx);
+
+        // Same durable assign path as bank payments (OutboxRelay → order-backend gRPC).
+        paymentOutboxService.recordPaymentOutcome(payment);
+        paymentOutboxService.requestSubscriptionAssignment(
+                userId, packageId, optionId, false, orderId);
+
+        log.info("Full coin payment executed for userId: {}, planId: {}, optionId: {}, coinsDeducted: {}, orderId: {}",
+                userId, packageId, optionId, coinsNeeded, orderId);
 
         return PayFullWithCoinsResponse.builder()
                 .success(true)
                 .orderId(orderId)
-                .subscriptionPlanId(request.getSubscriptionPlanId())
+                .subscriptionPlanId(packageId)
                 .coinsDeducted(coinsNeeded)
                 .remainingBalance(newBalance)
                 .message("Ödəniş tam olaraq Coin ilə həyata keçirildi və abunəlik aktivləşdirildi")
