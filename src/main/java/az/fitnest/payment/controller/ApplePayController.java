@@ -52,7 +52,8 @@ public class ApplePayController {
                         .body(new ErrorResponse("Invalid packageId or optionId"));
             }
 
-            EpointTokenResponse tokenResponse = integrationService.createApplePayPayment(userId, request.packageId(), request.optionId());
+            EpointTokenResponse tokenResponse = integrationService.createApplePayPayment(
+                    userId, request.packageId(), request.optionId(), request.isCoinUsed());
             ApplePayCreateResponse createResponse = new ApplePayCreateResponse(tokenResponse.getPaymentId());
             log.info("[ApplePayCreate] (CONTROLLER EXIT) Created paymentId={} for userId={}", createResponse.paymentId(), userId);
             return ResponseEntity.ok(createResponse);

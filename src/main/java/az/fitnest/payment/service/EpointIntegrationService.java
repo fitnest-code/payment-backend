@@ -181,6 +181,77 @@ public class EpointIntegrationService {
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response.withOrderId(request.orderId()), payment);
     }
 
+    public EpointResponse cardRegistrationWithPay(
+            Long userId,
+            Long packageId,
+            Long optionId,
+            Boolean autoPaymentEnabled,
+            Boolean isCoinUsed) {
+        var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+        var applied = coinCheckoutHelper.applyForSubscription(
+                userId, packageId, optionId, isCoinUsed, priceCurrency.amount);
+        validatePaymentRequest(applied.finalAmountAzn(), priceCurrency.currency);
+        String orderId = java.util.UUID.randomUUID().toString();
+        String otherAttr = PaymentPackageRef.encode(packageId, optionId);
+        String description = Boolean.TRUE.equals(autoPaymentEnabled)
+                ? "Fitness package monthly payment"
+                : "Fitness package payment";
+        EpointPaymentRequest request = EpointPaymentRequest.builder()
+                .currency(priceCurrency.currency != null ? priceCurrency.currency : "AZN")
+                .amount(applied.finalAmountAzn())
+                .language("az")
+                .orderId(orderId)
+                .description(description)
+                .isInstallment(0)
+                .refund(0)
+                .otherAttr(otherAttr)
+                .autoPaymentEnabled(autoPaymentEnabled)
+                .build();
+        EpointResponse response = cardRegistrationWithPay(userId, request);
+        paymentRepository.findByOrderId(orderId).ifPresent(payment -> {
+            payment.setCoinsUsed(applied.coinsUsed());
+            paymentRepository.save(payment);
+        });
+        return response;
+    }
+
+    public EpointResponse executePayWithCard(
+            Long userId,
+            String cardId,
+            Long packageId,
+            Long optionId,
+            Boolean autoPaymentEnabled,
+            Boolean isCoinUsed) {
+        var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+        var applied = coinCheckoutHelper.applyForSubscription(
+                userId, packageId, optionId, isCoinUsed, priceCurrency.amount);
+        validatePaymentRequest(applied.finalAmountAzn(), priceCurrency.currency);
+        String orderId = java.util.UUID.randomUUID().toString();
+        String redisKey = "payment:order:" + orderId;
+        redisTemplate.opsForHash().put(redisKey, "packageId", String.valueOf(packageId));
+        redisTemplate.opsForHash().put(redisKey, "optionId", String.valueOf(optionId));
+        redisTemplate.expire(redisKey, java.time.Duration.ofHours(1));
+        String paymentTypeDescription = Boolean.TRUE.equals(autoPaymentEnabled) ? "Monthly payment" : "One-time payment";
+        String description = PaymentPackageRef.encode(packageId, optionId) + ",type:" + paymentTypeDescription;
+        EpointExecutePayRequest epointRequest = EpointExecutePayRequest.builder()
+                .publicKey(epointProperties.getPublicKey())
+                .language("az")
+                .cardId(cardId)
+                .orderId(orderId)
+                .amount(applied.finalAmountAzn())
+                .currency(priceCurrency.currency != null ? priceCurrency.currency : "AZN")
+                .description(description)
+                .isInstallment(0)
+                .autoPaymentEnabled(autoPaymentEnabled)
+                .build();
+        EpointResponse response = executePay(epointRequest, userId);
+        paymentRepository.findByOrderId(orderId).ifPresent(payment -> {
+            payment.setCoinsUsed(applied.coinsUsed());
+            paymentRepository.save(payment);
+        });
+        return response;
+    }
+
     public EpointResponse refundRequest(EpointRefundRequest request) {
         EpointResponse response = epointService.refundRequest(request);
         if (response.transaction() != null) {
@@ -423,8 +494,19 @@ public class EpointIntegrationService {
     }
 
     public EpointResponse createWidgetUrl(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled) {
+        return createWidgetUrl(userId, packageId, optionId, autoPaymentEnabled, false);
+    }
+
+    public EpointResponse createWidgetUrl(
+            Long userId,
+            Long packageId,
+            Long optionId,
+            Boolean autoPaymentEnabled,
+            Boolean isCoinUsed) {
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        Double amount = priceCurrency.amount;
+        var applied = coinCheckoutHelper.applyForSubscription(
+                userId, packageId, optionId, isCoinUsed, priceCurrency.amount);
+        Double amount = applied.finalAmountAzn();
         String currency = priceCurrency.currency;
 
         validatePaymentRequest(amount, currency);
@@ -449,7 +531,8 @@ public class EpointIntegrationService {
                 .autoPaymentEnabled(autoPaymentEnabled)
                 .build();
 
-        log.info("[WidgetUrl] (SERVICE) Calling Epoint widget API. userId={}, orderId={}, amount={}", userId, orderId, amount);
+        log.info("[WidgetUrl] (SERVICE) Calling Epoint widget API. userId={}, orderId={}, amount={}, coinsUsed={}",
+                userId, orderId, amount, applied.coinsUsed());
 
         EpointResponse response = epointService.createWidgetUrl(request);
 
@@ -495,6 +578,7 @@ public class EpointIntegrationService {
             payment.setType("WIDGET_PAYMENT");
             payment.setAutoPaymentEnabled(autoPaymentEnabled != null ? autoPaymentEnabled : false);
             payment.setRedirectUrl(widgetUrl);
+            payment.setCoinsUsed(applied.coinsUsed());
             paymentRepository.save(payment);
             log.info("[WidgetUrl] (SERVICE) Pending payment saved. orderId={}, transactionId={}", orderId, transactionId);
 
@@ -941,11 +1025,18 @@ public class EpointIntegrationService {
     }
 
     public EpointTokenResponse createGooglePayPayment(Long userId, Long packageId, Long optionId) {
-        log.info("[GooglePayCreate] (SERVICE) userId={}, packageId={}, optionId={}", userId, packageId, optionId);
+        return createGooglePayPayment(userId, packageId, optionId, false);
+    }
 
-        // Fetch pricing via gRPC client
+    public EpointTokenResponse createGooglePayPayment(Long userId, Long packageId, Long optionId, Boolean isCoinUsed) {
+        log.info("[GooglePayCreate] (SERVICE) userId={}, packageId={}, optionId={}, isCoinUsed={}",
+                userId, packageId, optionId, isCoinUsed);
+
+        // Fetch pricing via gRPC client + optional coin discount
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        Double amount = priceCurrency.amount;
+        var applied = coinCheckoutHelper.applyForSubscription(
+                userId, packageId, optionId, isCoinUsed, priceCurrency.amount);
+        Double amount = applied.finalAmountAzn();
         String currency = priceCurrency.currency;
         validatePaymentRequest(amount, currency);
 
@@ -985,8 +1076,10 @@ public class EpointIntegrationService {
         payment.setDescription(description);
         payment.setType("GOOGLE_PAY");
         payment.setAutoPaymentEnabled(false);
+        payment.setCoinsUsed(applied.coinsUsed());
         paymentRepository.save(payment);
-        log.info("[GooglePayCreate] Saved pending payment orderId={}, transactionId={}", orderId, tokenResponse.getPaymentId());
+        log.info("[GooglePayCreate] Saved pending payment orderId={}, transactionId={}, coinsUsed={}",
+                orderId, tokenResponse.getPaymentId(), applied.coinsUsed());
 
         return tokenResponse;
     }
@@ -1097,11 +1190,18 @@ public class EpointIntegrationService {
     }
 
     public EpointTokenResponse createApplePayPayment(Long userId, Long packageId, Long optionId) {
-        log.info("[ApplePayCreate] (SERVICE) userId={}, packageId={}, optionId={}", userId, packageId, optionId);
+        return createApplePayPayment(userId, packageId, optionId, false);
+    }
 
-        // Fetch pricing via gRPC client
+    public EpointTokenResponse createApplePayPayment(Long userId, Long packageId, Long optionId, Boolean isCoinUsed) {
+        log.info("[ApplePayCreate] (SERVICE) userId={}, packageId={}, optionId={}, isCoinUsed={}",
+                userId, packageId, optionId, isCoinUsed);
+
+        // Fetch pricing via gRPC client + optional coin discount
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        Double amount = priceCurrency.amount;
+        var applied = coinCheckoutHelper.applyForSubscription(
+                userId, packageId, optionId, isCoinUsed, priceCurrency.amount);
+        Double amount = applied.finalAmountAzn();
         String currency = priceCurrency.currency;
         validatePaymentRequest(amount, currency);
 
@@ -1141,8 +1241,10 @@ public class EpointIntegrationService {
         payment.setDescription(description);
         payment.setType("APPLE_PAY");
         payment.setAutoPaymentEnabled(false);
+        payment.setCoinsUsed(applied.coinsUsed());
         paymentRepository.save(payment);
-        log.info("[ApplePayCreate] Saved pending payment orderId={}, transactionId={}", orderId, tokenResponse.getPaymentId());
+        log.info("[ApplePayCreate] Saved pending payment orderId={}, transactionId={}, coinsUsed={}",
+                orderId, tokenResponse.getPaymentId(), applied.coinsUsed());
 
         return tokenResponse;
     }

@@ -89,7 +89,7 @@ public class AbbPaymentController {
 
         try {
             AbbInitiateResponse response = abbIntegrationService.initiatePayment(
-                    userId, request.packageId(), request.optionId());
+                    userId, request.packageId(), request.optionId(), request.isCoinUsed());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[ABB][Controller] /init error: {}", e.getMessage(), e);
@@ -136,7 +136,7 @@ public class AbbPaymentController {
 
         try {
             AbbInitiateResponse response = abbIntegrationService.initiateInstallmentPayment(
-                    userId, request.packageId(), request.optionId(), installment);
+                    userId, request.packageId(), request.optionId(), installment, request.isCoinUsed());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[ABB][Controller] /installment error: {}", e.getMessage(), e);

@@ -34,8 +34,10 @@ public class BobPayWithSavedCardRequest {
     private Long optionId;
 
     /**
-     * FitNest Coin balansından endirim istifadə et.
+     * FitNest Coin balansından endirim istifadə et (ödəniş = qiymət − coin AZN).
+     * Alias: coinPaymentEnabled
      */
     @Builder.Default
+    @com.fasterxml.jackson.annotation.JsonAlias({"coinPaymentEnabled", "coin_payment_enabled", "is_coin_used"})
     private Boolean isCoinUsed = false;
 }

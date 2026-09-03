@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 
 /**
- * Applies FitNest Coin discount for subscription checkout when {@code isCoinUsed} is true.
+ * Applies FitNest Coin discount for subscription checkout when coin payment is enabled
+ * ({@code isCoinUsed} / {@code coinPaymentEnabled} = true).
+ * Final bank charge = package option price − coin AZN equivalent (capped at price).
  */
 @Service
 @RequiredArgsConstructor
@@ -32,9 +34,9 @@ public class CoinCheckoutHelper {
             Long userId,
             Long packageId,
             Long optionId,
-            Boolean isCoinUsed,
+            Boolean coinPaymentEnabled,
             double originalAmountAzn) {
-        if (userId == null || !Boolean.TRUE.equals(isCoinUsed)) {
+        if (userId == null || !Boolean.TRUE.equals(coinPaymentEnabled)) {
             return AppliedCheckout.noCoins(originalAmountAzn);
         }
 

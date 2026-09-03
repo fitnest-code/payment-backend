@@ -153,26 +153,13 @@ public class PaymentController {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body(EpointResponse.builder().status("error").message("Avtomatik ödəniş yalnız 1 aylıq paketlər üçün keçərlidir").build());
             }
-            Double amount = priceCurrency.amount;
-            String currency = priceCurrency.currency;
-            String orderId = java.util.UUID.randomUUID().toString();
-            String otherAttr = (currencyRequest.packageId() != null && currencyRequest.optionId() != null)
-                    ? PaymentPackageRef.encode(currencyRequest.packageId(), currencyRequest.optionId())
-                    : null;
-            String description = Boolean.TRUE.equals(currencyRequest.autoPaymentEnabled()) ? "Fitness package monthly payment" : "Fitness package payment";
-            EpointPaymentRequest request = EpointPaymentRequest.builder()
-                    .currency(currency != null ? currency : "AZN")
-                    .amount(amount)
-                    .language("az")
-                    .orderId(orderId)
-                    .description(description)
-                    .isInstallment(0)
-                    .refund(0)
-                    .otherAttr(otherAttr)
-                    .autoPaymentEnabled(currencyRequest.autoPaymentEnabled())
-                    .build();
-            EpointResponse response = integrationService.cardRegistrationWithPay(userId, request);
-            log.info("[SaveAndPay] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), response.status(), response.message());
+            EpointResponse response = integrationService.cardRegistrationWithPay(
+                    userId,
+                    currencyRequest.packageId(),
+                    currencyRequest.optionId(),
+                    currencyRequest.autoPaymentEnabled(),
+                    currencyRequest.isCoinUsed());
+            log.info("[SaveAndPay] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, isCoinUsed={}, status={}, message={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), currencyRequest.isCoinUsed(), response.status(), response.message());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[SaveAndPay] (ERROR) Exception occurred: {}", e.getMessage(), e);
@@ -227,31 +214,14 @@ public class PaymentController {
                     .build();
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(apiError));
             }
-            Double amount = priceCurrency.amount;
-            String currency = priceCurrency.currency;
-            String orderId = java.util.UUID.randomUUID().toString();
-            String redisKey = "payment:order:" + orderId;
-            redisTemplate.opsForHash().put(redisKey, "packageId", String.valueOf(withCardRequest.packageId()));
-            redisTemplate.opsForHash().put(redisKey, "optionId", String.valueOf(withCardRequest.optionId()));
-            redisTemplate.expire(redisKey, java.time.Duration.ofHours(1));
-            String publicKey = integrationService.getPublicKey();
-            String language = "az";
-            String paymentTypeDescription = Boolean.TRUE.equals(withCardRequest.autoPaymentEnabled()) ? "Monthly payment" : "One-time payment";
-            String description = PaymentPackageRef.encode(withCardRequest.packageId(), withCardRequest.optionId())
-                    + ",type:" + paymentTypeDescription;
-            EpointExecutePayRequest epointRequest = EpointExecutePayRequest.builder()
-                    .publicKey(publicKey)
-                    .language(language)
-                    .cardId(withCardRequest.cardId())
-                    .orderId(orderId)
-                    .amount(amount)
-                    .currency(currency != null ? currency : "AZN")
-                    .description(description)
-                    .isInstallment(0)
-                    .autoPaymentEnabled(withCardRequest.autoPaymentEnabled())
-                    .build();
-            EpointResponse response = integrationService.executePay(epointRequest, userId);
-            log.info("[WithCard] (EXIT) userId={}, cardId={}, packageId={}, optionId={}, autoPay={}, status={}, message={}", userId, withCardRequest.cardId(), withCardRequest.packageId(), withCardRequest.optionId(), withCardRequest.autoPaymentEnabled(), response.status(), response.message());
+            EpointResponse response = integrationService.executePayWithCard(
+                    userId,
+                    withCardRequest.cardId(),
+                    withCardRequest.packageId(),
+                    withCardRequest.optionId(),
+                    withCardRequest.autoPaymentEnabled(),
+                    withCardRequest.isCoinUsed());
+            log.info("[WithCard] (EXIT) userId={}, cardId={}, packageId={}, optionId={}, autoPay={}, isCoinUsed={}, status={}, message={}", userId, withCardRequest.cardId(), withCardRequest.packageId(), withCardRequest.optionId(), withCardRequest.autoPaymentEnabled(), withCardRequest.isCoinUsed(), response.status(), response.message());
             
             if (!"success".equalsIgnoreCase(response.status())) {
                 String errorCode = response.code() != null ? response.code() : "error.payment.failed";
@@ -308,8 +278,13 @@ public class PaymentController {
                         .body(EpointResponse.builder().status("error").message("Avtomatik ödəniş yalnız 1 aylıq paketlər üçün keçərlidir").build());
             }
 
-            EpointResponse response = integrationService.createWidgetUrl(userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled());
-            log.info("[WidgetUrl] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, status={}, widgetUrl={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), response.status(), response.widgetUrl());
+            EpointResponse response = integrationService.createWidgetUrl(
+                    userId,
+                    currencyRequest.packageId(),
+                    currencyRequest.optionId(),
+                    currencyRequest.autoPaymentEnabled(),
+                    currencyRequest.isCoinUsed());
+            log.info("[WidgetUrl] (EXIT) userId={}, packageId={}, optionId={}, autoPay={}, isCoinUsed={}, status={}, widgetUrl={}", userId, currencyRequest.packageId(), currencyRequest.optionId(), currencyRequest.autoPaymentEnabled(), currencyRequest.isCoinUsed(), response.status(), response.widgetUrl());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("[WidgetUrl] (ERROR) Exception occurred: {}", e.getMessage(), e);

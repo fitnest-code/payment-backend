@@ -48,8 +48,10 @@ public class BobInitiateRequest {
     private Integer installmentMonths;
 
     /**
-     * true olduqda mövcud Coin balansından endirim tətbiq olunur (20 Coin = 1 AZN).
+     * true olduqda mövcud Coin balansından endirim tətbiq olunur (ödəniş = qiymət − coin AZN).
+     * Alias: coinPaymentEnabled
      */
-  @Builder.Default
+    @Builder.Default
+    @com.fasterxml.jackson.annotation.JsonAlias({"coinPaymentEnabled", "coin_payment_enabled", "is_coin_used"})
     private Boolean isCoinUsed = false;
 }

@@ -7,6 +7,7 @@ import az.fitnest.payment.dto.abb.*;
 import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.repository.PaymentRepository;
+import az.fitnest.payment.service.coin.CoinCheckoutHelper;
 import az.fitnest.payment.util.CardBrandDetector;
 import az.fitnest.payment.util.CardMaskUtil;
 import az.fitnest.payment.util.PaymentPackageRef;
@@ -70,6 +71,7 @@ public class AbbIntegrationService {
     private final PaymentSubscriptionService paymentSubscriptionService;
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final az.fitnest.payment.client.UserGrpcClient userGrpcClient;
+    private final CoinCheckoutHelper coinCheckoutHelper;
 
     /** Paylaşılan HTTP client instance (thread-safe, yenidən istifadə edilir) */
     private static final java.net.http.HttpClient HTTP_CLIENT =
@@ -102,13 +104,25 @@ public class AbbIntegrationService {
             Long packageId,
             Long optionId,
             AbbInstallmentOption installment) {
+        return initiateInstallmentPayment(userId, packageId, optionId, installment, false);
+    }
 
-        log.info("[ABB][Init] userId={}, packageId={}, optionId={}, installment={}",
-                userId, packageId, optionId, installment);
+    @Transactional
+    public AbbInitiateResponse initiateInstallmentPayment(
+            Long userId,
+            Long packageId,
+            Long optionId,
+            AbbInstallmentOption installment,
+            Boolean isCoinUsed) {
 
-        // 1. Qiyməti gRPC vasitəsilə al
+        log.info("[ABB][Init] userId={}, packageId={}, optionId={}, installment={}, isCoinUsed={}",
+                userId, packageId, optionId, installment, isCoinUsed);
+
+        // 1. Qiyməti gRPC vasitəsilə al + optional coin endirimi
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        double amount = priceCurrency.amount;
+        var applied = coinCheckoutHelper.applyForSubscription(
+                userId, packageId, optionId, isCoinUsed, priceCurrency.amount);
+        double amount = applied.finalAmountAzn();
         String currency = priceCurrency.currency != null ? priceCurrency.currency : abbProperties.getDefaultCurrency();
 
         // 2. Unikal orderId yarat (8 rəqəmli sıralı format – spec: 6-32 rəqəm)
@@ -165,8 +179,10 @@ public class AbbIntegrationService {
 
         // 8. Pending Payment entity-ni saxla
         Payment payment = createPendingPayment(orderId, amount, currency, userId, description, inst);
+        payment.setCoinsUsed(applied.coinsUsed());
         paymentRepository.save(payment);
-        log.info("[ABB][Init] Pending payment saved: id={}, orderId={}", payment.getId(), orderId);
+        log.info("[ABB][Init] Pending payment saved: id={}, orderId={}, amount={}, coinsUsed={}",
+                payment.getId(), orderId, amount, applied.coinsUsed());
 
         // 9. userId-ni Redis-ə yaz (callback zamanı istifadə üçün)
         String redisKey = "abb-payment-user:" + orderId;
@@ -180,7 +196,12 @@ public class AbbIntegrationService {
      */
     @Transactional
     public AbbInitiateResponse initiatePayment(Long userId, Long packageId, Long optionId) {
-        return initiateInstallmentPayment(userId, packageId, optionId, AbbInstallmentOption.NONE);
+        return initiateInstallmentPayment(userId, packageId, optionId, AbbInstallmentOption.NONE, false);
+    }
+
+    @Transactional
+    public AbbInitiateResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean isCoinUsed) {
+        return initiateInstallmentPayment(userId, packageId, optionId, AbbInstallmentOption.NONE, isCoinUsed);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

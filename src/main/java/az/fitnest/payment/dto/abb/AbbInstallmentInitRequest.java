@@ -1,5 +1,6 @@
 package az.fitnest.payment.dto.abb;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.Builder;
 
 /**
@@ -24,6 +25,7 @@ public record AbbInstallmentInitRequest(
          */
         Integer installmentMonths,
 
-        /** FitNest Coin balansından endirim istifadə et. */
+        /** FitNest Coin endirimi aktivdir (ödəniş = paket qiyməti − coin AZN). */
+        @JsonAlias({"coinPaymentEnabled", "coin_payment_enabled", "is_coin_used"})
         Boolean isCoinUsed
 ) {}

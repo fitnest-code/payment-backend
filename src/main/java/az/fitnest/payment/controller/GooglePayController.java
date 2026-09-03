@@ -53,7 +53,8 @@ public class GooglePayController {
         }
 
         try {
-            EpointTokenResponse tokenResponse = integrationService.createGooglePayPayment(userId, request.packageId(), request.optionId());
+            EpointTokenResponse tokenResponse = integrationService.createGooglePayPayment(
+                    userId, request.packageId(), request.optionId(), request.isCoinUsed());
             GooglePayCreateResponse createResponse = new GooglePayCreateResponse(tokenResponse.getPaymentId());
             log.info("[GooglePayCreate] (CONTROLLER EXIT) Created paymentId={} for userId={}", createResponse.paymentId(), userId);
             return ResponseEntity.ok(createResponse);
