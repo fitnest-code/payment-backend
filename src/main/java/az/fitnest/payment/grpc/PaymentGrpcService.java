@@ -11,10 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.devh.boot.grpc.server.service.GrpcService;
 
-import az.fitnest.payment.dto.epoint.EpointExecutePayRequest;
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.util.PaymentPackageRef;
-import java.util.Collections;
 
 import az.fitnest.payment.service.UserPaymentService;
 
@@ -103,21 +101,14 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                 request.getUserId(), request.getCardId(), request.getPackageId(), request.getOptionId());
 
         try {
-            String orderId = java.util.UUID.randomUUID().toString();
-            var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(request.getPackageId(), request.getOptionId());
-
-            EpointExecutePayRequest payRequest = EpointExecutePayRequest.builder()
-                    .publicKey(integrationService.getPublicKey())
-                    .language("az")
-                    .orderId(orderId)
-                    .amount(priceCurrency.amount)
-                    .currency(priceCurrency.currency)
-                    .cardId(request.getCardId())
-                    .description(PaymentPackageRef.encode(request.getPackageId(), request.getOptionId()))
-                    .isInstallment(0)
-                    .build();
-
-            EpointResponse epointResponse = integrationService.executePay(payRequest, request.getUserId());
+            // Auto-renewals always apply the full available FitNest Coin balance.
+            EpointResponse epointResponse = integrationService.executePayWithCard(
+                    request.getUserId(),
+                    request.getCardId(),
+                    request.getPackageId(),
+                    request.getOptionId(),
+                    true,
+                    false);
 
             PayWithCardResponse response = PayWithCardResponse.newBuilder()
                     .setStatus(epointResponse.status() != null ? epointResponse.status() : "error")

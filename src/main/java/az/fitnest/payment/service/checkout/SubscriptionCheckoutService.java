@@ -12,6 +12,9 @@ import java.math.BigDecimal;
 /**
  * Single entry-point for subscription checkout pricing: package/option validation,
  * server-side price resolution, and optional coin discount (DRY across providers).
+ *
+ * <p>When {@code autoPaymentEnabled} is true, the full available FitNest Coin balance
+ * is applied automatically on every charge (initial checkout and renewals).</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -33,6 +36,14 @@ public class SubscriptionCheckoutService {
     }
 
     public CheckoutQuote quote(Long userId, Long packageId, Long optionId, Boolean coinPaymentEnabled) {
+        return quote(userId, packageId, optionId, coinPaymentEnabled, false);
+    }
+
+    public CheckoutQuote quote(Long userId,
+                               Long packageId,
+                               Long optionId,
+                               Boolean coinPaymentEnabled,
+                               Boolean autoPaymentEnabled) {
         if (packageId == null || optionId == null) {
             throw new BadRequestException("packageId and optionId are required");
         }
@@ -46,7 +57,7 @@ public class SubscriptionCheckoutService {
         }
 
         var applied = coinCheckoutHelper.applyForSubscription(
-                userId, packageId, optionId, coinPaymentEnabled, price.amount);
+                userId, packageId, optionId, coinPaymentEnabled, autoPaymentEnabled, price.amount);
 
         String currency = price.currency != null && !price.currency.isBlank() ? price.currency : "AZN";
         return new CheckoutQuote(

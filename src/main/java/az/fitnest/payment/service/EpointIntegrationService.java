@@ -150,6 +150,10 @@ public class EpointIntegrationService {
     }
 
     public EpointResponse executePay(EpointExecutePayRequest request, Long userId) {
+        return executePay(request, userId, null);
+    }
+
+    public EpointResponse executePay(EpointExecutePayRequest request, Long userId, java.math.BigDecimal coinsUsed) {
         // successRedirectUrl / errorRedirectUrl are resolved dynamically in EpointService.fillPublicKey
         // based on the incoming request Origin/Referer headers, so no manual override is needed here.
         String idempotencyKey = generateIdempotencyKey("execute-pay", request.orderId(), userId);
@@ -169,6 +173,10 @@ public class EpointIntegrationService {
 
         EpointResponse response = epointService.executePay(request);
         Payment payment = saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description(), request.autoPaymentEnabled());
+        if (payment != null && coinsUsed != null) {
+            payment.setCoinsUsed(coinsUsed);
+            payment = paymentRepository.save(payment);
+        }
         if ("success".equalsIgnoreCase(response.status()) && payment != null) {
             assignSubscriptionIfPossible(payment, response, userId);
         }
@@ -202,7 +210,7 @@ public class EpointIntegrationService {
             Long optionId,
             Boolean autoPaymentEnabled,
             Boolean isCoinUsed) {
-        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed);
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
         subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
         validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
         String orderId = java.util.UUID.randomUUID().toString();
@@ -235,16 +243,48 @@ public class EpointIntegrationService {
             Long optionId,
             Boolean autoPaymentEnabled,
             Boolean isCoinUsed) {
-        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed);
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
         subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
-        validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
+
         String orderId = java.util.UUID.randomUUID().toString();
+        String paymentTypeDescription = Boolean.TRUE.equals(autoPaymentEnabled) ? "Monthly payment" : "One-time payment";
+        String description = quote.packageRefDescription() + ",type:" + paymentTypeDescription;
+
+        // Coins covered the full price — no bank charge; complete locally.
+        if (quote.chargeAmountAzn() <= 0) {
+            if (quote.coinsUsed() == null || quote.coinsUsed().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Amount must be positive and non-zero");
+            }
+            Payment payment = new Payment();
+            payment.setProvider("EPOINT");
+            payment.setOrderId(orderId);
+            payment.setTransactionId("COIN-" + orderId);
+            payment.setAmount(0.0);
+            payment.setCurrency(quote.currency());
+            payment.setStatus("SUCCESS");
+            payment.setUserId(userId);
+            payment.setDescription(description);
+            payment.setType("PAYMENT");
+            payment.setAutoPaymentEnabled(Boolean.TRUE.equals(autoPaymentEnabled));
+            payment.setCoinsUsed(quote.coinsUsed());
+            payment.setCallbackProcessed(true);
+            payment.setMessage("Paid fully with FitNest Coins");
+            payment = paymentRepository.save(payment);
+            paymentSubscriptionService.assignFromPaymentDescription(payment, userId, quote.packageRefDescription());
+            return EpointResponse.builder()
+                    .status("success")
+                    .transaction(payment.getTransactionId())
+                    .orderId(orderId)
+                    .amount(0.0)
+                    .message(payment.getMessage())
+                    .build();
+        }
+
+        validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
         String redisKey = "payment:order:" + orderId;
         redisTemplate.opsForHash().put(redisKey, "packageId", String.valueOf(packageId));
         redisTemplate.opsForHash().put(redisKey, "optionId", String.valueOf(optionId));
         redisTemplate.expire(redisKey, java.time.Duration.ofHours(1));
-        String paymentTypeDescription = Boolean.TRUE.equals(autoPaymentEnabled) ? "Monthly payment" : "One-time payment";
-        String description = quote.packageRefDescription() + ",type:" + paymentTypeDescription;
         EpointExecutePayRequest epointRequest = EpointExecutePayRequest.builder()
                 .publicKey(epointProperties.getPublicKey())
                 .language("az")
@@ -256,12 +296,7 @@ public class EpointIntegrationService {
                 .isInstallment(0)
                 .autoPaymentEnabled(autoPaymentEnabled)
                 .build();
-        EpointResponse response = executePay(epointRequest, userId);
-        paymentRepository.findByOrderId(orderId).ifPresent(payment -> {
-            payment.setCoinsUsed(quote.coinsUsed());
-            paymentRepository.save(payment);
-        });
-        return response;
+        return executePay(epointRequest, userId, quote.coinsUsed());
     }
 
     public EpointResponse refundRequest(EpointRefundRequest request) {
@@ -520,7 +555,7 @@ public class EpointIntegrationService {
             Long optionId,
             Boolean autoPaymentEnabled,
             Boolean isCoinUsed) {
-        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed);
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
         subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
         Double amount = quote.chargeAmountAzn();
         String currency = quote.currency();
@@ -1007,7 +1042,7 @@ public class EpointIntegrationService {
     }
 
     public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled, Boolean isCoinUsed) {
-        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed);
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
         subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
         validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
         String orderId = java.util.UUID.randomUUID().toString();

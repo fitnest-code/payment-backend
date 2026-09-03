@@ -10,7 +10,8 @@ import java.math.BigDecimal;
 
 /**
  * Applies FitNest Coin discount for subscription checkout when coin payment is enabled
- * ({@code isCoinUsed} / {@code coinPaymentEnabled} = true).
+ * ({@code isCoinUsed} / {@code coinPaymentEnabled} = true) or when auto-pay is enabled
+ * (renewals always spend the maximum available coin balance).
  * Final bank charge = package option price − coin AZN equivalent (capped at price).
  */
 @Service
@@ -36,7 +37,18 @@ public class CoinCheckoutHelper {
             Long optionId,
             Boolean coinPaymentEnabled,
             double originalAmountAzn) {
-        if (userId == null || !Boolean.TRUE.equals(coinPaymentEnabled)) {
+        return applyForSubscription(userId, packageId, optionId, coinPaymentEnabled, false, originalAmountAzn);
+    }
+
+    public AppliedCheckout applyForSubscription(
+            Long userId,
+            Long packageId,
+            Long optionId,
+            Boolean coinPaymentEnabled,
+            Boolean autoPaymentEnabled,
+            double originalAmountAzn) {
+        boolean useCoins = Boolean.TRUE.equals(coinPaymentEnabled) || Boolean.TRUE.equals(autoPaymentEnabled);
+        if (userId == null || !useCoins) {
             return AppliedCheckout.noCoins(originalAmountAzn);
         }
 
