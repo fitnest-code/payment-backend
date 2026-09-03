@@ -15,6 +15,8 @@ public class PayFullWithCoinsResponse {
     private Boolean success;
     private String orderId;
     private Long subscriptionPlanId;
+    private Long optionId;
+    private Integer durationMonths;
     private BigDecimal coinsDeducted;
     private BigDecimal remainingBalance;
     private String message;

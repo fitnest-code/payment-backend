@@ -186,6 +186,8 @@ class CoinWalletServiceTest {
         assertNotNull(response.getOrderId());
         assertEquals(new BigDecimal("200.00"), response.getCoinsDeducted());
         assertEquals(new BigDecimal("100.00"), response.getRemainingBalance());
+        assertEquals(1L, response.getOptionId());
+        assertEquals(1, response.getDurationMonths());
         verify(transactionRepository, atLeastOnce()).save(any(CoinTransaction.class));
         verify(paymentRepository).save(any(Payment.class));
         verify(paymentOutboxService).recordPaymentOutcome(any(Payment.class));

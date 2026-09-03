@@ -169,6 +169,7 @@ class CoinWalletControllerTest {
     void testPayFullWithCoins() {
         PayFullWithCoinsRequest request = PayFullWithCoinsRequest.builder()
                 .subscriptionPlanId(123L)
+                .optionId(1L)
                 .originalPrice(new BigDecimal("10.00"))
                 .build();
 
@@ -176,6 +177,8 @@ class CoinWalletControllerTest {
                 .success(true)
                 .orderId("COIN-ORD-A1B2C3D4")
                 .subscriptionPlanId(123L)
+                .optionId(1L)
+                .durationMonths(1)
                 .coinsDeducted(new BigDecimal("200.00"))
                 .remainingBalance(new BigDecimal("100.00"))
                 .message("Ödəniş tam olaraq Coin ilə həyata keçirildi")

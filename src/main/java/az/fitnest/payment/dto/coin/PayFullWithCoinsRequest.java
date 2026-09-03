@@ -17,6 +17,7 @@ public class PayFullWithCoinsRequest {
     @NotNull(message = "Abunəlik plan ID-si icbari hissədir")
     private Long subscriptionPlanId;
 
+    @NotNull(message = "Paket option ID-si icbari hissədir (məs. 1 aylıq)")
     private Long optionId;
 
     private BigDecimal originalPrice; // Təhlükəsizlik mülahizələrinə görə backend qiyməti DB/gRPC-dən təyin edir

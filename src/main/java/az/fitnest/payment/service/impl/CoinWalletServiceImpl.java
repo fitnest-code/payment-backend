@@ -253,8 +253,17 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         CoinWallet wallet = getOrCreateWalletWithLock(userId);
 
         Long packageId = request.getSubscriptionPlanId();
-        Long optionId = request.getOptionId() != null ? request.getOptionId() : 1L;
-        BigDecimal originalPrice = resolvePackagePrice(packageId, optionId, request.getOriginalPrice());
+        Long optionId = request.getOptionId();
+        if (packageId == null || optionId == null) {
+            throw new BadRequestException("subscriptionPlanId və optionId icbaridir");
+        }
+
+        var priceDetails = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+        if (priceDetails == null || priceDetails.amount <= 0) {
+            throw new BadRequestException("Paket qiyməti müəyyən edilə bilmədi");
+        }
+        BigDecimal originalPrice = BigDecimal.valueOf(priceDetails.amount).setScale(2, RoundingMode.HALF_UP);
+        int durationMonths = priceDetails.durationMonths > 0 ? priceDetails.durationMonths : 1;
         BigDecimal coinsNeeded = originalPrice.multiply(settings.getSpendRateCoinToAzn()).setScale(2, RoundingMode.HALF_UP);
 
         if (wallet.getBalance().compareTo(coinsNeeded) < 0) {
@@ -303,13 +312,15 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         paymentOutboxService.requestSubscriptionAssignment(
                 userId, packageId, optionId, false, orderId);
 
-        log.info("Full coin payment executed for userId: {}, planId: {}, optionId: {}, coinsDeducted: {}, orderId: {}",
-                userId, packageId, optionId, coinsNeeded, orderId);
+        log.info("Full coin payment executed for userId: {}, planId: {}, optionId: {}, durationMonths: {}, coinsDeducted: {}, orderId: {}",
+                userId, packageId, optionId, durationMonths, coinsNeeded, orderId);
 
         return PayFullWithCoinsResponse.builder()
                 .success(true)
                 .orderId(orderId)
                 .subscriptionPlanId(packageId)
+                .optionId(optionId)
+                .durationMonths(durationMonths)
                 .coinsDeducted(coinsNeeded)
                 .remainingBalance(newBalance)
                 .message("Ödəniş tam olaraq Coin ilə həyata keçirildi və abunəlik aktivləşdirildi")
