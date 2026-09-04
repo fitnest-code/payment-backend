@@ -276,6 +276,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
 
         String orderId = "COIN-ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         String description = PaymentPackageRef.encode(packageId, optionId);
+        String historyTitle = buildSubscriptionHistoryTitle(packageId, optionId);
 
         CoinTransaction spendTx = new CoinTransaction();
         spendTx.setWallet(wallet);
@@ -285,7 +286,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         spendTx.setBalanceAfter(newBalance);
         spendTx.setOrderId(orderId);
         spendTx.setRemainingAmount(BigDecimal.ZERO);
-        spendTx.setDescription("100% Coin ilə paket ödənişi edildi");
+        spendTx.setDescription(historyTitle);
         transactionRepository.save(spendTx);
 
         Payment payment = new Payment();
@@ -422,7 +423,9 @@ public class CoinWalletServiceImpl implements CoinWalletService {
             wallet.setExpiryDate(computeExpiryDate(now, settings));
         }
 
-        // 1. Process Coins Spent
+        String historyTitle = buildSubscriptionHistoryTitle(packageId, optionId);
+
+        // 1. Process Coins Spent (partial coin discount on card / payment-method checkout)
         if (coinsUsed != null && coinsUsed.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal newBalance = wallet.getBalance().subtract(coinsUsed);
             if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
@@ -439,7 +442,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
             spendTx.setOrderId(orderId);
             spendTx.setPaymentId(paymentId);
             spendTx.setRemainingAmount(BigDecimal.ZERO);
-            spendTx.setDescription("Checkout endirimi üçün xərcləndi");
+            spendTx.setDescription(historyTitle);
             transactionRepository.save(spendTx);
         }
 
@@ -489,7 +492,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
                 earnTx.setExpiryDate(wallet.getExpiryDate());
                 earnTx.setOrderId(orderId);
                 earnTx.setPaymentId(paymentId);
-                earnTx.setDescription("Uğurlu ödəniş üzrə Coin qazanıldı");
+                earnTx.setDescription(historyTitle);
                 if (earnResult != null) {
                     earnTx.setFormulaVersion(earnResult.getFormulaVersion());
                     earnTx.setEligibleCashAmount(earnResult.getEligibleCashAmount());
@@ -798,8 +801,9 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     }
 
     private CoinTransactionResponse mapToTransactionResponse(CoinTransaction tx) {
+        Payment linkedPayment = resolveLinkedPayment(tx);
         CoinTransactionSourceType sourceType = resolveSourceType(tx);
-        String sourceTitle = resolveSourceTitle(tx, sourceType);
+        String sourceTitle = resolveSourceTitle(tx, sourceType, linkedPayment);
 
         return CoinTransactionResponse.builder()
                 .id(tx.getId())
@@ -817,24 +821,27 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     private CoinTransactionSourceType resolveSourceType(CoinTransaction tx) {
         return switch (tx.getType()) {
             case BONUS -> CoinTransactionSourceType.WELCOME_BONUS;
-            case EARN -> CoinTransactionSourceType.SUBSCRIPTION_PURCHASE;
+            case EARN, SPEND -> CoinTransactionSourceType.SUBSCRIPTION_PURCHASE;
             case CAMPAIGN_BONUS -> CoinTransactionSourceType.CAMPAIGN;
-            case SPEND -> CoinTransactionSourceType.SUBSCRIPTION_PURCHASE;
             case REFUND -> CoinTransactionSourceType.REFUND;
             case EXPIRE -> CoinTransactionSourceType.EXPIRY;
             case ADJUSTMENT -> CoinTransactionSourceType.MANUAL_ADJUSTMENT;
         };
     }
 
-    private String resolveSourceTitle(CoinTransaction tx, CoinTransactionSourceType sourceType) {
+    private String resolveSourceTitle(CoinTransaction tx, CoinTransactionSourceType sourceType, Payment linkedPayment) {
         if (tx.getType() == CoinTransactionType.REFUND && tx.getRefundAction() != null) {
             return switch (tx.getRefundAction()) {
                 case RESTORE_SPENT_COINS -> "Xərclənmiş Coin-lər geri qaytarıldı";
                 case REVERSE_EARNED_COINS -> "Qazanılmış Coin-lər ləğv edildi";
             };
         }
-        if (tx.getDescription() != null && !tx.getDescription().isBlank()) {
+        if (tx.getDescription() != null && !tx.getDescription().isBlank() && !isGenericHistoryDescription(tx.getDescription())) {
             return tx.getDescription();
+        }
+        String fromPayment = resolveSubscriptionTitleFromPayment(linkedPayment);
+        if (fromPayment != null) {
+            return fromPayment;
         }
         return switch (sourceType) {
             case WELCOME_BONUS -> "Qeydiyyat bonusu";
@@ -844,6 +851,39 @@ public class CoinWalletServiceImpl implements CoinWalletService {
             case REFUND -> "Ödəniş geri qaytarıldı";
             case EXPIRY -> "Coin müddəti bitdi";
         };
+    }
+
+    private Payment resolveLinkedPayment(CoinTransaction tx) {
+        if (tx.getPaymentId() == null) {
+            return null;
+        }
+        return paymentRepository.findById(tx.getPaymentId()).orElse(null);
+    }
+
+    private boolean isGenericHistoryDescription(String description) {
+        return "Checkout endirimi üçün xərcləndi".equals(description)
+                || "Uğurlu ödəniş üzrə Coin qazanıldı".equals(description)
+                || "100% Coin ilə paket ödənişi edildi".equals(description);
+    }
+
+    private String resolveSubscriptionTitleFromPayment(Payment payment) {
+        if (payment == null || payment.getDescription() == null) {
+            return null;
+        }
+        PaymentPackageRef.Ref ref = PaymentPackageRef.parse(payment.getDescription());
+        if (ref.packageId() == null) {
+            return null;
+        }
+        return buildSubscriptionHistoryTitle(ref.packageId(), ref.optionId());
+    }
+
+    private String buildSubscriptionHistoryTitle(Long packageId, Long optionId) {
+        PackageContext ctx = resolvePackageContext(packageId, optionId, null, null);
+        String name = (ctx.packageName() != null && !ctx.packageName().isBlank())
+                ? ctx.packageName().trim()
+                : "Abunəlik";
+        int months = ctx.durationMonths() != null && ctx.durationMonths() > 0 ? ctx.durationMonths() : 1;
+        return name + " - " + months + " aylıq abunəlik";
     }
 
     private CoinSettingsResponse mapToSettingsResponse(CoinSettings settings) {
