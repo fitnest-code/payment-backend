@@ -33,8 +33,8 @@ public class CoinWalletController {
         return ResponseEntity.ok(coinWalletService.getWalletInfo(userId));
     }
 
-    @GetMapping("/api/v2/coins/balance")
-    @Operation(summary = "Coin balans və AZN ekvivalenti (v2)", description = "İstifadəçinin cari coin balansı və admin spend rate üzrə AZN ekvivalentini qaytarır")
+    @GetMapping({"/api/v1/coins/balance", "/api/v2/coins/balance"})
+    @Operation(summary = "Coin balans və AZN ekvivalenti", description = "İstifadəçinin cari coin balansı və admin spend rate üzrə AZN ekvivalentini qaytarır")
     public ResponseEntity<CoinBalanceResponse> getCoinBalance() {
         Long userId = UserContext.getCurrentUserId();
         return ResponseEntity.ok(coinWalletService.getCoinBalance(userId));
