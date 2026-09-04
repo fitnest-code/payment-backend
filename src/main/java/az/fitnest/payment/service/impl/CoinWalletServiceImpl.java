@@ -65,7 +65,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     @Override
     @Transactional(readOnly = true)
     public CoinWalletResponse getWalletInfo(Long userId) {
-        CoinWallet wallet = getOrCreateWallet(userId);
+        CoinWallet wallet = getWalletOrEmpty(userId);
         CoinSettings settings = getSettingsInternal();
 
         BigDecimal balance = wallet.getBalance();
@@ -99,7 +99,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     @Transactional(readOnly = true)
     public CoinBalanceResponse getCoinBalance(Long userId) {
         CoinSettings settings = getSettingsInternal();
-        CoinWallet wallet = getOrCreateWallet(userId);
+        CoinWallet wallet = getWalletOrEmpty(userId);
 
         BigDecimal coinBalance = wallet.getBalance();
         BigDecimal spendRate = settings.getSpendRateCoinToAzn();
@@ -146,7 +146,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     @Transactional(readOnly = true)
     public CalculateDiscountResponse calculateCheckoutDiscount(Long userId, CalculateDiscountRequest request) {
         CoinSettings settings = getSettingsInternal();
-        CoinWallet wallet = getOrCreateWallet(userId);
+        CoinWallet wallet = getWalletOrEmpty(userId);
 
         Long planId = request.getSubscriptionPlanId();
         Long optionId = request.getOptionId();
@@ -750,13 +750,14 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         throw new BadRequestException("Paket qiyməti müəyyən edilə bilmədi (subscriptionPlanId icbaridir)");
     }
 
-    private CoinWallet getOrCreateWallet(Long userId) {
+    /** Read-only paths: return existing wallet or an unsaved zero-balance view (no INSERT). */
+    private CoinWallet getWalletOrEmpty(Long userId) {
         return walletRepository.findByUserId(userId)
                 .orElseGet(() -> {
-                    CoinWallet newWallet = new CoinWallet();
-                    newWallet.setUserId(userId);
-                    newWallet.setBalance(BigDecimal.ZERO);
-                    return walletRepository.save(newWallet);
+                    CoinWallet emptyWallet = new CoinWallet();
+                    emptyWallet.setUserId(userId);
+                    emptyWallet.setBalance(BigDecimal.ZERO);
+                    return emptyWallet;
                 });
     }
 
