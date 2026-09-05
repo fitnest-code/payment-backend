@@ -108,10 +108,30 @@ public class CoinWalletServiceImpl implements CoinWalletService {
             aznEquivalent = coinBalance.divide(spendRate, 2, RoundingMode.HALF_UP);
         }
 
+        var welcomeIdentifier = welcomeBonusIdentifierRepository.findByUserId(userId);
+        boolean welcomeBonusAwarded = welcomeIdentifier.isPresent();
+        boolean showWelcomeBonusPopup = welcomeIdentifier
+                .map(identifier -> !identifier.isPopupShown())
+                .orElse(false);
+
         return CoinBalanceResponse.builder()
                 .coinBalance(coinBalance)
                 .aznEquivalent(aznEquivalent)
+                .welcomeBonusAwarded(welcomeBonusAwarded)
+                .showWelcomeBonusPopup(showWelcomeBonusPopup)
+                .welcomeBonusAmount(showWelcomeBonusPopup ? settings.getWelcomeBonusAmount() : null)
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public void markWelcomeBonusPopupShown(Long userId) {
+        welcomeBonusIdentifierRepository.findByUserId(userId).ifPresent(identifier -> {
+            if (!identifier.isPopupShown()) {
+                identifier.setPopupShown(true);
+                welcomeBonusIdentifierRepository.save(identifier);
+            }
+        });
     }
 
     @Override

@@ -10,6 +10,7 @@ import az.fitnest.payment.model.entity.CoinSettings;
 import az.fitnest.payment.model.entity.CoinTransaction;
 import az.fitnest.payment.model.entity.CoinWallet;
 import az.fitnest.payment.model.entity.Payment;
+import az.fitnest.payment.model.entity.WelcomeBonusIdentifier;
 import az.fitnest.payment.model.enums.CoinRefundAction;
 import az.fitnest.payment.model.enums.CoinTransactionCategory;
 import az.fitnest.payment.model.enums.CoinTransactionSourceType;
@@ -90,6 +91,7 @@ class CoinWalletServiceTest {
         defaultSettings.setMaxDiscountPercentage(new BigDecimal("100.00"));
         defaultSettings.setExpiryMonths(12);
         defaultSettings.setActive(true);
+        lenient().when(welcomeBonusIdentifierRepository.findByUserId(any())).thenReturn(Optional.empty());
         lenient().when(coinEarnCalculator.isV2Formula(any())).thenReturn(false);
         lenient().when(coinEarnCalculator.calculateV1(any(), any())).thenAnswer(inv -> {
             BigDecimal amount = inv.getArgument(0);
@@ -316,5 +318,70 @@ class CoinWalletServiceTest {
         assertEquals(new BigDecimal("16.00"), response.getTotalDiscountAmount());
 
         assertEquals(0, new BigDecimal("34.00").compareTo(response.getFinalPaymentAmount()));
+    }
+
+    @Test
+    @DisplayName("getCoinBalance - Welcome bonus popup göstərilməlidirsə flag və amount qaytarır")
+    void testGetCoinBalance_ShowsWelcomeBonusPopup() {
+        Long userId = 100L;
+        CoinWallet wallet = new CoinWallet(userId, new BigDecimal("50.00"));
+        WelcomeBonusIdentifier identifier = new WelcomeBonusIdentifier();
+        identifier.setUserId(userId);
+        identifier.setPopupShown(false);
+
+        when(settingsRepository.findFirstByActiveTrueOrderByIdDesc()).thenReturn(Optional.of(defaultSettings));
+        when(walletRepository.findByUserId(userId)).thenReturn(Optional.of(wallet));
+        when(welcomeBonusIdentifierRepository.findByUserId(userId)).thenReturn(Optional.of(identifier));
+
+        CoinBalanceResponse response = coinWalletService.getCoinBalance(userId);
+
+        assertEquals(new BigDecimal("50.00"), response.getCoinBalance());
+        assertEquals(true, response.getWelcomeBonusAwarded());
+        assertEquals(true, response.getShowWelcomeBonusPopup());
+        assertEquals(new BigDecimal("50.00"), response.getWelcomeBonusAmount());
+    }
+
+    @Test
+    @DisplayName("getCoinBalance - Identifier yoxdursa popup göstərilmir")
+    void testGetCoinBalance_NoWelcomeBonusIdentifier() {
+        Long userId = 100L;
+        CoinWallet wallet = new CoinWallet(userId, BigDecimal.ZERO);
+
+        when(settingsRepository.findFirstByActiveTrueOrderByIdDesc()).thenReturn(Optional.of(defaultSettings));
+        when(walletRepository.findByUserId(userId)).thenReturn(Optional.of(wallet));
+        when(welcomeBonusIdentifierRepository.findByUserId(userId)).thenReturn(Optional.empty());
+
+        CoinBalanceResponse response = coinWalletService.getCoinBalance(userId);
+
+        assertEquals(false, response.getWelcomeBonusAwarded());
+        assertEquals(false, response.getShowWelcomeBonusPopup());
+        assertNull(response.getWelcomeBonusAmount());
+    }
+
+    @Test
+    @DisplayName("markWelcomeBonusPopupShown - popupShown true edilir")
+    void testMarkWelcomeBonusPopupShown() {
+        Long userId = 100L;
+        WelcomeBonusIdentifier identifier = new WelcomeBonusIdentifier();
+        identifier.setUserId(userId);
+        identifier.setPopupShown(false);
+
+        when(welcomeBonusIdentifierRepository.findByUserId(userId)).thenReturn(Optional.of(identifier));
+
+        coinWalletService.markWelcomeBonusPopupShown(userId);
+
+        assertTrue(identifier.isPopupShown());
+        verify(welcomeBonusIdentifierRepository).save(identifier);
+    }
+
+    @Test
+    @DisplayName("markWelcomeBonusPopupShown - Identifier yoxdursa no-op")
+    void testMarkWelcomeBonusPopupShown_NoIdentifier() {
+        Long userId = 100L;
+        when(welcomeBonusIdentifierRepository.findByUserId(userId)).thenReturn(Optional.empty());
+
+        coinWalletService.markWelcomeBonusPopupShown(userId);
+
+        verify(welcomeBonusIdentifierRepository, never()).save(any());
     }
 }

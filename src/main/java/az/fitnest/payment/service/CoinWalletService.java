@@ -13,6 +13,8 @@ public interface CoinWalletService {
 
     CoinBalanceResponse getCoinBalance(Long userId);
 
+    void markWelcomeBonusPopupShown(Long userId);
+
     Page<CoinTransactionResponse> getTransactionHistory(Long userId, CoinTransactionCategory category, Pageable pageable);
 
     CalculateDiscountResponse calculateCheckoutDiscount(Long userId, CalculateDiscountRequest request);

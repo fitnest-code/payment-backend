@@ -23,6 +23,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -130,6 +131,9 @@ class CoinWalletControllerTest {
         CoinBalanceResponse expected = CoinBalanceResponse.builder()
                 .coinBalance(new BigDecimal("320.00"))
                 .aznEquivalent(new BigDecimal("32.00"))
+                .welcomeBonusAwarded(false)
+                .showWelcomeBonusPopup(false)
+                .welcomeBonusAmount(null)
                 .build();
 
         when(coinWalletService.getCoinBalance(any())).thenReturn(expected);
@@ -140,6 +144,17 @@ class CoinWalletControllerTest {
         assertNotNull(response.getBody());
         assertEquals(new BigDecimal("320.00"), response.getBody().getCoinBalance());
         assertEquals(new BigDecimal("32.00"), response.getBody().getAznEquivalent());
+        assertEquals(false, response.getBody().getShowWelcomeBonusPopup());
+        assertNull(response.getBody().getWelcomeBonusAmount());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/coins/welcome-bonus/popup-shown - Popup bağlandı kimi işarələnir")
+    void testMarkWelcomeBonusPopupShown() {
+        ResponseEntity<Void> response = coinWalletController.markWelcomeBonusPopupShown();
+
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+        verify(coinWalletService).markWelcomeBonusPopupShown(any());
     }
 
     @Test

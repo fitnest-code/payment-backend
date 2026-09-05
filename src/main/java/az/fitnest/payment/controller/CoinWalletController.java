@@ -40,6 +40,14 @@ public class CoinWalletController {
         return ResponseEntity.ok(coinWalletService.getCoinBalance(userId));
     }
 
+    @PostMapping("/api/v1/coins/welcome-bonus/popup-shown")
+    @Operation(summary = "Welcome bonus popup bağlandı", description = "İstifadəçi welcome bonus popup-ını Close/X/Details ilə bağlayanda çağırılır; popup bir daha göstərilmir")
+    public ResponseEntity<Void> markWelcomeBonusPopupShown() {
+        Long userId = UserContext.getCurrentUserId();
+        coinWalletService.markWelcomeBonusPopupShown(userId);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/api/v1/coins/terms")
     @Operation(summary = "Coin qaydaları (HTML)", description = "İstifadəçi dilinə uyğun Coin terms HTML sənədini qaytarır")
     public ResponseEntity<CoinTermsResponse> getTerms(

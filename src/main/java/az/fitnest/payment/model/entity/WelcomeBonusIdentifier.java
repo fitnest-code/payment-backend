@@ -29,4 +29,7 @@ public class WelcomeBonusIdentifier extends BaseAuditableEntity {
 
     @Column(name = "email_hash")
     private String emailHash;
+
+    @Column(name = "popup_shown", nullable = false, columnDefinition = "boolean default false")
+    private boolean popupShown = false;
 }
