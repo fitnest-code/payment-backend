@@ -15,10 +15,10 @@ public class CoinBalanceResponse {
 
     private BigDecimal coinBalance;
     private BigDecimal aznEquivalent;
-    /** True when a welcome bonus identifier exists for this user (coins were awarded). */
-    private Boolean welcomeBonusAwarded;
-    /** True when awarded and the entrance popup has not been dismissed yet. */
-    private Boolean showWelcomeBonusPopup;
-    /** Configured welcome amount when {@link #showWelcomeBonusPopup} is true; otherwise null. */
+    /** Same meaning as identity {@code is_welcome_bonus_received}: wallet already got the entrance bonus. */
+    private Boolean welcomeBonusReceived;
+    /** True after the user dismissed the entrance popup (Close / X / Details). */
+    private Boolean welcomeBonusPopupShown;
+    /** Admin-configured welcome amount; present when received and popup not yet shown. */
     private BigDecimal welcomeBonusAmount;
 }

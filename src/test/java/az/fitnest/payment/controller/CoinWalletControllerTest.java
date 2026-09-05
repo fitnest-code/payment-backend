@@ -131,8 +131,8 @@ class CoinWalletControllerTest {
         CoinBalanceResponse expected = CoinBalanceResponse.builder()
                 .coinBalance(new BigDecimal("320.00"))
                 .aznEquivalent(new BigDecimal("32.00"))
-                .welcomeBonusAwarded(false)
-                .showWelcomeBonusPopup(false)
+                .welcomeBonusReceived(false)
+                .welcomeBonusPopupShown(false)
                 .welcomeBonusAmount(null)
                 .build();
 

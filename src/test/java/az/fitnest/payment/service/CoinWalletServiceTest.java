@@ -327,7 +327,7 @@ class CoinWalletServiceTest {
         CoinWallet wallet = new CoinWallet(userId, new BigDecimal("50.00"));
         WelcomeBonusIdentifier identifier = new WelcomeBonusIdentifier();
         identifier.setUserId(userId);
-        identifier.setPopupShown(false);
+        identifier.setWelcomeBonusPopupShown(false);
 
         when(settingsRepository.findFirstByActiveTrueOrderByIdDesc()).thenReturn(Optional.of(defaultSettings));
         when(walletRepository.findByUserId(userId)).thenReturn(Optional.of(wallet));
@@ -336,8 +336,8 @@ class CoinWalletServiceTest {
         CoinBalanceResponse response = coinWalletService.getCoinBalance(userId);
 
         assertEquals(new BigDecimal("50.00"), response.getCoinBalance());
-        assertEquals(true, response.getWelcomeBonusAwarded());
-        assertEquals(true, response.getShowWelcomeBonusPopup());
+        assertEquals(true, response.getWelcomeBonusReceived());
+        assertEquals(false, response.getWelcomeBonusPopupShown());
         assertEquals(new BigDecimal("50.00"), response.getWelcomeBonusAmount());
     }
 
@@ -353,24 +353,24 @@ class CoinWalletServiceTest {
 
         CoinBalanceResponse response = coinWalletService.getCoinBalance(userId);
 
-        assertEquals(false, response.getWelcomeBonusAwarded());
-        assertEquals(false, response.getShowWelcomeBonusPopup());
+        assertEquals(false, response.getWelcomeBonusReceived());
+        assertEquals(false, response.getWelcomeBonusPopupShown());
         assertNull(response.getWelcomeBonusAmount());
     }
 
     @Test
-    @DisplayName("markWelcomeBonusPopupShown - popupShown true edilir")
+    @DisplayName("markWelcomeBonusPopupShown - welcomeBonusPopupShown true edilir")
     void testMarkWelcomeBonusPopupShown() {
         Long userId = 100L;
         WelcomeBonusIdentifier identifier = new WelcomeBonusIdentifier();
         identifier.setUserId(userId);
-        identifier.setPopupShown(false);
+        identifier.setWelcomeBonusPopupShown(false);
 
         when(welcomeBonusIdentifierRepository.findByUserId(userId)).thenReturn(Optional.of(identifier));
 
         coinWalletService.markWelcomeBonusPopupShown(userId);
 
-        assertTrue(identifier.isPopupShown());
+        assertTrue(identifier.isWelcomeBonusPopupShown());
         verify(welcomeBonusIdentifierRepository).save(identifier);
     }
 

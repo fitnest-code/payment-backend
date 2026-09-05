@@ -41,7 +41,10 @@ public class CoinWalletController {
     }
 
     @PostMapping("/api/v1/coins/welcome-bonus/popup-shown")
-    @Operation(summary = "Welcome bonus popup bağlandı", description = "İstifadəçi welcome bonus popup-ını Close/X/Details ilə bağlayanda çağırılır; popup bir daha göstərilmir")
+    @Operation(
+            summary = "Mark welcomeBonusPopupShown",
+            description = "Call when the user dismisses the entrance bonus popup (Close / X / Details). Sets welcomeBonusPopupShown=true so it is not shown again."
+    )
     public ResponseEntity<Void> markWelcomeBonusPopupShown() {
         Long userId = UserContext.getCurrentUserId();
         coinWalletService.markWelcomeBonusPopupShown(userId);

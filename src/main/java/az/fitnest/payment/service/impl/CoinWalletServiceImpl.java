@@ -109,17 +109,18 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         }
 
         var welcomeIdentifier = welcomeBonusIdentifierRepository.findByUserId(userId);
-        boolean welcomeBonusAwarded = welcomeIdentifier.isPresent();
-        boolean showWelcomeBonusPopup = welcomeIdentifier
-                .map(identifier -> !identifier.isPopupShown())
+        boolean welcomeBonusReceived = welcomeIdentifier.isPresent();
+        boolean welcomeBonusPopupShown = welcomeIdentifier
+                .map(WelcomeBonusIdentifier::isWelcomeBonusPopupShown)
                 .orElse(false);
+        boolean shouldShowPopup = welcomeBonusReceived && !welcomeBonusPopupShown;
 
         return CoinBalanceResponse.builder()
                 .coinBalance(coinBalance)
                 .aznEquivalent(aznEquivalent)
-                .welcomeBonusAwarded(welcomeBonusAwarded)
-                .showWelcomeBonusPopup(showWelcomeBonusPopup)
-                .welcomeBonusAmount(showWelcomeBonusPopup ? settings.getWelcomeBonusAmount() : null)
+                .welcomeBonusReceived(welcomeBonusReceived)
+                .welcomeBonusPopupShown(welcomeBonusPopupShown)
+                .welcomeBonusAmount(shouldShowPopup ? settings.getWelcomeBonusAmount() : null)
                 .build();
     }
 
@@ -127,8 +128,8 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     @Transactional
     public void markWelcomeBonusPopupShown(Long userId) {
         welcomeBonusIdentifierRepository.findByUserId(userId).ifPresent(identifier -> {
-            if (!identifier.isPopupShown()) {
-                identifier.setPopupShown(true);
+            if (!identifier.isWelcomeBonusPopupShown()) {
+                identifier.setWelcomeBonusPopupShown(true);
                 welcomeBonusIdentifierRepository.save(identifier);
             }
         });
