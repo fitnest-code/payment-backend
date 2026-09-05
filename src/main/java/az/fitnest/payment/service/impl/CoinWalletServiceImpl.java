@@ -395,7 +395,14 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         identifier.setEmailHash(emailHash);
         welcomeBonusIdentifierRepository.save(identifier);
 
-        identityBackendClient.markWelcomeBonusReceived(userId);
+        // Identifier save is the source of truth for idempotency. Identity flag is best-effort
+        // so a transient IAM outage cannot roll back an already-credited wallet.
+        try {
+            identityBackendClient.markWelcomeBonusReceived(userId);
+        } catch (Exception e) {
+            log.error("Welcome bonus credited for userId={} but identity flag update failed: {}",
+                    userId, e.getMessage());
+        }
 
         if (request != null && Boolean.TRUE.equals(request.getSendNotification())) {
             coinNotificationPublisher.sendPush(

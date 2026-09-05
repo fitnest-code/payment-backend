@@ -11,14 +11,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.TransactionException;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -35,21 +37,34 @@ class PaymentEventListenerTest {
     @Mock
     private CoinWalletService coinWalletService;
 
-    @InjectMocks
     private PaymentEventListener paymentEventListener;
-
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
-        // Inject real ObjectMapper since InjectMocks won't auto-create it
-        paymentEventListener = new PaymentEventListener(userCardRepository, paymentRepository, coinWalletService, objectMapper);
+        TransactionTemplate transactionTemplate = new TransactionTemplate() {
+            @Override
+            public void executeWithoutResult(Consumer<org.springframework.transaction.TransactionStatus> action)
+                    throws TransactionException {
+                action.accept(null);
+            }
+
+            @Override
+            public <T> T execute(TransactionCallback<T> action) throws TransactionException {
+                return action.doInTransaction(null);
+            }
+        };
+        paymentEventListener = new PaymentEventListener(
+                userCardRepository,
+                paymentRepository,
+                coinWalletService,
+                new ObjectMapper(),
+                transactionTemplate
+        );
     }
 
     @Test
     @DisplayName("REGISTRATION_COMPLETED - Welcome Bonus avtomatik verilir, client müraciəti tələb olunmur")
-    void testRegistrationCompleted_AwardsWelcomeBonus() throws Exception {
+    void testRegistrationCompleted_AwardsWelcomeBonus() {
         String event = """
                 {
                   "eventType": "REGISTRATION_COMPLETED",
@@ -75,7 +90,7 @@ class PaymentEventListenerTest {
 
     @Test
     @DisplayName("REGISTRATION_COMPLETED - Bonus artıq verilibsə (idempotent) xəta atmır")
-    void testRegistrationCompleted_DuplicateBonusIsIdempotent() throws Exception {
+    void testRegistrationCompleted_DuplicateBonusIsIdempotent() {
         String event = """
                 {
                   "eventType": "REGISTRATION_COMPLETED",
@@ -86,7 +101,6 @@ class PaymentEventListenerTest {
         when(coinWalletService.awardWelcomeBonus(eq(100L), any()))
                 .thenThrow(new RuntimeException("Welcome bonus bu istifadəçiyə artıq verilib"));
 
-        // Should not throw — handled gracefully
         paymentEventListener.consumeUserEvent(event);
 
         verify(coinWalletService, times(1)).awardWelcomeBonus(eq(100L), any());
@@ -94,7 +108,7 @@ class PaymentEventListenerTest {
 
     @Test
     @DisplayName("USER_HARD_DELETED - User kartları və ödənişlər silinir")
-    void testUserHardDeleted_DeletesUserData() throws Exception {
+    void testUserHardDeleted_DeletesUserData() {
         String event = """
                 {
                   "eventType": "USER_HARD_DELETED",
@@ -111,7 +125,7 @@ class PaymentEventListenerTest {
 
     @Test
     @DisplayName("Bilinməyən event tipi - heç bir əməliyyat baş vermir")
-    void testUnknownEventType_IsIgnored() throws Exception {
+    void testUnknownEventType_IsIgnored() {
         String event = """
                 {
                   "eventType": "SOME_OTHER_EVENT",
