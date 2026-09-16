@@ -23,7 +23,6 @@ import java.util.List;
  */
 @Slf4j
 @RestController
-@RequestMapping("/payment/bob")
 @RequiredArgsConstructor
 @Tag(name = "Bank of Baku Ödənişləri", description = "Bank of Baku (SmartVista EPG) Ödəniş və Kart Saxlama İnteqrasiyası")
 public class BobPaymentController {
@@ -43,12 +42,30 @@ public class BobPaymentController {
     }
 
     @Operation(
-            summary = "Bank of Baku ödənişi başlat (Single-Phase)",
-            description = "SmartVista ödəniş səhifəsinə yönləndirilmə URL-i və Order ID qaytarır."
+            summary = "Bank of Baku ödənişi başlat (v1)",
+            description = "Köhnə axın: Coin endirimi yoxdur."
     )
-    @PostMapping("/init")
+    @PostMapping("/payment/bob/init")
     public ResponseEntity<BobInitiateResponse> initiatePayment(
             @RequestBody BobInitiateRequest request,
+            Authentication authentication) {
+        request.setIsCoinUsed(false);
+        return initiatePaymentInternal(request, authentication);
+    }
+
+    @Operation(
+            summary = "Bank of Baku ödənişi başlat (v2)",
+            description = "Yeni axın: isCoinUsed ilə Coin endirimi."
+    )
+    @PostMapping("/api/v2/payment/bob/init")
+    public ResponseEntity<BobInitiateResponse> initiatePaymentV2(
+            @RequestBody BobInitiateRequest request,
+            Authentication authentication) {
+        return initiatePaymentInternal(request, authentication);
+    }
+
+    private ResponseEntity<BobInitiateResponse> initiatePaymentInternal(
+            BobInitiateRequest request,
             Authentication authentication) {
 
         checkMaintenance("/init");
@@ -75,12 +92,30 @@ public class BobPaymentController {
     }
 
     @Operation(
-            summary = "Saxlanılmış kartla (Binding) ödəniş et",
-            description = "İstifadəçinin daha öncə yadda saxladığı kart vasitəsilə 1-Click ödəniş icra edir."
+            summary = "Saxlanılmış kartla (Binding) ödəniş et (v1)",
+            description = "Köhnə axın: Coin endirimi yoxdur."
     )
-    @PostMapping("/pay-with-card")
+    @PostMapping("/payment/bob/pay-with-card")
     public ResponseEntity<BobInitiateResponse> payWithSavedCard(
             @RequestBody BobPayWithSavedCardRequest request,
+            Authentication authentication) {
+        request.setIsCoinUsed(false);
+        return payWithSavedCardInternal(request, authentication);
+    }
+
+    @Operation(
+            summary = "Saxlanılmış kartla (Binding) ödəniş et (v2)",
+            description = "Yeni axın: isCoinUsed ilə Coin endirimi."
+    )
+    @PostMapping("/api/v2/payment/bob/pay-with-card")
+    public ResponseEntity<BobInitiateResponse> payWithSavedCardV2(
+            @RequestBody BobPayWithSavedCardRequest request,
+            Authentication authentication) {
+        return payWithSavedCardInternal(request, authentication);
+    }
+
+    private ResponseEntity<BobInitiateResponse> payWithSavedCardInternal(
+            BobPayWithSavedCardRequest request,
             Authentication authentication) {
 
         checkMaintenance("/pay-with-card");
@@ -94,7 +129,7 @@ public class BobPaymentController {
             summary = "Bank of Baku Callback / Return URL",
             description = "Bankın ödəniş nəticəsini göndərdiyi və ya istifadəçini yönləndirdiyi callback endpoint-i."
     )
-    @RequestMapping(value = "/callback", method = {RequestMethod.GET, RequestMethod.POST})
+    @RequestMapping(value = "/payment/bob/callback", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Void> handleCallback(
             @RequestParam(value = "orderNumber", required = false) String orderNumber,
             @RequestParam(value = "orderId", required = false) String orderId,
@@ -119,7 +154,7 @@ public class BobPaymentController {
             summary = "Ödəniş statusunu yoxla",
             description = "SmartVista EPG-dən orderId üzrə son status məlumatını alır."
     )
-    @GetMapping("/status/{orderId}")
+    @GetMapping("/payment/bob/status/{orderId}")
     public ResponseEntity<BobOrderStatusResponse> getOrderStatus(@PathVariable String orderId) {
         checkMaintenance("/status");
         BobOrderStatusResponse response = bobIntegrationService.checkPaymentStatus(orderId);
@@ -130,7 +165,7 @@ public class BobPaymentController {
             summary = "Dəstəklənən taksit aylarının siyahısı",
             description = "Bank of Baku üçün aktiv taksit aylarının (məs: [2, 3, 6, 9, 12]) siyahısını qaytarır."
     )
-    @GetMapping("/installment")
+    @GetMapping("/payment/bob/installment")
     public ResponseEntity<List<Integer>> getSupportedInstallments() {
         checkMaintenance("/installment GET");
         List<Integer> installments = bobIntegrationService.getSupportedInstallments();
@@ -141,7 +176,7 @@ public class BobPaymentController {
             summary = "İstifadəçinin saxlanılmış kartlarının siyahısı",
             description = "Daxil olmuş istifadəçinin Bank of Baku sistemində yadda saxlanılmış kartlarını qaytarır."
     )
-    @GetMapping("/cards")
+    @GetMapping("/payment/bob/cards")
     public ResponseEntity<List<UserCard>> getUserSavedCards(Authentication authentication) {
         checkMaintenance("/cards");
         Long userId = extractUserId(authentication);
@@ -153,7 +188,7 @@ public class BobPaymentController {
             summary = "Saxlanılmış kartı sil (Unbind)",
             description = "İstifadəçinin seçilmiş kartını silir və bank sistemində deaktiv edir."
     )
-    @DeleteMapping("/cards/{cardId}")
+    @DeleteMapping("/payment/bob/cards/{cardId}")
     public ResponseEntity<Void> deleteSavedCard(
             @PathVariable String cardId,
             Authentication authentication) {
@@ -168,7 +203,7 @@ public class BobPaymentController {
             summary = "Ödənişi geri qaytar (Refund)",
             description = "Tranzaksiya məbləğini qismən və ya tam olaraq geri qaytarır."
     )
-    @PostMapping("/refund")
+    @PostMapping("/payment/bob/refund")
     public ResponseEntity<BobRefundResponse> refundPayment(@RequestBody BobRefundRequest request) {
         checkMaintenance("/refund");
         BobRefundResponse response = bobIntegrationService.refundPayment(request);

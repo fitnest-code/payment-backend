@@ -29,4 +29,8 @@ public class WelcomeBonusIdentifier extends BaseAuditableEntity {
 
     @Column(name = "email_hash")
     private String emailHash;
+
+    /** Set true when the user closes the entrance-bonus popup (Close / X / Details). */
+    @Column(name = "welcome_bonus_popup_shown", nullable = false, columnDefinition = "boolean default false")
+    private boolean welcomeBonusPopupShown = false;
 }

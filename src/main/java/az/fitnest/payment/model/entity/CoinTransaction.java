@@ -1,5 +1,6 @@
 package az.fitnest.payment.model.entity;
 
+import az.fitnest.payment.model.enums.CoinRefundAction;
 import az.fitnest.payment.model.enums.CoinTransactionType;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -32,6 +33,10 @@ public class CoinTransaction extends BaseAuditableEntity {
     @Column(name = "type", nullable = false, length = 30)
     private CoinTransactionType type;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_action", length = 30)
+    private CoinRefundAction refundAction;
+
     @Column(name = "amount", nullable = false)
     private BigDecimal amount;
 
@@ -52,4 +57,19 @@ public class CoinTransaction extends BaseAuditableEntity {
 
     @Column(name = "description")
     private String description;
+
+    @Column(name = "formula_version", length = 50)
+    private String formulaVersion;
+
+    @Column(name = "eligible_cash_amount")
+    private BigDecimal eligibleCashAmount;
+
+    @Column(name = "raw_coins")
+    private BigDecimal rawCoins;
+
+    @Column(name = "awarded_coins")
+    private Integer awardedCoins;
+
+    @Column(name = "earn_breakdown", columnDefinition = "TEXT")
+    private String earnBreakdown;
 }

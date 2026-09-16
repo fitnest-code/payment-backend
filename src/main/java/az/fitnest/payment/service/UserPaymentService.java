@@ -11,6 +11,7 @@ import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
 import az.fitnest.payment.util.CardBrandDetector;
 import az.fitnest.payment.util.CardMaskUtil;
+import az.fitnest.payment.util.EpointTransactionIds;
 import az.fitnest.payment.util.PaymentTypeLabels;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -41,6 +42,8 @@ public class UserPaymentService {
     private final UserDisplayNameResolver userDisplayNameResolver;
     @Autowired(required = false)
     private BobIntegrationService bobIntegrationService;
+    @Autowired(required = false)
+    private BnplIntegrationService bnplIntegrationService;
     @Autowired
     private MessageSource messageSource;
 
@@ -177,15 +180,16 @@ public class UserPaymentService {
         Payment payment = paymentRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
         verifyOwnership(payment, userId);
+        payment = syncPendingProviderStatus(payment);
         return mapToPaymentResponse(payment, resolveUserLanguage());
     }
 
     public PaymentResponse getPaymentByTransactionId(String transactionId, Long userId) {
         log.info("Fetching payment with transaction id: {} for user: {}", transactionId, userId);
-        Payment payment = paymentRepository.findByTransactionId(transactionId)
-                .or(() -> paymentRepository.findByOrderId(transactionId))
+        Payment payment = findPaymentByTransactionOrOrderId(transactionId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction/order id: " + transactionId));
         verifyOwnership(payment, userId);
+        payment = syncPendingProviderStatus(payment);
         return mapToPaymentResponse(payment, resolveUserLanguage());
     }
 
@@ -194,34 +198,8 @@ public class UserPaymentService {
         Payment payment = paymentRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
         verifyOwnership(payment, userId);
-        
+        payment = syncPendingProviderStatus(payment);
         String status = payment.getStatus() != null ? payment.getStatus().toUpperCase() : "PENDING";
-        
-        // If status is pending, actively query Epoint to sync status
-        if ("PENDING".equals(status) || "PENDING_USER_ACTION".equals(status) || "PENDING_3DS".equals(status) || "NEW".equals(status)) {
-            try {
-                boolean isAbb = "ABB".equalsIgnoreCase(payment.getProvider())
-                        || (payment.getType() != null && payment.getType().startsWith("ABB"));
-                boolean isBob = "BOB".equalsIgnoreCase(payment.getProvider())
-                        || "BANK_OF_BAKU".equalsIgnoreCase(payment.getProvider())
-                        || (payment.getType() != null && payment.getType().startsWith("BOB"));
-                if (isAbb) {
-                    log.info("[StatusSync] Actively querying ABB status for orderId: {}", orderId);
-                    abbIntegrationService.getTransactionStatus(orderId, "1");
-                } else if (isBob && bobIntegrationService != null) {
-                    log.info("[StatusSync] Actively querying BOB status for orderId: {}", orderId);
-                    bobIntegrationService.checkPaymentStatus(orderId);
-                } else {
-                    log.info("[StatusSync] Actively querying Epoint status for orderId: {}", orderId);
-                    integrationService.getStatus(orderId);
-                }
-                payment = paymentRepository.findByOrderId(orderId).orElse(payment);
-                status = payment.getStatus() != null ? payment.getStatus().toUpperCase() : "PENDING";
-                log.info("[StatusSync] Synchronized status: {} for orderId: {}", status, orderId);
-            } catch (Exception e) {
-                log.error("[StatusSync] Failed to actively sync status for orderId: {}", orderId, e);
-            }
-        }
         
         return switch (status) {
             case "SUCCESS" -> "SUCCESS";
@@ -230,6 +208,58 @@ public class UserPaymentService {
             case "REVERSED", "REFUNDED", "RETURNED", "CANCELLED" -> "CANCELLED";
             default -> "PENDING";
         };
+    }
+
+    private Payment syncPendingProviderStatus(Payment payment) {
+        if (payment == null) {
+            return payment;
+        }
+        String status = payment.getStatus() != null ? payment.getStatus().toUpperCase() : "PENDING";
+        if (!"PENDING".equals(status)
+                && !"PENDING_USER_ACTION".equals(status)
+                && !"PENDING_3DS".equals(status)
+                && !"NEW".equals(status)) {
+            return payment;
+        }
+        String lookupId;
+        boolean isEpoint = payment.getProvider() == null
+                || "EPOINT".equalsIgnoreCase(payment.getProvider())
+                || "WIDGET_PAYMENT".equalsIgnoreCase(payment.getType());
+        if (isEpoint && payment.getTransactionId() != null && !payment.getTransactionId().isBlank()) {
+            lookupId = payment.getTransactionId();
+        } else {
+            lookupId = payment.getOrderId() != null ? payment.getOrderId() : payment.getTransactionId();
+        }
+        try {
+            boolean isBnpl = "ABB_BNPL".equalsIgnoreCase(payment.getProvider())
+                    || (payment.getType() != null && payment.getType().contains("BNPL"));
+            boolean isAbb = !isBnpl && ("ABB".equalsIgnoreCase(payment.getProvider())
+                    || (payment.getType() != null && payment.getType().startsWith("ABB")));
+            boolean isBob = "BOB".equalsIgnoreCase(payment.getProvider())
+                    || "BANK_OF_BAKU".equalsIgnoreCase(payment.getProvider())
+                    || (payment.getType() != null && payment.getType().startsWith("BOB"));
+            if (isBnpl && bnplIntegrationService != null) {
+                log.info("[StatusSync] Actively querying ABB BNPL status for id: {}", lookupId);
+                bnplIntegrationService.refreshStatus(lookupId);
+            } else if (isAbb) {
+                log.info("[StatusSync] Actively querying ABB status for orderId: {}", lookupId);
+                abbIntegrationService.getTransactionStatus(lookupId, "1");
+            } else if (isBob && bobIntegrationService != null) {
+                log.info("[StatusSync] Actively querying BOB status for orderId: {}", lookupId);
+                bobIntegrationService.checkPaymentStatus(lookupId);
+            } else {
+                log.info("[StatusSync] Actively querying Epoint status for id: {}", lookupId);
+                integrationService.getStatus(lookupId);
+            }
+            Payment refreshed = payment.getId() != null
+                    ? paymentRepository.findById(payment.getId()).orElse(payment)
+                    : payment;
+            log.info("[StatusSync] Synchronized status: {} for id: {}", refreshed.getStatus(), lookupId);
+            return refreshed;
+        } catch (Exception e) {
+            log.error("[StatusSync] Failed to actively sync status for id: {}", lookupId, e);
+            return payment;
+        }
     }
 
     public List<PaymentResponse> getAllPayments() {
@@ -275,9 +305,53 @@ public class UserPaymentService {
 
     public PaymentResponse getPaymentByTransactionIdAdmin(String transactionId) {
         log.info("Admin: fetching payment with transaction id: {}", transactionId);
-        return paymentRepository.findByTransactionId(transactionId)
+        return findPaymentByTransactionOrOrderId(transactionId, null)
                 .map(payment -> mapToPaymentResponse(payment, "AZ"))
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with transaction id: " + transactionId));
+    }
+
+    /**
+     * Resolves an Epoint history id without mixing up two payments that happen to share digits.
+     * Exact {@code transaction_id} / {@code order_id} always win. Aliases ({@code tw}↔{@code te},
+     * 9 vs 10 digit padding) are applied only when {@link EpointTransactionIds#selectAliasMatch}
+     * can pick a single compatible row for this user.
+     */
+    private java.util.Optional<Payment> findPaymentByTransactionOrOrderId(String id, Long userId) {
+        if (id == null || id.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        java.util.Optional<Payment> exact = paymentRepository.findByTransactionId(id);
+        if (exact.isPresent()) {
+            return exact;
+        }
+        java.util.Optional<Payment> byOrder = paymentRepository.findByOrderId(id);
+        if (byOrder.isPresent()) {
+            return byOrder;
+        }
+
+        java.util.List<String> candidates = EpointTransactionIds.lookupCandidates(id);
+        if (candidates.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        java.util.List<Payment> found = paymentRepository.findByTransactionIdIn(candidates);
+        if (found == null || found.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        java.util.Optional<Payment> alias = EpointTransactionIds.selectAliasMatch(
+                id,
+                found,
+                userId,
+                Payment::getTransactionId,
+                Payment::getType,
+                Payment::getUserId);
+        alias.ifPresent(payment -> log.info(
+                "[History] Matched payment id={} storedTx={} (requested={})",
+                payment.getId(), payment.getTransactionId(), id));
+        if (alias.isEmpty() && found != null && found.size() > 1) {
+            log.warn("[History] Ambiguous Epoint token for requested={}, candidates={}",
+                    id, found.stream().map(Payment::getTransactionId).toList());
+        }
+        return alias;
     }
 
     public PaginatedResponse<PaymentResponse> getUserPaymentHistory(Long userId, Pageable pageable, Integer fromMonth) {

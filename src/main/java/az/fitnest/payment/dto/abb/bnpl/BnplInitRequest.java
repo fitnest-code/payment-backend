@@ -9,11 +9,13 @@ import lombok.NoArgsConstructor;
 
 /**
  * Mobile → FitNest: start BNPL credit request.
+ * V1 endpoints force isCoinUsed=false and clear coinsToUse; V2 honors coin fields.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
 public class BnplInitRequest {
 
     @NotNull(message = "Package ID məcburidir")
@@ -41,4 +43,8 @@ public class BnplInitRequest {
 
     /** Optional coins to apply before sending net price to ABB. */
     private java.math.BigDecimal coinsToUse;
+
+    /** true: apply maximum available coins (overrides coinsToUse when set). Alias: coinPaymentEnabled */
+    @com.fasterxml.jackson.annotation.JsonAlias({"coinPaymentEnabled", "coin_payment_enabled", "is_coin_used"})
+    private Boolean isCoinUsed;
 }

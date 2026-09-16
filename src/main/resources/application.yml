@@ -75,7 +75,7 @@ spring:
   # Redis
   data:
     redis:
-      host: ${SPRING_DATA_REDIS_HOST:redis.fitnest-production.svc.cluster.local}
+      host: ${SPRING_DATA_REDIS_HOST:redis}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       password: ${SPRING_DATA_REDIS_PASSWORD:}
       timeout: 2000ms
@@ -89,7 +89,7 @@ spring:
         shutdown-timeout: 100ms
   # Kafka
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka-service.fitnest-production.svc.cluster.local:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka-service:9092}
     consumer:
       group-id: payment-group
       auto-offset-reset: earliest
@@ -144,15 +144,25 @@ app:
   warmup:
     enabled: ${APP_WARMUP_ENABLED:true}
     db: ${APP_WARMUP_DB:true}
+  outbox:
+    enabled: ${APP_OUTBOX_ENABLED:true}
+    batch-size: ${APP_OUTBOX_BATCH_SIZE:100}
+    max-attempts: ${APP_OUTBOX_MAX_ATTEMPTS:10}
+    retention-hours: ${APP_OUTBOX_RETENTION_HOURS:168}
+    poll-delay-ms: ${APP_OUTBOX_POLL_DELAY_MS:1000}
+    cleanup-cron: ${APP_OUTBOX_CLEANUP_CRON:0 30 * * * *}
 
 # Epoint Configuration
+# URLs come from Vault (EPOINT_RESULT_URL / EPOINT_SUCCESS_REDIRECT_URL /
+# EPOINT_ERROR_REDIRECT_URL). Do not default result-url to api.fitnest.az —
+# that placeholder is resolved before Vault and then shadows the Vault key.
 epoint:
   public-key: ${EPOINT_PUBLIC_KEY:}
   private-key: ${EPOINT_PRIVATE_KEY:}
   base-url: ${EPOINT_BASE_URL:https://epoint.az/api/1}
-  result-url: ${EPOINT_RESULT_URL:https://api.fitnest.az/payment/callback}
-  success-redirect-url: ${EPOINT_SUCCESS_REDIRECT_URL:https://fitnest.az/payment/success}
-  error-redirect-url: ${EPOINT_ERROR_REDIRECT_URL:https://fitnest.az/payment/error}
+  result-url: ${EPOINT_RESULT_URL:}
+  success-redirect-url: ${EPOINT_SUCCESS_REDIRECT_URL:}
+  error-redirect-url: ${EPOINT_ERROR_REDIRECT_URL:}
 
 # ABB (Azericard) E-Commerce Gateway Configuration
 abb:
@@ -169,9 +179,9 @@ abb:
   private-key: ${ABB_PRIVATE_KEY:}
   # Azericard public key for P_SIGN verification (AZERICARDpublic.pem, Base64)
   public-key: ${ABB_PUBLIC_KEY:}
-  callback-url: ${ABB_CALLBACK_URL:https://api.fitnest.az/payment/abb/callback}
-  success-redirect-url: ${ABB_SUCCESS_REDIRECT_URL:https://fitnest.az/payment/success}
-  error-redirect-url: ${ABB_ERROR_REDIRECT_URL:https://fitnest.az/payment/error}
+  callback-url: ${ABB_CALLBACK_URL:}
+  success-redirect-url: ${ABB_SUCCESS_REDIRECT_URL:}
+  error-redirect-url: ${ABB_ERROR_REDIRECT_URL:}
   default-currency: ${ABB_DEFAULT_CURRENCY:AZN}
   default-language: ${ABB_DEFAULT_LANGUAGE:AZ}
   active-installment-months: ${ABB_ACTIVE_INSTALLMENT_MONTHS:3,6,12}
@@ -212,9 +222,9 @@ bob:
   username: ${BOB_USERNAME:fitnest_api}
   password: ${BOB_PASSWORD:g4SkV3yfclBk946W}
   merchant-id: ${BOB_MERCHANT_ID:fitnest}
-  callback-url: ${BOB_CALLBACK_URL:https://api.fitnest.az/payment/bob/callback}
-  success-redirect-url: ${BOB_SUCCESS_REDIRECT_URL:https://fitnest.az/payment/success}
-  error-redirect-url: ${BOB_ERROR_REDIRECT_URL:https://fitnest.az/payment/error}
+  callback-url: ${BOB_CALLBACK_URL:}
+  success-redirect-url: ${BOB_SUCCESS_REDIRECT_URL:}
+  error-redirect-url: ${BOB_ERROR_REDIRECT_URL:}
   default-currency: ${BOB_DEFAULT_CURRENCY:AZN}
   default-language: ${BOB_DEFAULT_LANGUAGE:az}
   active-installment-months: ${BOB_ACTIVE_INSTALLMENT_MONTHS:1,3,6,12}
@@ -270,12 +280,12 @@ grpc:
   server:
     port: 9090
   client:
-    # ✅ Updated gRPC client from order-service to order-backend
+    # Same-namespace K8s DNS by default; override per env via Vault/env vars.
     order-backend:
-      address: 'dns:///order-backend.fitnest-production.svc.cluster.local:9090'
+      address: ${ORDER_BACKEND_GRPC_ADDRESS:dns:///order-backend:9090}
       negotiation-type: plaintext
     user-backend:
-      address: 'dns:///user-backend.fitnest-production.svc.cluster.local:9090'
+      address: ${USER_BACKEND_GRPC_ADDRESS:dns:///user-backend:9090}
       negotiation-type: plaintext
 
 logging:

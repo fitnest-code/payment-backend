@@ -29,6 +29,10 @@ import az.fitnest.payment.dto.common.ApplePaySubmitRequest;
 import az.fitnest.payment.dto.common.ApplePaySubmitResponse;
 import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.client.epoint.EpointHttpClient;
+import az.fitnest.payment.service.coin.CoinCheckoutHelper;
+import az.fitnest.payment.service.coin.CoinPaymentProcessor;
+import az.fitnest.payment.event.PaymentOutboxService;
+import az.fitnest.payment.util.EpointTransactionIds;
 import az.fitnest.payment.util.PaymentPackageRef;
 
 @Service
@@ -63,6 +67,10 @@ public class EpointIntegrationService {
     private final PaymentSubscriptionService paymentSubscriptionService;
     private final UserGrpcClient userGrpcClient;
     private final EpointHttpClient httpClient;
+    private final CoinCheckoutHelper coinCheckoutHelper;
+    private final CoinPaymentProcessor coinPaymentProcessor;
+    private final PaymentOutboxService paymentOutboxService;
+    private final az.fitnest.payment.service.checkout.SubscriptionCheckoutService subscriptionCheckoutService;
 
     public EpointResponse initiatePayment(EpointPaymentRequest request, Long userId) {
         log.info("[PaymentInit] (SERVICE ENTRY) userId={}, orderId={}, amount={}, currency={}, description={}, otherAttr={}, publicKey={}",
@@ -75,6 +83,14 @@ public class EpointIntegrationService {
                 log.info("[PaymentInit] (SERVICE) Returning cached response for idempotency key: {}", idempotencyKey);
                 return cachedResponse.get();
             }
+            if (!idempotencyService.tryBegin(idempotencyKey, java.time.Duration.ofSeconds(90))) {
+                Optional<EpointResponse> racing = idempotencyService.getCachedResponse(idempotencyKey);
+                if (racing.isPresent()) {
+                    return racing.get();
+                }
+                log.warn("[PaymentInit] Concurrent init in progress for key {}", idempotencyKey);
+            }
+            try {
             Optional<Payment> existingPayment = paymentRepository.findByOrderId(request.orderId());
             if (existingPayment.isPresent()) {
                 log.warn("[PaymentInit] (SERVICE) Payment with orderId {} already exists", request.orderId());
@@ -92,6 +108,9 @@ public class EpointIntegrationService {
             }
             log.info("[PaymentInit] (SERVICE) Payment entity saved. paymentId={}, userId={}, orderId={}", payment != null ? payment.getId() : null, userId, request.orderId());
             return idempotencyService.persistIdempotentResponse(idempotencyKey, response.withOrderId(request.orderId()), payment);
+            } finally {
+                idempotencyService.releaseBegin(idempotencyKey);
+            }
         } catch (Exception e) {
             log.error("[PaymentInit] (SERVICE ERROR) Exception occurred: {}", e.getMessage(), e);
             throw e;
@@ -126,11 +145,16 @@ public class EpointIntegrationService {
             String redisKey = "card-reg:" + response.cardId();
             redisTemplate.opsForValue().set(redisKey, String.valueOf(userId), 30, java.util.concurrent.TimeUnit.MINUTES);
             log.info("Stored card registration mapping cardId={} -> userId={}", response.cardId(), userId);
+            // CARD_REGISTERED is published from upsertCardFromCallback after the bank confirms the card.
         }
-        return response;
+        return idempotencyService.persistIdempotentResponse(idempotencyKey, response, null);
     }
 
     public EpointResponse executePay(EpointExecutePayRequest request, Long userId) {
+        return executePay(request, userId, null);
+    }
+
+    public EpointResponse executePay(EpointExecutePayRequest request, Long userId, java.math.BigDecimal coinsUsed) {
         // successRedirectUrl / errorRedirectUrl are resolved dynamically in EpointService.fillPublicKey
         // based on the incoming request Origin/Referer headers, so no manual override is needed here.
         String idempotencyKey = generateIdempotencyKey("execute-pay", request.orderId(), userId);
@@ -150,6 +174,10 @@ public class EpointIntegrationService {
 
         EpointResponse response = epointService.executePay(request);
         Payment payment = saveDirectPayment(response, request.orderId(), request.amount(), request.currency(), userId, request.description(), request.autoPaymentEnabled());
+        if (payment != null && coinsUsed != null) {
+            payment.setCoinsUsed(coinsUsed);
+            payment = paymentRepository.save(payment);
+        }
         if ("success".equalsIgnoreCase(response.status()) && payment != null) {
             assignSubscriptionIfPossible(payment, response, userId);
         }
@@ -177,6 +205,105 @@ public class EpointIntegrationService {
         return idempotencyService.persistIdempotentResponse(idempotencyKey, response.withOrderId(request.orderId()), payment);
     }
 
+    public EpointResponse cardRegistrationWithPay(
+            Long userId,
+            Long packageId,
+            Long optionId,
+            Boolean autoPaymentEnabled,
+            Boolean isCoinUsed) {
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
+        subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
+        validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
+        String orderId = java.util.UUID.randomUUID().toString();
+        String description = PaymentPackageRef.appendToDescription(
+                Boolean.TRUE.equals(autoPaymentEnabled)
+                        ? "Fitness package monthly payment"
+                        : "Fitness package payment",
+                packageId,
+                optionId);
+        EpointPaymentRequest request = EpointPaymentRequest.builder()
+                .currency(quote.currency())
+                .amount(quote.chargeAmountAzn())
+                .language("az")
+                .orderId(orderId)
+                .description(description)
+                .isInstallment(0)
+                .refund(0)
+                .otherAttr(quote.packageRefDescription())
+                .autoPaymentEnabled(autoPaymentEnabled)
+                .build();
+        EpointResponse response = cardRegistrationWithPay(userId, request);
+        paymentRepository.findByOrderId(orderId).ifPresent(payment -> {
+            payment.setCoinsUsed(quote.coinsUsed());
+            payment.setDescription(description);
+            paymentRepository.save(payment);
+        });
+        return response;
+    }
+
+    public EpointResponse executePayWithCard(
+            Long userId,
+            String cardId,
+            Long packageId,
+            Long optionId,
+            Boolean autoPaymentEnabled,
+            Boolean isCoinUsed) {
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
+        subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
+
+        String orderId = java.util.UUID.randomUUID().toString();
+        String paymentTypeDescription = Boolean.TRUE.equals(autoPaymentEnabled) ? "Monthly payment" : "One-time payment";
+        String description = quote.packageRefDescription() + ",type:" + paymentTypeDescription;
+
+        // Coins covered the full price — no bank charge; complete locally.
+        if (quote.chargeAmountAzn() <= 0) {
+            if (quote.coinsUsed() == null || quote.coinsUsed().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Amount must be positive and non-zero");
+            }
+            Payment payment = new Payment();
+            payment.setProvider("EPOINT");
+            payment.setOrderId(orderId);
+            payment.setTransactionId("COIN-" + orderId);
+            payment.setAmount(0.0);
+            payment.setCurrency(quote.currency());
+            payment.setStatus("SUCCESS");
+            payment.setUserId(userId);
+            payment.setDescription(description);
+            payment.setType("PAYMENT");
+            payment.setAutoPaymentEnabled(Boolean.TRUE.equals(autoPaymentEnabled));
+            payment.setCoinsUsed(quote.coinsUsed());
+            payment.setCallbackProcessed(true);
+            payment.setMessage("Paid fully with FitNest Coins");
+            payment = paymentRepository.save(payment);
+            paymentSubscriptionService.assignFromPaymentDescription(payment, userId, quote.packageRefDescription());
+            return EpointResponse.builder()
+                    .status("success")
+                    .transaction(payment.getTransactionId())
+                    .orderId(orderId)
+                    .amount(0.0)
+                    .message(payment.getMessage())
+                    .build();
+        }
+
+        validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
+        String redisKey = "payment:order:" + orderId;
+        redisTemplate.opsForHash().put(redisKey, "packageId", String.valueOf(packageId));
+        redisTemplate.opsForHash().put(redisKey, "optionId", String.valueOf(optionId));
+        redisTemplate.expire(redisKey, java.time.Duration.ofHours(1));
+        EpointExecutePayRequest epointRequest = EpointExecutePayRequest.builder()
+                .publicKey(epointProperties.getPublicKey())
+                .language("az")
+                .cardId(cardId)
+                .orderId(orderId)
+                .amount(quote.chargeAmountAzn())
+                .currency(quote.currency())
+                .description(description)
+                .isInstallment(0)
+                .autoPaymentEnabled(autoPaymentEnabled)
+                .build();
+        return executePay(epointRequest, userId, quote.coinsUsed());
+    }
+
     public EpointResponse refundRequest(EpointRefundRequest request) {
         EpointResponse response = epointService.refundRequest(request);
         if (response.transaction() != null) {
@@ -193,6 +320,7 @@ public class EpointIntegrationService {
         paymentRepository.findByTransactionId(transactionId).ifPresent(payment -> {
             if ("success".equalsIgnoreCase(response.status())) {
                 payment.setStatus("REVERSED");
+                coinPaymentProcessor.onPaymentRefund(payment);
             }
             payment.setMessage(response.message());
             paymentRepository.save(payment);
@@ -307,20 +435,14 @@ public class EpointIntegrationService {
         }
 
         try {
-            Optional<Payment> optionalPayment = Optional.empty();
-            if (callbackData.orderId() != null && !callbackData.orderId().isBlank()) {
-                optionalPayment = paymentRepository.findByOrderId(callbackData.orderId());
-            }
-            if (optionalPayment.isEmpty() && callbackData.transaction() != null && !callbackData.transaction().isBlank()) {
-                optionalPayment = paymentRepository.findByTransactionIdForUpdate(callbackData.transaction());
-            }
+            Optional<Payment> optionalPayment = findPaymentForEpointCallback(callbackData);
             if (optionalPayment.isPresent()) {
                 Payment payment = optionalPayment.get();
                 if (Boolean.TRUE.equals(payment.getCallbackProcessed())) {
                     log.warn("[Callback] Callback already processed for orderId: {}, transaction: {}. Skipping duplicate.", callbackData.orderId(), callbackData.transaction());
                     return;
                 }
-                if (payment.getAmount() != null && callbackData.amount() != null && !payment.getAmount().equals(callbackData.amount())) {
+                if (amountsMismatch(payment.getAmount(), callbackData.amount())) {
                     log.error("[Callback] Amount mismatch: payment={}, callback={}", payment.getAmount(), callbackData.amount());
                     throw new SecurityException("Amount mismatch");
                 }
@@ -358,6 +480,8 @@ public class EpointIntegrationService {
                         log.info("[Callback] All cards for user {}: {}", userId, allCards);
                     }
                     assignSubscriptionIfPossible(payment, callbackData, payment.getUserId());
+                } else if (isTerminalFailureStatus(payment.getStatus())) {
+                    paymentSubscriptionService.onPaymentFailed(payment);
                 }
             } else {
                 if (callbackData.cardId() != null && !callbackData.cardId().isBlank()
@@ -386,15 +510,45 @@ public class EpointIntegrationService {
     }
 
     public EpointResponse getStatus(String id) {
-        Optional<Payment> paymentOpt = paymentRepository.findByOrderId(id)
-                .or(() -> paymentRepository.findByTransactionId(id));
+        Optional<Payment> paymentOpt = findPaymentForEpointStatus(id);
 
-        String queryId = paymentOpt.map(Payment::getTransactionId).orElse(id);
-        if (queryId == null || queryId.isBlank()) {
-            queryId = id;
+        List<String> queryIds = new java.util.ArrayList<>();
+        if (paymentOpt.isPresent()) {
+            queryIds.addAll(EpointTransactionIds.lookupCandidates(paymentOpt.get().getTransactionId(), id));
+        } else {
+            queryIds.addAll(EpointTransactionIds.lookupCandidates(id));
+        }
+        if (queryIds.isEmpty() && id != null && !id.isBlank()) {
+            queryIds.add(id);
         }
 
-        EpointResponse response = epointService.getStatus(queryId);
+        EpointResponse response = null;
+        for (String queryId : queryIds) {
+            if (queryId == null || queryId.isBlank()) {
+                continue;
+            }
+            try {
+                EpointResponse candidate = epointService.getStatus(queryId);
+                if (candidate == null) {
+                    continue;
+                }
+                response = candidate;
+                if (EpointTransactionIds.isDefinitiveStatus(candidate)) {
+                    if (!queryId.equals(paymentOpt.map(Payment::getTransactionId).orElse(id))) {
+                        log.info("[StatusSync] Epoint recognized alternate transaction id {} (requested {})",
+                                queryId, id);
+                    }
+                    break;
+                }
+                log.info("[StatusSync] Epoint get-status for {} returned non-definitive status={}; trying next id",
+                        queryId, candidate.status());
+            } catch (Exception e) {
+                log.warn("[StatusSync] Epoint get-status failed for {}: {}", queryId, e.getMessage());
+            }
+        }
+        if (response == null) {
+            throw new IllegalStateException("Epoint get-status returned no response for id " + id);
+        }
 
         if (paymentOpt.isPresent()) {
             Payment payment = paymentOpt.get();
@@ -405,6 +559,9 @@ public class EpointIntegrationService {
                 payment.setCallbackProcessed(true);
                 paymentRepository.save(payment);
                 assignSubscriptionIfPossible(payment, response, payment.getUserId());
+            } else if (isTerminalFailureStatus(payment.getStatus()) && !isTerminalFailureStatus(oldStatus)) {
+                paymentRepository.save(payment);
+                paymentSubscriptionService.onPaymentFailed(payment);
             } else {
                 paymentRepository.save(payment);
             }
@@ -418,16 +575,26 @@ public class EpointIntegrationService {
     }
 
     public EpointResponse createWidgetUrl(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled) {
-        var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        Double amount = priceCurrency.amount;
-        String currency = priceCurrency.currency;
+        return createWidgetUrl(userId, packageId, optionId, autoPaymentEnabled, false);
+    }
+
+    public EpointResponse createWidgetUrl(
+            Long userId,
+            Long packageId,
+            Long optionId,
+            Boolean autoPaymentEnabled,
+            Boolean isCoinUsed) {
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
+        subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
+        Double amount = quote.chargeAmountAzn();
+        String currency = quote.currency();
 
         validatePaymentRequest(amount, currency);
 
         String orderId = java.util.UUID.randomUUID().toString();
         String deviceType = az.fitnest.payment.util.DeviceDetector.detectDeviceType();
         String paymentTypeDescription = Boolean.TRUE.equals(autoPaymentEnabled) ? "Monthly payment" : "One-time payment";
-        String description = PaymentPackageRef.encode(packageId, optionId)
+        String description = quote.packageRefDescription()
                 + ",device:" + deviceType + ",type:" + paymentTypeDescription;
 
         if (userId != null) {
@@ -444,7 +611,8 @@ public class EpointIntegrationService {
                 .autoPaymentEnabled(autoPaymentEnabled)
                 .build();
 
-        log.info("[WidgetUrl] (SERVICE) Calling Epoint widget API. userId={}, orderId={}, amount={}", userId, orderId, amount);
+        log.info("[WidgetUrl] (SERVICE) Calling Epoint widget API. userId={}, orderId={}, amount={}, coinsUsed={}",
+                userId, orderId, amount, quote.coinsUsed());
 
         EpointResponse response = epointService.createWidgetUrl(request);
 
@@ -468,8 +636,7 @@ public class EpointIntegrationService {
                     }
                     if (!token.isBlank() && token.matches("\\d+")) {
                         try {
-                            String paddedToken = String.format("%010d", Long.parseLong(token));
-                            transactionId = "tw" + paddedToken;
+                            transactionId = EpointTransactionIds.fromWidgetToken(token);
                             log.info("[WidgetUrl] Extracted widget token: {}, formatted transactionId: {}", token, transactionId);
                         } catch (Exception e) {
                             log.warn("[WidgetUrl] Failed to format widget token: {}", token, e);
@@ -490,6 +657,7 @@ public class EpointIntegrationService {
             payment.setType("WIDGET_PAYMENT");
             payment.setAutoPaymentEnabled(autoPaymentEnabled != null ? autoPaymentEnabled : false);
             payment.setRedirectUrl(widgetUrl);
+            payment.setCoinsUsed(quote.coinsUsed());
             paymentRepository.save(payment);
             log.info("[WidgetUrl] (SERVICE) Pending payment saved. orderId={}, transactionId={}", orderId, transactionId);
 
@@ -540,10 +708,7 @@ public class EpointIntegrationService {
         if (("FAILED".equalsIgnoreCase(newStatus) || "ERROR".equalsIgnoreCase(newStatus) || "SERVER_ERROR".equalsIgnoreCase(newStatus))
                 && ("PENDING".equals(payment.getStatus()) || "PENDING_USER_ACTION".equals(payment.getStatus()) || "PENDING_3DS".equals(payment.getStatus()) || "NEW".equals(payment.getStatus()))) {
 
-            boolean hasAttempt = (response.cardMask() != null && !response.cardMask().isBlank())
-                    || (response.bankTransaction() != null && !response.bankTransaction().isBlank())
-                    || (response.bankResponse() != null && !response.bankResponse().isBlank())
-                    || (response.code() != null && !response.code().isBlank() && !"500".equals(response.code()) && !"ERROR".equalsIgnoreCase(response.code()));
+            boolean hasAttempt = EpointTransactionIds.hasBankAttempt(response);
 
             if (!hasAttempt) {
                 java.time.Instant thirtyMinutesAgo = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.MINUTES);
@@ -558,15 +723,31 @@ public class EpointIntegrationService {
         }
 
         payment.setStatus(newStatus);
-        payment.setTransactionId(response.transaction() != null ? response.transaction() : payment.getTransactionId());
-        payment.setBankTransaction(response.bankTransaction());
-        payment.setRrn(response.rrn());
-        payment.setCardMask(CardMaskUtil.toLast4(response.cardMask()));
-        payment.setCardName(response.cardName());
-        payment.setMessage(response.message());
-        payment.setCode(response.code());
-        payment.setBankResponse(response.bankResponse());
-        payment.setOperationCode(response.operationCode());
+        if (response.transaction() != null && !response.transaction().isBlank()) {
+            payment.setTransactionId(
+                    EpointTransactionIds.preferredStoredId(payment.getTransactionId(), response.transaction()));
+        }
+        copyIfPresent(response.bankTransaction(), payment::setBankTransaction);
+        copyIfPresent(response.rrn(), payment::setRrn);
+        if (response.cardMask() != null && !response.cardMask().isBlank()) {
+            payment.setCardMask(CardMaskUtil.toLast4(response.cardMask()));
+        }
+        copyIfPresent(response.cardName(), payment::setCardName);
+        copyIfPresent(response.message(), payment::setMessage);
+        copyIfPresent(response.code(), payment::setCode);
+        copyIfPresent(response.bankResponse(), payment::setBankResponse);
+        copyIfPresent(response.operationCode(), payment::setOperationCode);
+        copyIfPresent(response.cardId(), payment::setCardId);
+        if (response.orderId() != null && !response.orderId().isBlank()
+                && (payment.getOrderId() == null || payment.getOrderId().isBlank())) {
+            payment.setOrderId(response.orderId());
+        }
+    }
+
+    private static void copyIfPresent(String value, java.util.function.Consumer<String> setter) {
+        if (value != null && !value.isBlank()) {
+            setter.accept(value);
+        }
     }
 
     private Payment saveRedirectPayment(EpointResponse response, String orderId, Double amount, String currency, Long userId, String description, Boolean autoPaymentEnabled) {
@@ -752,6 +933,64 @@ public class EpointIntegrationService {
             userCardRepository.save(userCard);
             log.info("[CardSave] Created new card {} for user {}", callbackData.cardId(), userId);
         }
+        paymentOutboxService.recordCardRegistered(userId, callbackData.cardId(),
+                CardMaskUtil.toLast4(callbackData.cardMask()));
+    }
+
+    private static boolean isTerminalFailureStatus(String status) {
+        if (status == null) {
+            return false;
+        }
+        return "FAILED".equalsIgnoreCase(status)
+                || "ERROR".equalsIgnoreCase(status)
+                || "SERVER_ERROR".equalsIgnoreCase(status);
+    }
+
+    private Optional<Payment> findPaymentForEpointCallback(EpointResponse callbackData) {
+        if (callbackData == null) {
+            return Optional.empty();
+        }
+        if (callbackData.orderId() != null && !callbackData.orderId().isBlank()) {
+            Optional<Payment> byOrder = paymentRepository.findByOrderId(callbackData.orderId());
+            if (byOrder.isPresent()) {
+                return byOrder;
+            }
+        }
+        for (String candidate : EpointTransactionIds.lookupCandidates(callbackData.transaction())) {
+            Optional<Payment> byTransaction = paymentRepository.findByTransactionIdForUpdate(candidate);
+            if (byTransaction.isPresent()) {
+                if (!candidate.equals(callbackData.transaction())) {
+                    log.info("[Callback] Matched payment via alternate transaction id {} (callback transaction={})",
+                            candidate, callbackData.transaction());
+                }
+                return byTransaction;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<Payment> findPaymentForEpointStatus(String id) {
+        Optional<Payment> paymentOpt = paymentRepository.findByOrderId(id)
+                .or(() -> paymentRepository.findByTransactionId(id));
+        if (paymentOpt.isPresent()) {
+            return paymentOpt;
+        }
+        for (String candidate : EpointTransactionIds.lookupCandidates(id)) {
+            paymentOpt = paymentRepository.findByTransactionId(candidate);
+            if (paymentOpt.isPresent()) {
+                return paymentOpt;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static boolean amountsMismatch(Double expected, Double actual) {
+        if (expected == null || actual == null) {
+            return false;
+        }
+        java.math.BigDecimal left = java.math.BigDecimal.valueOf(expected).setScale(2, java.math.RoundingMode.HALF_UP);
+        java.math.BigDecimal right = java.math.BigDecimal.valueOf(actual).setScale(2, java.math.RoundingMode.HALF_UP);
+        return left.compareTo(right) != 0;
     }
 
     private String generateIdempotencyKey(String operation, String orderId, Long userId) {
@@ -770,6 +1009,12 @@ public class EpointIntegrationService {
     }
 
     public String getSuccessRedirectUrl(String id) {
+        try {
+            log.info("[Redirection] Syncing Epoint status before success redirect for id={}", id);
+            getStatus(id);
+        } catch (Exception e) {
+            log.warn("[Redirection] Failed to sync Epoint status before success redirect for id={}", id, e);
+        }
         String redisKey = "payment-redirect:success:" + id;
         String targetUrl = redisTemplate.opsForValue().get(redisKey);
         if (targetUrl != null) {
@@ -887,27 +1132,36 @@ public class EpointIntegrationService {
     }
 
     public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled) {
-        var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        Double amount = priceCurrency.amount;
-        String currency = priceCurrency.currency;
-        validatePaymentRequest(amount, currency);
+        return initiatePayment(userId, packageId, optionId, autoPaymentEnabled, false);
+    }
+
+    public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled, Boolean isCoinUsed) {
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
+        subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
+        validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
         String orderId = java.util.UUID.randomUUID().toString();
-        String otherAttr = (packageId != null && optionId != null)
-                ? PaymentPackageRef.encode(packageId, optionId)
-                : null;
-        String description = Boolean.TRUE.equals(autoPaymentEnabled) ? "Fitness package monthly payment" : "Fitness package payment";
+        String description = PaymentPackageRef.appendToDescription(
+                Boolean.TRUE.equals(autoPaymentEnabled) ? "Fitness package monthly payment" : "Fitness package payment",
+                packageId,
+                optionId);
         EpointPaymentRequest request = EpointPaymentRequest.builder()
-                .currency(currency != null ? currency : "AZN")
-                .amount(amount)
+                .currency(quote.currency())
+                .amount(quote.chargeAmountAzn())
                 .language("az")
                 .orderId(orderId)
                 .description(description)
                 .isInstallment(0)
                 .refund(0)
-                .otherAttr(otherAttr)
+                .otherAttr(quote.packageRefDescription())
                 .autoPaymentEnabled(autoPaymentEnabled)
                 .build();
-        return initiatePayment(request, userId);
+        EpointResponse response = initiatePayment(request, userId);
+        paymentRepository.findByOrderId(orderId).ifPresent(payment -> {
+            payment.setCoinsUsed(quote.coinsUsed());
+            payment.setDescription(description);
+            paymentRepository.save(payment);
+        });
+        return response;
     }
 
     public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId) {
@@ -927,16 +1181,20 @@ public class EpointIntegrationService {
     }
 
     public EpointTokenResponse createGooglePayPayment(Long userId, Long packageId, Long optionId) {
-        log.info("[GooglePayCreate] (SERVICE) userId={}, packageId={}, optionId={}", userId, packageId, optionId);
+        return createGooglePayPayment(userId, packageId, optionId, false);
+    }
 
-        // Fetch pricing via gRPC client
-        var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        Double amount = priceCurrency.amount;
-        String currency = priceCurrency.currency;
+    public EpointTokenResponse createGooglePayPayment(Long userId, Long packageId, Long optionId, Boolean isCoinUsed) {
+        log.info("[GooglePayCreate] (SERVICE) userId={}, packageId={}, optionId={}, isCoinUsed={}",
+                userId, packageId, optionId, isCoinUsed);
+
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed);
+        Double amount = quote.chargeAmountAzn();
+        String currency = quote.currency();
         validatePaymentRequest(amount, currency);
 
         String orderId = java.util.UUID.randomUUID().toString();
-        String description = PaymentPackageRef.encode(packageId, optionId);
+        String description = quote.packageRefDescription();
 
         EpointTokenRequest tokenRequest = EpointTokenRequest.builder()
                 .publicKey(epointProperties.getPublicKey())
@@ -971,8 +1229,10 @@ public class EpointIntegrationService {
         payment.setDescription(description);
         payment.setType("GOOGLE_PAY");
         payment.setAutoPaymentEnabled(false);
+        payment.setCoinsUsed(quote.coinsUsed());
         paymentRepository.save(payment);
-        log.info("[GooglePayCreate] Saved pending payment orderId={}, transactionId={}", orderId, tokenResponse.getPaymentId());
+        log.info("[GooglePayCreate] Saved pending payment orderId={}, transactionId={}, coinsUsed={}",
+                orderId, tokenResponse.getPaymentId(), quote.coinsUsed());
 
         return tokenResponse;
     }
@@ -1077,22 +1337,27 @@ public class EpointIntegrationService {
         } else {
             payment.setStatus("FAILED");
             paymentRepository.save(payment);
+            paymentSubscriptionService.onPaymentFailed(payment);
 
             return new GooglePaySubmitResponse("error", null);
         }
     }
 
     public EpointTokenResponse createApplePayPayment(Long userId, Long packageId, Long optionId) {
-        log.info("[ApplePayCreate] (SERVICE) userId={}, packageId={}, optionId={}", userId, packageId, optionId);
+        return createApplePayPayment(userId, packageId, optionId, false);
+    }
 
-        // Fetch pricing via gRPC client
-        var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        Double amount = priceCurrency.amount;
-        String currency = priceCurrency.currency;
+    public EpointTokenResponse createApplePayPayment(Long userId, Long packageId, Long optionId, Boolean isCoinUsed) {
+        log.info("[ApplePayCreate] (SERVICE) userId={}, packageId={}, optionId={}, isCoinUsed={}",
+                userId, packageId, optionId, isCoinUsed);
+
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed);
+        Double amount = quote.chargeAmountAzn();
+        String currency = quote.currency();
         validatePaymentRequest(amount, currency);
 
         String orderId = java.util.UUID.randomUUID().toString();
-        String description = PaymentPackageRef.encode(packageId, optionId);
+        String description = quote.packageRefDescription();
 
         EpointTokenRequest tokenRequest = EpointTokenRequest.builder()
                 .publicKey(epointProperties.getPublicKey())
@@ -1127,8 +1392,10 @@ public class EpointIntegrationService {
         payment.setDescription(description);
         payment.setType("APPLE_PAY");
         payment.setAutoPaymentEnabled(false);
+        payment.setCoinsUsed(quote.coinsUsed());
         paymentRepository.save(payment);
-        log.info("[ApplePayCreate] Saved pending payment orderId={}, transactionId={}", orderId, tokenResponse.getPaymentId());
+        log.info("[ApplePayCreate] Saved pending payment orderId={}, transactionId={}, coinsUsed={}",
+                orderId, tokenResponse.getPaymentId(), quote.coinsUsed());
 
         return tokenResponse;
     }
@@ -1194,6 +1461,7 @@ public class EpointIntegrationService {
         } else {
             payment.setStatus("FAILED");
             paymentRepository.save(payment);
+            paymentSubscriptionService.onPaymentFailed(payment);
 
             return new ApplePaySubmitResponse("error", null);
         }

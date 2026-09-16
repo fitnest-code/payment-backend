@@ -566,13 +566,13 @@ public class EpointService {
                     : hostHeader;
 
             if (targetHost != null) {
+                if (targetHost.contains("api-dev.fitnest.az") || targetHost.contains("dev-api.fitnest.az")) {
+                    log.debug("[Redirection] DEV API host detected → redirecting to dev.fitnest.az");
+                    return "https://dev.fitnest.az" + path;
+                }
                 if (targetHost.contains("api.fitnest.az")) {
                     log.debug("[Redirection] API host detected → redirecting to fitnest.az");
                     return "https://fitnest.az" + path;
-                }
-                if (targetHost.contains("dev-api.fitnest.az")) {
-                    log.debug("[Redirection] DEV API host detected → redirecting to dev.fitnest.az");
-                    return "https://dev.fitnest.az" + path;
                 }
             }
 

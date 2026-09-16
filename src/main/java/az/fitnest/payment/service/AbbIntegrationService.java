@@ -1,6 +1,5 @@
 package az.fitnest.payment.service;
 
-import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.client.abb.AbbProperties;
 import az.fitnest.payment.client.abb.AbbSigner;
 import az.fitnest.payment.dto.abb.*;
@@ -66,10 +65,10 @@ public class AbbIntegrationService {
     private final AbbSigner abbSigner;
     private final PaymentRepository paymentRepository;
     private final StringRedisTemplate redisTemplate;
-    private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final PaymentSubscriptionService paymentSubscriptionService;
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final az.fitnest.payment.client.UserGrpcClient userGrpcClient;
+    private final az.fitnest.payment.service.checkout.SubscriptionCheckoutService subscriptionCheckoutService;
 
     /** Paylaşılan HTTP client instance (thread-safe, yenidən istifadə edilir) */
     private static final java.net.http.HttpClient HTTP_CLIENT =
@@ -102,18 +101,27 @@ public class AbbIntegrationService {
             Long packageId,
             Long optionId,
             AbbInstallmentOption installment) {
+        return initiateInstallmentPayment(userId, packageId, optionId, installment, false);
+    }
 
-        log.info("[ABB][Init] userId={}, packageId={}, optionId={}, installment={}",
-                userId, packageId, optionId, installment);
+    @Transactional
+    public AbbInitiateResponse initiateInstallmentPayment(
+            Long userId,
+            Long packageId,
+            Long optionId,
+            AbbInstallmentOption installment,
+            Boolean isCoinUsed) {
 
-        // 1. Qiyməti gRPC vasitəsilə al
-        var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        double amount = priceCurrency.amount;
-        String currency = priceCurrency.currency != null ? priceCurrency.currency : abbProperties.getDefaultCurrency();
+        log.info("[ABB][Init] userId={}, packageId={}, optionId={}, installment={}, isCoinUsed={}",
+                userId, packageId, optionId, installment, isCoinUsed);
+
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed);
+        double amount = quote.chargeAmountAzn();
+        String currency = quote.currency() != null ? quote.currency() : abbProperties.getDefaultCurrency();
 
         // 2. Unikal orderId yarat (8 rəqəmli sıralı format – spec: 6-32 rəqəm)
         String orderId = generateOrderId();
-        String description = buildDescription(packageId, optionId);
+        String description = quote.packageRefDescription();
 
         // 3. Timestamp + Nonce yarat
         String timestamp = abbSigner.generateTimestamp();
@@ -165,8 +173,10 @@ public class AbbIntegrationService {
 
         // 8. Pending Payment entity-ni saxla
         Payment payment = createPendingPayment(orderId, amount, currency, userId, description, inst);
+        payment.setCoinsUsed(quote.coinsUsed());
         paymentRepository.save(payment);
-        log.info("[ABB][Init] Pending payment saved: id={}, orderId={}", payment.getId(), orderId);
+        log.info("[ABB][Init] Pending payment saved: id={}, orderId={}, amount={}, coinsUsed={}",
+                payment.getId(), orderId, amount, quote.coinsUsed());
 
         // 9. userId-ni Redis-ə yaz (callback zamanı istifadə üçün)
         String redisKey = "abb-payment-user:" + orderId;
@@ -180,7 +190,12 @@ public class AbbIntegrationService {
      */
     @Transactional
     public AbbInitiateResponse initiatePayment(Long userId, Long packageId, Long optionId) {
-        return initiateInstallmentPayment(userId, packageId, optionId, AbbInstallmentOption.NONE);
+        return initiateInstallmentPayment(userId, packageId, optionId, AbbInstallmentOption.NONE, false);
+    }
+
+    @Transactional
+    public AbbInitiateResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean isCoinUsed) {
+        return initiateInstallmentPayment(userId, packageId, optionId, AbbInstallmentOption.NONE, isCoinUsed);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -289,6 +304,7 @@ public class AbbIntegrationService {
         } else {
             log.info("[ABB][Callback] Payment not successful: action={}, rc={} for order={}",
                     callback.getAction(), callback.getRc(), callback.getOrder());
+            paymentSubscriptionService.onPaymentFailed(payment);
         }
     }
 
@@ -519,6 +535,7 @@ public class AbbIntegrationService {
                     payment.setCode(rc);
                     payment.setCallbackProcessed(true);
                     paymentRepository.save(payment);
+                    paymentSubscriptionService.onPaymentFailed(payment);
                 } else {
                     java.time.Instant thirtyMinutesAgo = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.MINUTES);
                     if (payment.getCreatedDate() != null && payment.getCreatedDate().atZone(java.time.ZoneId.systemDefault()).toInstant().isBefore(thirtyMinutesAgo)) {
@@ -526,6 +543,7 @@ public class AbbIntegrationService {
                         payment.setStatus("FAILED");
                         payment.setCallbackProcessed(true);
                         paymentRepository.save(payment);
+                        paymentSubscriptionService.onPaymentFailed(payment);
                     } else {
                         log.warn("[ABB][TRTYPE=90] Sync: Status unresolved for orderId={}", orderId);
                     }
@@ -574,22 +592,44 @@ public class AbbIntegrationService {
      * Uğurlu ödənişdən sonra yönləndiriləcək mütləq local uğur endpoint-i.
      */
     public String getAbsoluteLocalSuccessRedirectUrl() {
-        String callback = abbProperties.getCallbackUrl();
-        if (callback != null && callback.endsWith("/callback")) {
-            return callback.replace("/callback", "/redirect/success");
-        }
-        return "https://api.fitnest.az/payment/abb/redirect/success";
+        return getAbsoluteLocalSuccessRedirectUrl(null);
+    }
+
+    public String getAbsoluteLocalSuccessRedirectUrl(String orderId) {
+        return localRedirectPath("success", orderId);
     }
 
     /**
      * Uğursuz ödənişdən sonra yönləndiriləcək mütləq local xəta endpoint-i.
      */
     public String getAbsoluteLocalErrorRedirectUrl() {
+        return getAbsoluteLocalErrorRedirectUrl(null);
+    }
+
+    public String getAbsoluteLocalErrorRedirectUrl(String orderId) {
+        return localRedirectPath("error", orderId);
+    }
+
+    private String localRedirectPath(String kind, String orderId) {
         String callback = abbProperties.getCallbackUrl();
-        if (callback != null && callback.endsWith("/callback")) {
-            return callback.replace("/callback", "/redirect/error");
+        String base = null;
+        if (callback != null && !callback.isBlank()) {
+            if (callback.endsWith("/callback")) {
+                base = callback.substring(0, callback.length() - "/callback".length());
+            } else if (callback.contains("/payment/abb/")) {
+                int idx = callback.indexOf("/payment/abb/");
+                base = callback.substring(0, idx) + "/payment/abb";
+            }
         }
-        return "https://api.fitnest.az/payment/abb/redirect/error";
+        if (base == null || base.isBlank()) {
+            log.error("[ABB] Missing ABB_CALLBACK_URL; cannot build local {} redirect", kind);
+            return "error".equals(kind) ? getErrorRedirectUrl() : getSuccessRedirectUrl();
+        }
+        String url = base + "/redirect/" + kind;
+        if (orderId != null && !orderId.isBlank()) {
+            url += "/" + orderId;
+        }
+        return url;
     }
 
 
@@ -679,13 +719,6 @@ public class AbbIntegrationService {
      */
     private void assignSubscriptionIfPossible(Payment payment) {
         paymentSubscriptionService.assignFromPaymentDescription(payment, false);
-    }
-
-    /**
-     * Ödəniş açıqlaması qurur (packageId/optionId məlumatları daxil).
-     */
-    private String buildDescription(Long packageId, Long optionId) {
-        return PaymentPackageRef.encode(packageId, optionId);
     }
 
     /**

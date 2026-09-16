@@ -24,7 +24,6 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/payment/abb/bnpl")
 @RequiredArgsConstructor
 @Tag(name = "ABB BNPL", description = "ABB Buy Now Pay Later partner integration")
 public class BnplPaymentController {
@@ -43,10 +42,26 @@ public class BnplPaymentController {
         }
     }
 
-    @Operation(summary = "BNPL sifarişi yarat (Submit Order)")
-    @PostMapping("/init")
+    @Operation(summary = "BNPL sifarişi yarat (v1)", description = "Köhnə axın: Coin endirimi / coinsToUse yoxdur.")
+    @PostMapping("/payment/abb/bnpl/init")
     public ResponseEntity<BnplInitResponse> initiate(
             @Valid @RequestBody BnplInitRequest request,
+            Authentication authentication) {
+        request.setIsCoinUsed(false);
+        request.setCoinsToUse(null);
+        return initiateInternal(request, authentication);
+    }
+
+    @Operation(summary = "BNPL sifarişi yarat (v2)", description = "Yeni axın: isCoinUsed ilə Coin endirimi.")
+    @PostMapping("/api/v2/payment/abb/bnpl/init")
+    public ResponseEntity<BnplInitResponse> initiateV2(
+            @Valid @RequestBody BnplInitRequest request,
+            Authentication authentication) {
+        return initiateInternal(request, authentication);
+    }
+
+    private ResponseEntity<BnplInitResponse> initiateInternal(
+            BnplInitRequest request,
             Authentication authentication) {
 
         checkMaintenance("/init");
@@ -74,14 +89,14 @@ public class BnplPaymentController {
     }
 
     @Operation(summary = "Dəstəklənən BNPL kredit müddətləri")
-    @GetMapping("/terms")
+    @GetMapping("/payment/abb/bnpl/terms")
     public ResponseEntity<List<Integer>> getTerms() {
         checkMaintenance("/terms");
         return ResponseEntity.ok(bnplIntegrationService.getSupportedTerms());
     }
 
     @Operation(summary = "BNPL status (lokal + lazım olsa ABB-dən fallback poll)")
-    @GetMapping("/status/{id}")
+    @GetMapping("/payment/abb/bnpl/status/{id}")
     public ResponseEntity<BnplStatusResponse> getStatus(
             @PathVariable String id,
             @RequestParam(defaultValue = "true") boolean refresh) {
@@ -97,7 +112,7 @@ public class BnplPaymentController {
             description = "ABB status dəyişikliklərini Basic Auth + X-ABB-Callback-Id ilə qəbul edir. "
                     + "5 saniyə ərzində HTTP 200 qaytarmalıdır."
     )
-    @PostMapping(value = "/callback", consumes = {"application/json", "*/*"})
+    @PostMapping(value = "/payment/abb/bnpl/callback", consumes = {"application/json", "*/*"})
     public ResponseEntity<Map<String, String>> handleCallback(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestHeader(value = "X-ABB-Callback-Id", required = false) String callbackId,
@@ -141,13 +156,13 @@ public class BnplPaymentController {
         }
     }
 
-    @GetMapping("/callback")
+    @GetMapping("/payment/abb/bnpl/callback")
     public ResponseEntity<String> callbackProbe() {
         return ResponseEntity.ok("OK");
     }
 
     @Operation(summary = "BNPL full reverse")
-    @PutMapping("/{id}/reverse")
+    @PutMapping("/payment/abb/bnpl/{id}/reverse")
     public ResponseEntity<Map<String, Object>> fullReverse(@PathVariable String id) {
         checkMaintenance("/reverse");
         bnplIntegrationService.fullReverse(id);
@@ -155,7 +170,7 @@ public class BnplPaymentController {
     }
 
     @Operation(summary = "BNPL partial reverse (optional; MVP may disable on mobile)")
-    @PutMapping("/{id}/partial-reverse")
+    @PutMapping("/payment/abb/bnpl/{id}/partial-reverse")
     public ResponseEntity<Map<String, Object>> partialReverse(
             @PathVariable String id,
             @Valid @RequestBody BnplPartialReverseRequest body) {

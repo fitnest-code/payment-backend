@@ -63,4 +63,35 @@ class PaymentControllerTest {
 
         verify(integrationService, times(1)).processCallback("base64data", "invalidsignature");
     }
+
+    @Test
+    void testHandleCallbackOnEpointResultAlias() throws Exception {
+        mockMvc.perform(post("/epoint/result")
+                        .param("data", "base64data")
+                        .param("signature", "vaildsignature"))
+                .andExpect(status().isOk());
+
+        verify(integrationService, times(1)).processCallback("base64data", "vaildsignature");
+    }
+
+    @Test
+    void testHandleCallbackGetWithPayloadProcessesCallback() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/payment/result")
+                        .param("data", "base64data")
+                        .param("signature", "vaildsignature"))
+                .andExpect(status().isOk());
+
+        verify(integrationService, times(1)).processCallback("base64data", "vaildsignature");
+    }
+
+    @Test
+    void testGetPaymentStatusDelegatesToIntegrationService() throws Exception {
+        when(integrationService.getStatus("order-1"))
+                .thenReturn(az.fitnest.payment.dto.epoint.EpointResponse.builder().status("success").build());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/payment/payment/status/order-1"))
+                .andExpect(status().isOk());
+
+        verify(integrationService, times(1)).getStatus("order-1");
+    }
 }

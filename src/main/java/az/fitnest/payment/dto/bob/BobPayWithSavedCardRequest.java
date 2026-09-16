@@ -9,11 +9,13 @@ import lombok.NoArgsConstructor;
 
 /**
  * Yadda saxlanılmış kartla (Binding) ödəniş etmək üçün sorğu DTO.
+ * V1 endpoints force isCoinUsed=false; V2 honors the flag.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
 public class BobPayWithSavedCardRequest {
 
     /**
@@ -32,4 +34,12 @@ public class BobPayWithSavedCardRequest {
      * Paket seçimi ID-si
      */
     private Long optionId;
+
+    /**
+     * FitNest Coin balansından endirim istifadə et (ödəniş = qiymət − coin AZN).
+     * Alias: coinPaymentEnabled
+     */
+    @Builder.Default
+    @com.fasterxml.jackson.annotation.JsonAlias({"coinPaymentEnabled", "coin_payment_enabled", "is_coin_used"})
+    private Boolean isCoinUsed = false;
 }

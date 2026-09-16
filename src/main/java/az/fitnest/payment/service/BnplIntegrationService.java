@@ -10,6 +10,7 @@ import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.enums.BnplOrderStatus;
 import az.fitnest.payment.service.bnpl.BnplPaymentStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import az.fitnest.payment.service.coin.CoinCheckoutHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -48,6 +49,7 @@ public class BnplIntegrationService {
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final CoinCheckoutHelper coinCheckoutHelper;
 
     private void checkMaintenance() {
         if (properties.isMaintenanceMode()) {
@@ -64,11 +66,19 @@ public class BnplIntegrationService {
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(
                 request.getPackageId(), request.getOptionId());
         double originalAmount = priceCurrency.amount;
-        BigDecimal coins = request.getCoinsToUse() != null ? request.getCoinsToUse() : BigDecimal.ZERO;
+        boolean useCoins = Boolean.TRUE.equals(request.getIsCoinUsed())
+                || (request.getCoinsToUse() != null && request.getCoinsToUse().compareTo(BigDecimal.ZERO) > 0);
+        var applied = coinCheckoutHelper.applyForSubscription(
+                userId,
+                request.getPackageId(),
+                request.getOptionId(),
+                useCoins,
+                originalAmount);
+        BigDecimal coins = applied.coinsUsed();
+        double netAmount = applied.finalAmountAzn();
         if (coins.compareTo(BigDecimal.ZERO) < 0) {
             throw new BnplPaymentException("BNPL_INVALID_COINS", "Coin məbləği mənfi ola bilməz");
         }
-        double netAmount = Math.max(0, originalAmount - coins.doubleValue());
         if (netAmount < 100) {
             throw new BnplPaymentException("BNPL_AMOUNT_TOO_LOW",
                     "BNPL məbləği minimum 100 AZN olmalıdır (coin endirimindən sonra)");
@@ -183,11 +193,14 @@ public class BnplIntegrationService {
         }
 
         boolean alreadyCompleted = "SUCCESS".equals(payment.getStatus());
+        boolean alreadyFailed = "FAILED".equals(payment.getStatus());
         paymentStore.applyAbbStatus(payment, next, payload.getPartialReverseCount(), rawBody);
 
         if (next.isSuccess() && !alreadyCompleted) {
             paymentSubscriptionService.assignFromPaymentDescription(payment, false);
             log.info("[BNPL][Callback] COMPLETED → subscription assigned orderId={}", payload.getOrderId());
+        } else if (next.isTerminal() && !next.isSuccess() && "FAILED".equals(payment.getStatus()) && !alreadyFailed) {
+            paymentSubscriptionService.onPaymentFailed(payment);
         }
 
         log.info("[BNPL][Callback] Processed orderId={} status={} partialReverseCount={}",
@@ -216,9 +229,13 @@ public class BnplIntegrationService {
             BnplOrderStatus remote = BnplOrderStatus.from(detail.getStatus());
             if (remote != null) {
                 boolean alreadyCompleted = "SUCCESS".equals(payment.getStatus());
+                boolean alreadyFailed = "FAILED".equals(payment.getStatus());
                 paymentStore.applyAbbStatus(payment, remote, null, writeSafe(detail));
                 if (remote.isSuccess() && !alreadyCompleted) {
                     paymentSubscriptionService.assignFromPaymentDescription(payment, false);
+                } else if (remote.isTerminal() && !remote.isSuccess()
+                        && "FAILED".equals(payment.getStatus()) && !alreadyFailed) {
+                    paymentSubscriptionService.onPaymentFailed(payment);
                 }
                 local = remote;
             }

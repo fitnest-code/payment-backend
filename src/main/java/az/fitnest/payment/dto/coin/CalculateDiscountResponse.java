@@ -6,16 +6,18 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class CalculateDiscountResponse {
+    private CheckoutPlanInfo plan;
     private BigDecimal originalPrice;
-    private BigDecimal coinsToUse;
-    private BigDecimal appliedDiscountAzn;
+    private List<CheckoutDiscountItem> discounts;
+    private BigDecimal totalDiscountAmount;
     private BigDecimal finalPaymentAmount;
-    private BigDecimal maxDiscountLimitAzn;
-    private Boolean isMaxDiscountReached;
+    private CheckoutCoinInfo coin;
+    private Boolean isFullCoinPaymentAvailable;
 }

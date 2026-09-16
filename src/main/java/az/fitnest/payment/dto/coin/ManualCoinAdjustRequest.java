@@ -2,7 +2,6 @@ package az.fitnest.payment.dto.coin;
 
 import az.fitnest.payment.model.enums.CoinTransactionType;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,11 +19,15 @@ public class ManualCoinAdjustRequest {
     private Long userId;
 
     @NotNull(message = "Coin məbləği icbari hissədir")
-    @Positive(message = "Məbləğ müsbət olmalıdır")
     private BigDecimal amount;
 
-    @NotNull(message = "Əməliyyat növü icbari hissədir")
     private CoinTransactionType type; // ADJUSTMENT or BONUS
 
     private String description;
+
+    private String notificationTitle;
+
+    private String notificationBody;
+
+    private Boolean sendNotification;
 }

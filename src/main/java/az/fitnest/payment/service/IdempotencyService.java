@@ -221,6 +221,36 @@ public class IdempotencyService {
         return persistIdempotentResponse(idempotencyKey, response, payment);
     }
 
+    /**
+     * Redis NX lock so concurrent duplicate inits do not both hit the bank before persist.
+     * Returns false if another request already holds the key (treat as in-progress / use cache).
+     */
+    public boolean tryBegin(String idempotencyKey, Duration holdFor) {
+        if (idempotencyKey == null || idempotencyKey.isBlank() || !idempotencyConfig.isRedisEnabled()) {
+            return true;
+        }
+        try {
+            Boolean acquired = redisTemplate.opsForValue()
+                    .setIfAbsent(REDIS_KEY_PREFIX + "lock:" + idempotencyKey, "1",
+                            holdFor != null ? holdFor : Duration.ofSeconds(60));
+            return Boolean.TRUE.equals(acquired);
+        } catch (Exception e) {
+            log.warn("Idempotency begin-lock unavailable for key {}: {}", maskKey(idempotencyKey), e.toString());
+            return true;
+        }
+    }
+
+    public void releaseBegin(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank() || !idempotencyConfig.isRedisEnabled()) {
+            return;
+        }
+        try {
+            redisTemplate.delete(REDIS_KEY_PREFIX + "lock:" + idempotencyKey);
+        } catch (Exception e) {
+            log.debug("Idempotency lock release failed for {}: {}", maskKey(idempotencyKey), e.toString());
+        }
+    }
+
     private void enforceMaxEntries(Instant now) {
         try {
             long activeKeys = idempotencyKeyRepository.countActiveKeys(now);

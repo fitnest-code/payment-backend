@@ -11,6 +11,8 @@ public interface WelcomeBonusIdentifierRepository extends JpaRepository<WelcomeB
 
     boolean existsByUserId(Long userId);
 
+    Optional<WelcomeBonusIdentifier> findByUserId(Long userId);
+
     boolean existsByPhoneHash(String phoneHash);
 
     boolean existsByEmailHash(String emailHash);

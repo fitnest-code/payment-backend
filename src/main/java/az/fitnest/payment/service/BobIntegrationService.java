@@ -12,6 +12,8 @@ import az.fitnest.payment.model.enums.BobPaymentStatus;
 import az.fitnest.payment.service.bob.BobCardService;
 import az.fitnest.payment.service.bob.BobPaymentStore;
 import az.fitnest.payment.service.bob.BobStatusMapper;
+import az.fitnest.payment.service.coin.CoinCheckoutHelper;
+import az.fitnest.payment.service.coin.CoinPaymentProcessor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -42,6 +44,8 @@ public class BobIntegrationService {
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final StringRedisTemplate redisTemplate;
     private final az.fitnest.payment.client.UserGrpcClient userGrpcClient;
+    private final CoinCheckoutHelper coinCheckoutHelper;
+    private final CoinPaymentProcessor coinPaymentProcessor;
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -61,6 +65,12 @@ public class BobIntegrationService {
 
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(
                 request.getPackageId(), request.getOptionId());
+        var applied = coinCheckoutHelper.applyForSubscription(
+                userId,
+                request.getPackageId(),
+                request.getOptionId(),
+                request.getIsCoinUsed(),
+                priceCurrency.amount);
 
         String transactionId = "BOB_" + System.currentTimeMillis() + "_" + (1000 + RANDOM.nextInt(9000));
         String currency = priceCurrency.currency != null
@@ -75,13 +85,15 @@ public class BobIntegrationService {
         Payment payment = paymentStore.createPending(
                 userId,
                 transactionId,
-                priceCurrency.amount,
+                applied.finalAmountAzn(),
                 currency,
                 description,
                 Boolean.TRUE.equals(request.getSaveCard()),
                 null,
                 null,
                 paymentType);
+        payment.setCoinsUsed(applied.coinsUsed());
+        paymentStore.savePayment(payment);
 
         String callbackUrl = bobProperties.getCallbackUrl();
         String returnUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=success";
@@ -92,7 +104,7 @@ public class BobIntegrationService {
 
         Map<String, Object> bankResponse = bobRestClient.registerOrder(
                 transactionId,
-                priceCurrency.amount,
+                applied.finalAmountAzn(),
                 payment.getDescription(),
                 returnUrl,
                 failUrl,
@@ -124,7 +136,7 @@ public class BobIntegrationService {
                 .transactionId(transactionId)
                 .formUrl(formUrl)
                 .provider(BobPaymentStore.PROVIDER_BOB)
-                .amount(priceCurrency.amount)
+                .amount(applied.finalAmountAzn())
                 .currency(priceCurrency.currency)
                 .build();
     }
@@ -137,6 +149,12 @@ public class BobIntegrationService {
 
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(
                 request.getPackageId(), request.getOptionId());
+        var applied = coinCheckoutHelper.applyForSubscription(
+                userId,
+                request.getPackageId(),
+                request.getOptionId(),
+                request.getIsCoinUsed(),
+                priceCurrency.amount);
 
         String transactionId = "BOB_BIND_" + System.currentTimeMillis() + "_" + (1000 + RANDOM.nextInt(9000));
         String currency = priceCurrency.currency != null
@@ -152,13 +170,15 @@ public class BobIntegrationService {
         Payment payment = paymentStore.createPending(
                 userId,
                 transactionId,
-                priceCurrency.amount,
+                applied.finalAmountAzn(),
                 currency,
                 description,
                 false,
                 savedCard.getCardId(),
                 savedCard.getCardMask(),
                 "SAVED_CARD");
+        payment.setCoinsUsed(applied.coinsUsed());
+        paymentStore.savePayment(payment);
 
         String callbackUrl = bobProperties.getCallbackUrl();
         String returnUrl = callbackUrl + "?orderNumber=" + transactionId + "&status=success";
@@ -168,7 +188,7 @@ public class BobIntegrationService {
         // pay-without-CVC, so register.do + bindingId returns bank formUrl for CVC entry.
         Map<String, Object> registerResponse = bobRestClient.registerOrder(
                 transactionId,
-                priceCurrency.amount,
+                applied.finalAmountAzn(),
                 payment.getDescription(),
                 returnUrl,
                 failUrl,
@@ -207,7 +227,7 @@ public class BobIntegrationService {
                 .transactionId(transactionId)
                 .formUrl(formUrl)
                 .provider(BobPaymentStore.PROVIDER_BOB)
-                .amount(priceCurrency.amount)
+                .amount(applied.finalAmountAzn())
                 .currency(priceCurrency.currency)
                 .build();
     }
@@ -410,6 +430,7 @@ public class BobIntegrationService {
 
         if ("0".equals(errorCode)) {
             paymentStore.markRefunded(payment);
+            coinPaymentProcessor.onPaymentRefund(payment);
             return BobRefundResponse.builder()
                     .orderId(request.getOrderId())
                     .success(true)

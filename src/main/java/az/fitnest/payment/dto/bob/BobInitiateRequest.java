@@ -8,11 +8,13 @@ import lombok.NoArgsConstructor;
 
 /**
  * Bank of Baku vasitəsilə ödəniş başlatma sorğusu.
+ * V1 endpoints force isCoinUsed=false; V2 honors the flag.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
 public class BobInitiateRequest {
 
     /**
@@ -46,4 +48,12 @@ public class BobInitiateRequest {
      * Taksit ayları (məs: 3, 6, 12). Boş olduqda və ya null/0 olduqda birdəfəlik ödənişdir.
      */
     private Integer installmentMonths;
+
+    /**
+     * true olduqda mövcud Coin balansından endirim tətbiq olunur (ödəniş = qiymət − coin AZN).
+     * Alias: coinPaymentEnabled
+     */
+    @Builder.Default
+    @com.fasterxml.jackson.annotation.JsonAlias({"coinPaymentEnabled", "coin_payment_enabled", "is_coin_used"})
+    private Boolean isCoinUsed = false;
 }

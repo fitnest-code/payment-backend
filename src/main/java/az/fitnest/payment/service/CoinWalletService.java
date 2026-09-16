@@ -1,6 +1,7 @@
 package az.fitnest.payment.service;
 
 import az.fitnest.payment.dto.coin.*;
+import az.fitnest.payment.model.enums.CoinTransactionCategory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -10,13 +11,22 @@ public interface CoinWalletService {
 
     CoinWalletResponse getWalletInfo(Long userId);
 
-    Page<CoinTransactionResponse> getTransactionHistory(Long userId, Pageable pageable);
+    CoinBalanceResponse getCoinBalance(Long userId);
 
-    CalculateDiscountResponse calculateCheckoutDiscount(Long userId, BigDecimal originalPrice, BigDecimal coinsToUse);
+    void markWelcomeBonusPopupShown(Long userId);
+
+    Page<CoinTransactionResponse> getTransactionHistory(Long userId, CoinTransactionCategory category, Pageable pageable);
+
+    CalculateDiscountResponse calculateCheckoutDiscount(Long userId, CalculateDiscountRequest request);
+
+    FullPaymentEligibilityResponse checkFullPaymentEligibility(Long userId, FullPaymentEligibilityRequest request);
+
+    PayFullWithCoinsResponse payFullWithCoins(Long userId, PayFullWithCoinsRequest request);
 
     CoinWalletResponse awardWelcomeBonus(Long userId, WelcomeBonusRequest request);
 
-    void processPaymentCoins(Long userId, String orderId, Long paymentId, BigDecimal coinsUsed, BigDecimal netPaidAmount);
+    void processPaymentCoins(Long userId, String orderId, Long paymentId, BigDecimal coinsUsed,
+                             BigDecimal netPaidAmount, Long packageId, Long optionId);
 
     void processRefundCoins(Long userId, String orderId, Long paymentId, BigDecimal coinsOriginallySpent, BigDecimal coinsOriginallyEarned);
 
@@ -29,5 +39,20 @@ public interface CoinWalletService {
 
     CoinWalletResponse manualAdjustCoins(ManualCoinAdjustRequest request);
 
+    BulkCoinAdjustResponse bulkAdjustCoins(BulkCoinAdjustRequest request);
+
+    BulkCoinAdjustResponse bulkAdjustAllCoins(BulkCoinAdjustAllRequest request);
+
+    BulkCoinAdjustResponse bulkWelcomeBonus(BulkWelcomeBonusRequest request);
+
     Page<CoinTransactionResponse> getAllTransactionsForAdmin(Pageable pageable);
+
+    // V2 earn formula
+    CoinSettingsV2Response getSettingsV2();
+
+    CoinSettingsV2Response updateSettingsV2(CoinSettingsV2Request request);
+
+    CoinEarnPreviewResponse previewEarn(CoinEarnPreviewRequest request);
+
+    CoinEarnPreviewBatchResponse previewEarnBatch(CoinEarnPreviewBatchRequest request);
 }
