@@ -48,4 +48,6 @@ public interface CoinTransactionRepository extends JpaRepository<CoinTransaction
     Page<CoinTransaction> findAllByOrderByCreatedDateDesc(Pageable pageable);
 
     List<CoinTransaction> findByUserIdAndOrderIdAndTypeIn(Long userId, String orderId, Collection<CoinTransactionType> types);
+
+    boolean existsByUserIdAndType(Long userId, CoinTransactionType type);
 }
