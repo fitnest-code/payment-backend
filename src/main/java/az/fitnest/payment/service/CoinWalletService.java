@@ -39,6 +39,8 @@ public interface CoinWalletService {
 
     CoinWalletResponse manualAdjustCoins(ManualCoinAdjustRequest request);
 
+    CoinWalletResponse setCoinBalance(Long userId, SetCoinBalanceRequest request);
+
     BulkCoinAdjustResponse bulkAdjustCoins(BulkCoinAdjustRequest request);
 
     BulkCoinAdjustResponse bulkAdjustAllCoins(BulkCoinAdjustAllRequest request);

@@ -174,4 +174,27 @@ class CoinAdminControllerTest {
         assertEquals(new BigDecimal("320.00"), response.getBody().coinBalance());
         assertEquals(new BigDecimal("32.00"), response.getBody().aznEquivalent());
     }
+
+    @Test
+    @DisplayName("PUT /api/v1/admin/coins/users/{userId}/balance - Coin balansını mütləq dəyərə qoyur")
+    void testSetUserBalance() {
+        SetCoinBalanceRequest request = SetCoinBalanceRequest.builder()
+                .balance(new BigDecimal("30.00"))
+                .description("Korreksiya")
+                .build();
+
+        CoinWalletResponse wallet = CoinWalletResponse.builder()
+                .totalBalance(new BigDecimal("30.00"))
+                .aznEquivalent(new BigDecimal("3.00"))
+                .build();
+
+        when(coinWalletService.setCoinBalance(eq(38L), eq(request))).thenReturn(wallet);
+
+        ResponseEntity<AdminUserCoinWalletResponse> response = coinAdminController.setUserBalance(38L, request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(38L, response.getBody().userId());
+        assertEquals(new BigDecimal("30.00"), response.getBody().coinBalance());
+    }
 }
