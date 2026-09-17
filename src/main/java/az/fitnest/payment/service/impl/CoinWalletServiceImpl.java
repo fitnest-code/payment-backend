@@ -27,10 +27,12 @@ import az.fitnest.payment.service.coin.CoinNotificationPublisher;
 import az.fitnest.payment.util.PaymentPackageRef;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -61,6 +63,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     private final CoinEarnCalculator coinEarnCalculator;
     private final PaymentRepository paymentRepository;
     private final PaymentOutboxService paymentOutboxService;
+    private final TransactionTemplate transactionTemplate;
 
     @Override
     @Transactional(readOnly = true)
@@ -364,14 +367,23 @@ public class CoinWalletServiceImpl implements CoinWalletService {
             return getWalletInfo(userId);
         }
 
-        if (identityBackendClient.isWelcomeBonusReceived(userId)) {
-            log.info("Welcome bonus already received for userId={} (identity flag)", userId);
+        // Lock first so Kafka + catch-up cron cannot both pass the exists checks.
+        CoinWallet wallet = getOrCreateWalletWithLock(userId);
+
+        if (welcomeBonusIdentifierRepository.existsByUserId(userId)
+                || transactionRepository.existsByUserIdAndType(userId, CoinTransactionType.BONUS)) {
+            try {
+                identityBackendClient.markWelcomeBonusReceived(userId);
+            } catch (Exception e) {
+                log.warn("Welcome bonus already stored for userId={} but identity flag sync failed: {}",
+                        userId, e.getMessage());
+            }
+            log.info("Welcome bonus already received for userId={}, skipping", userId);
             return getWalletInfo(userId);
         }
 
-        if (welcomeBonusIdentifierRepository.existsByUserId(userId)) {
-            identityBackendClient.markWelcomeBonusReceived(userId);
-            log.info("Synced welcome bonus received flag for userId={} from existing identifier", userId);
+        if (identityBackendClient.isWelcomeBonusReceived(userId)) {
+            log.info("Welcome bonus already received for userId={} (identity flag)", userId);
             return getWalletInfo(userId);
         }
 
@@ -387,7 +399,6 @@ public class CoinWalletServiceImpl implements CoinWalletService {
             throw new ConflictException("Bu e-poçt ünvanına Welcome bonus artıq verilib");
         }
 
-        CoinWallet wallet = getOrCreateWalletWithLock(userId);
         BigDecimal bonusAmount = configuredBonus;
         BigDecimal newBalance = wallet.getBalance().add(bonusAmount);
         wallet.setBalance(newBalance);
@@ -414,7 +425,11 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         identifier.setUserId(userId);
         identifier.setPhoneHash(phoneHash);
         identifier.setEmailHash(emailHash);
-        welcomeBonusIdentifierRepository.save(identifier);
+        try {
+            welcomeBonusIdentifierRepository.saveAndFlush(identifier);
+        } catch (DataIntegrityViolationException e) {
+            throw new ConflictException("Welcome bonus bu istifadəçiyə artıq verilib");
+        }
 
         // Identifier save is the source of truth for idempotency. Identity flag is best-effort
         // so a transient IAM outage cannot roll back an already-credited wallet.
@@ -684,7 +699,6 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     }
 
     @Override
-    @Transactional
     public BulkCoinAdjustResponse bulkWelcomeBonus(BulkWelcomeBonusRequest request) {
         List<Long> pendingUserIds = identityBackendClient.findPendingWelcomeBonusUserIds();
         List<Long> successUserIds = new ArrayList<>();
@@ -700,7 +714,8 @@ public class CoinWalletServiceImpl implements CoinWalletService {
                         .notificationBody(request.getNotificationBody())
                         .sendNotification(request.getSendNotification())
                         .build();
-                awardWelcomeBonus(userId, bonusRequest);
+                // Per-user transaction: self-invocation would skip @Transactional on awardWelcomeBonus.
+                transactionTemplate.executeWithoutResult(status -> awardWelcomeBonus(userId, bonusRequest));
                 successUserIds.add(userId);
             } catch (Exception e) {
                 log.warn("Welcome bonus bulk send failed for userId={}: {}", userId, e.getMessage());

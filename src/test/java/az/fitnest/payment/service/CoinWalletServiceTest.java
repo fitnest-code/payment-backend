@@ -77,6 +77,9 @@ class CoinWalletServiceTest {
     @Mock
     private PaymentOutboxService paymentOutboxService;
 
+    @Mock
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+
     @InjectMocks
     private CoinWalletServiceImpl coinWalletService;
 
@@ -115,10 +118,12 @@ class CoinWalletServiceTest {
         when(settingsRepository.findFirstByActiveTrueOrderByIdDesc()).thenReturn(Optional.of(defaultSettings));
         when(identityBackendClient.isWelcomeBonusReceived(userId)).thenReturn(false);
         when(welcomeBonusIdentifierRepository.existsByUserId(userId)).thenReturn(false);
+        when(transactionRepository.existsByUserIdAndType(userId, CoinTransactionType.BONUS)).thenReturn(false);
 
         CoinWallet wallet = new CoinWallet(userId, BigDecimal.ZERO);
         when(walletRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(wallet));
         when(walletRepository.findByUserId(userId)).thenReturn(Optional.of(wallet));
+        when(welcomeBonusIdentifierRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         CoinWalletResponse response = coinWalletService.awardWelcomeBonus(userId, request);
 
@@ -128,7 +133,28 @@ class CoinWalletServiceTest {
         assertNotNull(response.getExpiryDate());
         verify(walletRepository).save(wallet);
         verify(transactionRepository).save(any(CoinTransaction.class));
-        verify(welcomeBonusIdentifierRepository).save(any());
+        verify(welcomeBonusIdentifierRepository).saveAndFlush(any());
+        verify(identityBackendClient).markWelcomeBonusReceived(userId);
+    }
+
+    @Test
+    @DisplayName("Welcome bonus - mövcud BONUS tranzaksiyası varsa təkrar verilmir")
+    void testAwardWelcomeBonus_SkipsWhenBonusTransactionExists() {
+        Long userId = 100L;
+        WelcomeBonusRequest request = WelcomeBonusRequest.builder().build();
+        CoinWallet wallet = new CoinWallet(userId, new BigDecimal("30.00"));
+
+        when(settingsRepository.findFirstByActiveTrueOrderByIdDesc()).thenReturn(Optional.of(defaultSettings));
+        when(walletRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(wallet));
+        when(walletRepository.findByUserId(userId)).thenReturn(Optional.of(wallet));
+        when(welcomeBonusIdentifierRepository.existsByUserId(userId)).thenReturn(false);
+        when(transactionRepository.existsByUserIdAndType(userId, CoinTransactionType.BONUS)).thenReturn(true);
+
+        CoinWalletResponse response = coinWalletService.awardWelcomeBonus(userId, request);
+
+        assertEquals(new BigDecimal("30.00"), response.getTotalBalance());
+        verify(transactionRepository, never()).save(any(CoinTransaction.class));
+        verify(welcomeBonusIdentifierRepository, never()).saveAndFlush(any());
         verify(identityBackendClient).markWelcomeBonusReceived(userId);
     }
 

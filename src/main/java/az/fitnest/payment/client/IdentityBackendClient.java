@@ -36,8 +36,8 @@ public class IdentityBackendClient {
                     WelcomeBonusStatusResponse.class);
             return response != null && response.isReceived();
         } catch (Exception e) {
-            log.warn("Failed to fetch welcome bonus status for userId={}: {}", userId, e.getMessage());
-            return false;
+            log.error("Failed to fetch welcome bonus status for userId={}: {}", userId, e.getMessage());
+            throw e;
         }
     }
 
