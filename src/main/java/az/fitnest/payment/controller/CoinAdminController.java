@@ -80,6 +80,12 @@ public class CoinAdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/api/v1/admin/coins/users/{userId}")
+    @Operation(summary = "İstifadəçi Coin balansı", description = "Admin üçün seçilmiş istifadəçinin Coin balansını, AZN ekvivalentini və etibarlılıq tarixini qaytarır")
+    public ResponseEntity<AdminUserCoinWalletResponse> getUserWallet(@PathVariable Long userId) {
+        return ResponseEntity.ok(AdminUserCoinWalletResponse.from(userId, coinWalletService.getWalletInfo(userId)));
+    }
+
     @PostMapping("/api/v1/admin/coins/adjust")
     @Operation(summary = "Manual Coin korreksiyası (Credit / Debit)", description = "Admin tərəfindən istifadəçi balansına manual Coin əlavə etmək (müsbət) və ya çıxarmaq (mənfi)")
     public ResponseEntity<CoinWalletResponse> adjustCoins(@Valid @RequestBody ManualCoinAdjustRequest request) {

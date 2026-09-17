@@ -154,4 +154,24 @@ class CoinAdminControllerTest {
         assertNotNull(response.getBody());
         assertEquals(1, response.getBody().items().size());
     }
+
+    @Test
+    @DisplayName("GET /api/v1/admin/coins/users/{userId} - İstifadəçi Coin balansını qaytarır")
+    void testGetUserWallet() {
+        CoinWalletResponse wallet = CoinWalletResponse.builder()
+                .totalBalance(new BigDecimal("320.00"))
+                .aznEquivalent(new BigDecimal("32.00"))
+                .daysUntilExpiry(120L)
+                .build();
+
+        when(coinWalletService.getWalletInfo(38L)).thenReturn(wallet);
+
+        ResponseEntity<AdminUserCoinWalletResponse> response = coinAdminController.getUserWallet(38L);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(38L, response.getBody().userId());
+        assertEquals(new BigDecimal("320.00"), response.getBody().coinBalance());
+        assertEquals(new BigDecimal("32.00"), response.getBody().aznEquivalent());
+    }
 }
