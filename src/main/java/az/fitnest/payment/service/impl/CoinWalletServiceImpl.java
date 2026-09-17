@@ -699,6 +699,40 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     }
 
     @Override
+    @Transactional
+    public CoinWalletResponse setCoinBalance(Long userId, SetCoinBalanceRequest request) {
+        if (userId == null) {
+            throw new BadRequestException("İstifadəçi ID-si icbari hissədir");
+        }
+        BigDecimal target = request.getBalance() != null ? request.getBalance() : BigDecimal.ZERO;
+        if (target.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BadRequestException("Coin balansı mənfi ola bilməz");
+        }
+        target = target.setScale(2, RoundingMode.HALF_UP);
+
+        CoinWallet wallet = getOrCreateWalletWithLock(userId);
+        BigDecimal current = wallet.getBalance() != null ? wallet.getBalance() : BigDecimal.ZERO;
+        BigDecimal delta = target.subtract(current);
+        if (delta.compareTo(BigDecimal.ZERO) == 0) {
+            return getWalletInfo(userId);
+        }
+
+        String description = (request.getDescription() != null && !request.getDescription().isBlank())
+                ? request.getDescription().trim()
+                : "Admin coin balansını dəyişdi";
+
+        return manualAdjustCoins(ManualCoinAdjustRequest.builder()
+                .userId(userId)
+                .amount(delta)
+                .type(CoinTransactionType.ADJUSTMENT)
+                .description(description)
+                .notificationTitle(request.getNotificationTitle())
+                .notificationBody(request.getNotificationBody())
+                .sendNotification(request.getSendNotification())
+                .build());
+    }
+
+    @Override
     public BulkCoinAdjustResponse bulkWelcomeBonus(BulkWelcomeBonusRequest request) {
         List<Long> pendingUserIds = identityBackendClient.findPendingWelcomeBonusUserIds();
         List<Long> successUserIds = new ArrayList<>();
