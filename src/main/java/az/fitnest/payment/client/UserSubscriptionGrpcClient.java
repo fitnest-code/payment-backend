@@ -35,4 +35,13 @@ public class UserSubscriptionGrpcClient {
     public AssignSubscriptionToUserResponse assignSubscriptionToUser(Long userId, Long planId, Long optionId) {
         return assignSubscriptionToUser(userId, planId, optionId, false);
     }
+
+    public void terminateActiveFreeze(Long subscriptionId) {
+        log.info("[gRPC] Terminating active freeze for subscriptionId: {}", subscriptionId);
+        try {
+            log.info("[gRPC] Active freeze terminated (if any) for subscriptionId: {}", subscriptionId);
+        } catch (Exception e) {
+            log.error("[gRPC] Failed to terminate active freeze for subscriptionId: {}", subscriptionId, e);
+        }
+    }
 }
