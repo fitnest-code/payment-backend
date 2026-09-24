@@ -37,16 +37,29 @@ public class UserSubscriptionGrpcClient {
     }
 
     public void terminateActiveFreeze(Long subscriptionId) {
-        log.info("[gRPC] Terminating active freeze for subscriptionId: {}", subscriptionId);
+        terminateActiveFreeze(subscriptionId, null);
+    }
+
+    /**
+     * Terminate active freeze by subscription id and/or user id (pass null subscriptionId to use userId only).
+     */
+    public void terminateActiveFreeze(Long subscriptionId, Long userId) {
+        log.info("[gRPC] Terminating active freeze subscriptionId={} userId={}", subscriptionId, userId);
         try {
-            az.fitnest.order.grpc.TerminateActiveFreezeRequest request = az.fitnest.order.grpc.TerminateActiveFreezeRequest.newBuilder()
-                    .setSubscriptionId(subscriptionId)
-                    .setReason("PAYMENT_REFUND_CANCEL")
-                    .build();
-            stub.terminateActiveFreeze(request);
-            log.info("[gRPC] Active freeze terminated for subscriptionId: {}", subscriptionId);
+            az.fitnest.order.grpc.TerminateActiveFreezeRequest.Builder builder =
+                    az.fitnest.order.grpc.TerminateActiveFreezeRequest.newBuilder()
+                            .setReason("PAYMENT_REFUND_CANCEL");
+            if (subscriptionId != null && subscriptionId > 0) {
+                builder.setSubscriptionId(subscriptionId);
+            }
+            if (userId != null && userId > 0) {
+                builder.setUserId(userId);
+            }
+            stub.terminateActiveFreeze(builder.build());
+            log.info("[gRPC] Active freeze terminate requested subscriptionId={} userId={}", subscriptionId, userId);
         } catch (Exception e) {
-            log.error("[gRPC] Failed to terminate active freeze for subscriptionId: {}", subscriptionId, e);
+            log.error("[gRPC] Failed to terminate active freeze subscriptionId={} userId={}", subscriptionId, userId, e);
+            throw e instanceof RuntimeException re ? re : new RuntimeException(e);
         }
     }
 }

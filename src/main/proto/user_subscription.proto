@@ -15,6 +15,7 @@ service UserSubscriptionService {
 message TerminateActiveFreezeRequest {
   int64 subscription_id = 1;
   string reason = 2;
+  int64 user_id = 3;
 }
 
 message TerminateActiveFreezeResponse {

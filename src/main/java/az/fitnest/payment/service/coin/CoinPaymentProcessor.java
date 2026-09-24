@@ -24,6 +24,7 @@ public class CoinPaymentProcessor {
 
     private final CoinWalletService coinWalletService;
     private final CoinTransactionRepository coinTransactionRepository;
+    private final az.fitnest.payment.client.UserSubscriptionGrpcClient userSubscriptionGrpcClient;
 
     @Transactional
     public void onPaymentSuccess(Payment payment) {
@@ -88,6 +89,13 @@ public class CoinPaymentProcessor {
                 payment.getId(),
                 coinsUsed,
                 coinsEarned);
+        // BRD: refund/cancel must terminate any ACTIVE freeze for this member (best-effort by userId)
+        try {
+            userSubscriptionGrpcClient.terminateActiveFreeze(null, payment.getUserId());
+        } catch (Exception e) {
+            log.error("[Coin] Failed to terminate freeze on refund orderId={} userId={}: {}",
+                    payment.getOrderId(), payment.getUserId(), e.getMessage());
+        }
         log.info("[Coin] Processed refund orderId={} restoreCoins={} revokeEarned={}",
                 payment.getOrderId(), coinsUsed, coinsEarned);
     }
