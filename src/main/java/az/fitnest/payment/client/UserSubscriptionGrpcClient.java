@@ -39,7 +39,12 @@ public class UserSubscriptionGrpcClient {
     public void terminateActiveFreeze(Long subscriptionId) {
         log.info("[gRPC] Terminating active freeze for subscriptionId: {}", subscriptionId);
         try {
-            log.info("[gRPC] Active freeze terminated (if any) for subscriptionId: {}", subscriptionId);
+            az.fitnest.order.grpc.TerminateActiveFreezeRequest request = az.fitnest.order.grpc.TerminateActiveFreezeRequest.newBuilder()
+                    .setSubscriptionId(subscriptionId)
+                    .setReason("PAYMENT_REFUND_CANCEL")
+                    .build();
+            stub.terminateActiveFreeze(request);
+            log.info("[gRPC] Active freeze terminated for subscriptionId: {}", subscriptionId);
         } catch (Exception e) {
             log.error("[gRPC] Failed to terminate active freeze for subscriptionId: {}", subscriptionId, e);
         }

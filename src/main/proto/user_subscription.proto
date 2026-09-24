@@ -9,6 +9,16 @@ option java_outer_classname = "UserSubscriptionProto";
 
 service UserSubscriptionService {
   rpc AssignSubscriptionToUser(AssignSubscriptionToUserRequest) returns (AssignSubscriptionToUserResponse);
+  rpc TerminateActiveFreeze(TerminateActiveFreezeRequest) returns (TerminateActiveFreezeResponse);
+}
+
+message TerminateActiveFreezeRequest {
+  int64 subscription_id = 1;
+  string reason = 2;
+}
+
+message TerminateActiveFreezeResponse {
+  bool success = 1;
 }
 
 message AssignSubscriptionToUserRequest {
