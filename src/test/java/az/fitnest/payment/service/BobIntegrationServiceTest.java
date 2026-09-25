@@ -51,6 +51,10 @@ class BobIntegrationServiceTest {
     private ValueOperations<String, String> valueOperations;
     @Mock
     private az.fitnest.payment.client.UserGrpcClient userGrpcClient;
+    @Mock
+    private az.fitnest.payment.service.coin.CoinCheckoutHelper coinCheckoutHelper;
+    @Mock
+    private az.fitnest.payment.service.coin.CoinPaymentProcessor coinPaymentProcessor;
 
     @InjectMocks
     private BobIntegrationService bobIntegrationService;
@@ -62,6 +66,8 @@ class BobIntegrationServiceTest {
         lenient().when(bobProperties.getCallbackUrl()).thenReturn("https://api.fitnest.az/payment/bob/callback");
         lenient().when(bobProperties.getSuccessRedirectUrl()).thenReturn("https://fitnest.az/payment/success");
         lenient().when(bobProperties.getErrorRedirectUrl()).thenReturn("https://fitnest.az/payment/error");
+        lenient().when(coinCheckoutHelper.applyForSubscription(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyDouble()))
+                .thenAnswer(inv -> az.fitnest.payment.service.coin.CoinCheckoutHelper.AppliedCheckout.noCoins(inv.getArgument(4, Double.class)));
     }
 
     @Test
