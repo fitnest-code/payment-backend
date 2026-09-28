@@ -24,7 +24,8 @@ public class UserSubscriptionGrpcClient {
         log.info("[gRPC] Sending AssignSubscriptionToUser request: userId={}, planId={}, optionId={}, autoPaymentEnabled={}", userId, planId, optionId, autoPaymentEnabled);
         try {
             AssignSubscriptionToUserResponse response = stub.assignSubscriptionToUser(request);
-            log.info("[gRPC] Received AssignSubscriptionToUser response: subscriptionId={}, userId={}", response.getSubscriptionId(), response.getUserId());
+            log.info("[gRPC] Received AssignSubscriptionToUser response: subscriptionId={}, userId={}, bonusMonths={}, campaignApplied={}, campaignId={}",
+                    response.getSubscriptionId(), response.getUserId(), response.getBonusMonths(), response.getCampaignApplied(), response.getCampaignId());
             return response;
         } catch (Exception e) {
             log.error("[gRPC] Error during AssignSubscriptionToUser request: userId={}, planId={}, optionId={}", userId, planId, optionId, e);
