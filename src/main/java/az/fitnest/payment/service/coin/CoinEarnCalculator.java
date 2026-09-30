@@ -56,20 +56,24 @@ public class CoinEarnCalculator {
         BigDecimal tierMult = resolveTierMultiplier(packageId, packageName, tierMultipliers);
         BigDecimal periodMult = resolvePeriodMultiplier(durationMonths, periodMultipliers);
 
-        BigDecimal baseEarnRate = settings.getBaseEarnRate() != null
-                ? settings.getBaseEarnRate()
-                : new BigDecimal("0.020000");
-        BigDecimal maxGivebackRate = settings.getMaxGivebackRate() != null
-                ? settings.getMaxGivebackRate()
-                : new BigDecimal("0.050000");
-        BigDecimal earnCoinFactor = settings.getEarnCoinFactor() != null
-                ? settings.getEarnCoinFactor()
-                : new BigDecimal("10.00");
+        BigDecimal baseEarnRate = settings.getBaseEarnRate();
+        BigDecimal maxGivebackRate = settings.getMaxGivebackRate();
+        BigDecimal earnCoinFactor = settings.getEarnCoinFactor();
+
+        // Strictly data-driven: any missing value means 0 coins, no defaults.
+        if (baseEarnRate == null || earnCoinFactor == null
+                || tierMult == null || tierMult.compareTo(BigDecimal.ZERO) == 0
+                || periodMult == null || periodMult.compareTo(BigDecimal.ZERO) == 0) {
+            return zeroResultWithMultipliers(settings, packageId, packageName, durationMonths,
+                    eligibleCashAmount, baseEarnRate, tierMult, periodMult, earnCoinFactor);
+        }
 
         BigDecimal rawGivebackRate = baseEarnRate
                 .multiply(tierMult)
                 .multiply(periodMult);
-        BigDecimal appliedGivebackRate = rawGivebackRate.min(maxGivebackRate);
+        BigDecimal appliedGivebackRate = maxGivebackRate != null
+                ? rawGivebackRate.min(maxGivebackRate)
+                : rawGivebackRate;
 
         BigDecimal rawCoins = eligibleCashAmount
                 .multiply(appliedGivebackRate)
@@ -115,8 +119,8 @@ public class CoinEarnCalculator {
         return EarnResult.builder()
                 .formulaVersion(settings.getFormulaVersion())
                 .baseEarnRate(settings.getBaseEarnRate())
-                .tierMultiplier(BigDecimal.ONE)
-                .periodMultiplier(BigDecimal.ONE)
+                .tierMultiplier(BigDecimal.ZERO)
+                .periodMultiplier(BigDecimal.ZERO)
                 .rawGivebackRate(BigDecimal.ZERO)
                 .appliedGivebackRate(BigDecimal.ZERO)
                 .earnCoinFactor(settings.getEarnCoinFactor())
@@ -129,30 +133,58 @@ public class CoinEarnCalculator {
                 .build();
     }
 
+    private EarnResult zeroResultWithMultipliers(
+            CoinSettings settings,
+            Long packageId,
+            String packageName,
+            Integer durationMonths,
+            BigDecimal amount,
+            BigDecimal baseEarnRate,
+            BigDecimal tierMult,
+            BigDecimal periodMult,
+            BigDecimal earnCoinFactor) {
+        return EarnResult.builder()
+                .formulaVersion(settings.getFormulaVersion())
+                .baseEarnRate(baseEarnRate)
+                .tierMultiplier(tierMult != null ? tierMult : BigDecimal.ZERO)
+                .periodMultiplier(periodMult != null ? periodMult : BigDecimal.ZERO)
+                .rawGivebackRate(BigDecimal.ZERO)
+                .appliedGivebackRate(BigDecimal.ZERO)
+                .earnCoinFactor(earnCoinFactor)
+                .eligibleCashAmount(amount != null ? amount.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO)
+                .rawCoins(BigDecimal.ZERO)
+                .awardedCoins(0)
+                .packageId(packageId)
+                .packageName(packageName)
+                .durationMonths(durationMonths)
+                .build();
+    }
+
     /**
      * Multipliers are keyed by packageId ("1", "2", …) from admin settings.
-     * Falls back to package name key, then 1.0 if not configured yet.
+     * Falls back to package name key (case-insensitive).
+     * Returns ZERO when not configured — no defaults.
      */
     public static BigDecimal resolveTierMultiplier(
             Long packageId,
             String packageName,
             Map<String, BigDecimal> tierMultipliers) {
-        if (tierMultipliers == null || tierMultipliers.isEmpty()) {
-            return BigDecimal.ONE;
-        }
-        if (packageId != null) {
-            BigDecimal byId = tierMultipliers.get(String.valueOf(packageId));
-            if (byId != null) {
-                return byId;
+        Map<String, BigDecimal> normalized = normalizeTierMap(tierMultipliers);
+        if (!normalized.isEmpty()) {
+            if (packageId != null) {
+                BigDecimal byId = normalized.get(String.valueOf(packageId));
+                if (byId != null) {
+                    return byId;
+                }
+            }
+            if (packageName != null && !packageName.isBlank()) {
+                BigDecimal byName = normalized.get(packageName.trim().toUpperCase());
+                if (byName != null) {
+                    return byName;
+                }
             }
         }
-        if (packageName != null && !packageName.isBlank()) {
-            BigDecimal byName = tierMultipliers.get(packageName.trim());
-            if (byName != null) {
-                return byName;
-            }
-        }
-        return BigDecimal.ONE;
+        return BigDecimal.ZERO;
     }
 
     public static BigDecimal resolvePeriodMultiplier(
@@ -161,22 +193,28 @@ public class CoinEarnCalculator {
         if (durationMonths == null || durationMonths <= 0) {
             throw new BadRequestException("Müddət (durationMonths) müəyyən edilməyib");
         }
-        if (periodMultipliers == null || periodMultipliers.isEmpty()) {
-            return BigDecimal.ONE;
+        if (periodMultipliers != null && !periodMultipliers.isEmpty()) {
+            BigDecimal mult = periodMultipliers.get(durationMonths);
+            if (mult != null) {
+                return mult;
+            }
         }
-        BigDecimal mult = periodMultipliers.get(durationMonths);
-        return mult != null ? mult : BigDecimal.ONE;
+        return BigDecimal.ZERO;
     }
 
-    public static Map<String, BigDecimal> copyTierMap(Map<String, BigDecimal> input) {
-        Map<String, BigDecimal> copy = new HashMap<>();
+    public static Map<String, BigDecimal> normalizeTierMap(Map<String, BigDecimal> input) {
+        Map<String, BigDecimal> normalized = new HashMap<>();
         if (input != null) {
             input.forEach((key, value) -> {
                 if (key != null && !key.isBlank() && value != null) {
-                    copy.put(key.trim(), value);
+                    normalized.put(key.trim().toUpperCase(), value);
                 }
             });
         }
-        return copy;
+        return normalized;
+    }
+
+    public static Map<String, BigDecimal> copyTierMap(Map<String, BigDecimal> input) {
+        return normalizeTierMap(input);
     }
 }
