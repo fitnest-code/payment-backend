@@ -45,9 +45,29 @@ class CoinEarnCalculatorTest {
     }
 
     @Test
-    void defaultsMissingPackageMultiplierToOne() {
-        assertEquals(0, new BigDecimal("1.00").compareTo(
+    void missingPackageMultiplierYieldsZero() {
+        assertEquals(0, BigDecimal.ZERO.compareTo(
                 CoinEarnCalculator.resolveTierMultiplier(99L, "Unknown", Map.of("1", new BigDecimal("1.20")))));
+    }
+
+    @Test
+    void missingPeriodMultiplierYieldsZero() {
+        assertEquals(0, BigDecimal.ZERO.compareTo(
+                CoinEarnCalculator.resolvePeriodMultiplier(12, Map.of(1, new BigDecimal("1.00")))));
+    }
+
+    @Test
+    void missingValuesYieldZeroCoins() {
+        CoinSettings settings = v2Settings();
+        var result = calculator.calculateV2(
+                new BigDecimal("140.00"),
+                99L,
+                "Unknown",
+                3,
+                settings,
+                Map.of("1", new BigDecimal("1.00")),
+                Map.of(1, new BigDecimal("1.00")));
+        assertEquals(0, result.getAwardedCoins());
     }
 
     private static CoinSettings v2Settings() {
