@@ -885,9 +885,9 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         settings.setExpiryMonths(12);
         settings.setActive(false);
         settings.setFormulaVersion(CoinEarnCalculator.FORMULA_V2);
-        settings.setBaseEarnRate(new BigDecimal("0.020000"));
-        settings.setMaxGivebackRate(new BigDecimal("0.050000"));
-        settings.setEarnCoinFactor(new BigDecimal("10.00"));
+        settings.setBaseEarnRate(BigDecimal.ZERO);
+        settings.setMaxGivebackRate(BigDecimal.ZERO);
+        settings.setEarnCoinFactor(BigDecimal.ZERO);
         settings.setTierMultipliers(new HashMap<>());
         settings.setPeriodMultipliers(new HashMap<>());
         return settingsRepository.save(settings);
@@ -1121,12 +1121,9 @@ public class CoinWalletServiceImpl implements CoinWalletService {
                         ? settings.getFormulaVersion() : CoinEarnCalculator.FORMULA_V2)
                 .active(settings.getActive())
                 .welcomeBonusAmount(settings.getWelcomeBonusAmount())
-                .baseEarnRate(settings.getBaseEarnRate() != null
-                        ? settings.getBaseEarnRate() : new BigDecimal("0.020000"))
-                .maxGivebackRate(settings.getMaxGivebackRate() != null
-                        ? settings.getMaxGivebackRate() : new BigDecimal("0.050000"))
-                .earnCoinFactor(settings.getEarnCoinFactor() != null
-                        ? settings.getEarnCoinFactor() : new BigDecimal("10.00"))
+                .baseEarnRate(settings.getBaseEarnRate())
+                .maxGivebackRate(settings.getMaxGivebackRate())
+                .earnCoinFactor(settings.getEarnCoinFactor())
                 .spendRateCoinToAzn(settings.getSpendRateCoinToAzn())
                 .maxDiscountPercentage(settings.getMaxDiscountPercentage())
                 .expiryMonths(settings.getExpiryMonths())
