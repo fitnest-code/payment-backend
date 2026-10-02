@@ -2,8 +2,11 @@ package az.fitnest.payment.event;
 
 import az.fitnest.payment.dto.coin.WelcomeBonusRequest;
 import az.fitnest.payment.dto.coin.CoinWalletResponse;
+import az.fitnest.payment.repository.CoinTransactionRepository;
+import az.fitnest.payment.repository.CoinWalletRepository;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
+import az.fitnest.payment.repository.WelcomeBonusIdentifierRepository;
 import az.fitnest.payment.service.CoinWalletService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +38,15 @@ class PaymentEventListenerTest {
     private PaymentRepository paymentRepository;
 
     @Mock
+    private CoinTransactionRepository coinTransactionRepository;
+
+    @Mock
+    private CoinWalletRepository coinWalletRepository;
+
+    @Mock
+    private WelcomeBonusIdentifierRepository welcomeBonusIdentifierRepository;
+
+    @Mock
     private CoinWalletService coinWalletService;
 
     private PaymentEventListener paymentEventListener;
@@ -56,6 +68,9 @@ class PaymentEventListenerTest {
         paymentEventListener = new PaymentEventListener(
                 userCardRepository,
                 paymentRepository,
+                coinTransactionRepository,
+                coinWalletRepository,
+                welcomeBonusIdentifierRepository,
                 coinWalletService,
                 new ObjectMapper(),
                 transactionTemplate
@@ -107,7 +122,7 @@ class PaymentEventListenerTest {
     }
 
     @Test
-    @DisplayName("USER_HARD_DELETED - User kartları və ödənişlər silinir")
+    @DisplayName("USER_HARD_DELETED - User kartları, ödənişlər və bütün coin izləri silinir")
     void testUserHardDeleted_DeletesUserData() {
         String event = """
                 {
@@ -120,6 +135,9 @@ class PaymentEventListenerTest {
 
         verify(userCardRepository, times(1)).deleteByUserId(200L);
         verify(paymentRepository, times(1)).deleteByUserId(200L);
+        verify(coinTransactionRepository, times(1)).deleteByUserId(200L);
+        verify(coinWalletRepository, times(1)).deleteByUserId(200L);
+        verify(welcomeBonusIdentifierRepository, times(1)).deleteByUserId(200L);
         verifyNoInteractions(coinWalletService);
     }
 
