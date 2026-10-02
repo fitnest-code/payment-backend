@@ -255,7 +255,7 @@ public class EpointIntegrationService {
             Long optionId,
             Boolean autoPaymentEnabled,
             Boolean isCoinUsed) {
-        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, false);
         subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
         String orderId = java.util.UUID.randomUUID().toString();
         String description = PaymentPackageRef.appendToDescription(
@@ -295,7 +295,32 @@ public class EpointIntegrationService {
             Long optionId,
             Boolean autoPaymentEnabled,
             Boolean isCoinUsed) {
-        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
+        // First purchase: coins are opt-in only (isCoinUsed). The autopay toggle
+        // merely enables future renewals; it must not silently spend coins now.
+        return executePayWithCard(userId, cardId, packageId, optionId, autoPaymentEnabled, isCoinUsed, false);
+    }
+
+    /**
+     * Auto-renewals always spend the full available FitNest Coin balance.
+     * Used only by the renewal worker via gRPC (order-backend auto-renew cron).
+     */
+    public EpointResponse executeRenewalWithCard(
+            Long userId,
+            String cardId,
+            Long packageId,
+            Long optionId) {
+        return executePayWithCard(userId, cardId, packageId, optionId, true, false, true);
+    }
+
+    private EpointResponse executePayWithCard(
+            Long userId,
+            String cardId,
+            Long packageId,
+            Long optionId,
+            Boolean autoPaymentEnabled,
+            Boolean isCoinUsed,
+            boolean renewalAutospend) {
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, renewalAutospend);
         subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
 
         String orderId = java.util.UUID.randomUUID().toString();
@@ -609,7 +634,7 @@ public class EpointIntegrationService {
             Long optionId,
             Boolean autoPaymentEnabled,
             Boolean isCoinUsed) {
-        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, false);
         subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
         Double amount = quote.chargeAmountAzn();
         String currency = quote.currency();
@@ -1164,7 +1189,7 @@ public class EpointIntegrationService {
     }
 
     public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled, Boolean isCoinUsed) {
-        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
+        var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, false);
         subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
         String orderId = java.util.UUID.randomUUID().toString();
         String description = PaymentPackageRef.appendToDescription(

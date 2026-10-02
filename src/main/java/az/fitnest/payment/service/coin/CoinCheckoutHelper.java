@@ -10,8 +10,12 @@ import java.math.BigDecimal;
 
 /**
  * Applies FitNest Coin discount for subscription checkout when coin payment is enabled
- * ({@code isCoinUsed} / {@code coinPaymentEnabled} = true) or when auto-pay is enabled
- * (renewals always spend the maximum available coin balance).
+ * ({@code isCoinUsed} / {@code coinPaymentEnabled} = true).
+ * <p>
+ * The {@code autoPaymentEnabled} slot means renewal-style max spend and must only be
+ * {@code true} for auto-renewals (order-backend renewal worker). First purchases pass
+ * {@code false} there even when the user enables autopay for the future — the toggle
+ * must not silently spend coins on the initial charge.
  * Final bank charge = package option price − coin AZN equivalent (capped at price).
  */
 @Service
