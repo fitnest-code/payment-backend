@@ -29,6 +29,7 @@ import az.fitnest.payment.dto.common.ApplePaySubmitRequest;
 import az.fitnest.payment.dto.common.ApplePaySubmitResponse;
 import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.client.epoint.EpointHttpClient;
+import az.fitnest.payment.service.checkout.SubscriptionCheckoutService;
 import az.fitnest.payment.service.coin.CoinCheckoutHelper;
 import az.fitnest.payment.service.coin.CoinPaymentProcessor;
 import az.fitnest.payment.event.PaymentOutboxService;
@@ -52,6 +53,49 @@ public class EpointIntegrationService {
         if (!ALLOWED_CURRENCIES.contains(currency.toUpperCase())) {
             throw new IllegalArgumentException("Invalid currency: " + currency);
         }
+    }
+
+    /**
+     * Coins covered the full price (e.g. auto-pay applies the whole balance) —
+     * no bank charge; record a zero-amount SUCCESS payment and run the standard
+     * post-payment lifecycle (coin earn + subscription assignment).
+     */
+    private EpointResponse completeFullCoinPayment(
+            Long userId,
+            String orderId,
+            SubscriptionCheckoutService.CheckoutQuote quote,
+            String description,
+            String paymentType,
+            Boolean autoPaymentEnabled) {
+        Payment payment = new Payment();
+        payment.setProvider("EPOINT");
+        payment.setOrderId(orderId);
+        payment.setTransactionId("COIN-" + orderId);
+        payment.setAmount(0.0);
+        payment.setCurrency(quote.currency());
+        payment.setStatus("SUCCESS");
+        payment.setUserId(userId);
+        payment.setDescription(description);
+        payment.setType(paymentType);
+        payment.setAutoPaymentEnabled(Boolean.TRUE.equals(autoPaymentEnabled));
+        payment.setCoinsUsed(quote.coinsUsed());
+        payment.setCallbackProcessed(true);
+        payment.setMessage("Paid fully with FitNest Coins");
+        payment = paymentRepository.save(payment);
+        paymentSubscriptionService.assignFromPaymentDescription(payment, userId, quote.packageRefDescription());
+        log.info("[Coin] Full-coin local completion orderId={} coinsUsed={}", orderId, quote.coinsUsed());
+        return EpointResponse.builder()
+                .status("success")
+                .transaction(payment.getTransactionId())
+                .orderId(orderId)
+                .amount(0.0)
+                .message(payment.getMessage())
+                .build();
+    }
+
+    private boolean isFullCoinCover(SubscriptionCheckoutService.CheckoutQuote quote) {
+        return quote.chargeAmountAzn() <= 0
+                && quote.coinsUsed() != null && quote.coinsUsed().compareTo(java.math.BigDecimal.ZERO) > 0;
     }
 
     private final EpointService epointService;
@@ -213,7 +257,6 @@ public class EpointIntegrationService {
             Boolean isCoinUsed) {
         var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
         subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
-        validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
         String orderId = java.util.UUID.randomUUID().toString();
         String description = PaymentPackageRef.appendToDescription(
                 Boolean.TRUE.equals(autoPaymentEnabled)
@@ -221,6 +264,10 @@ public class EpointIntegrationService {
                         : "Fitness package payment",
                 packageId,
                 optionId);
+        if (isFullCoinCover(quote)) {
+            return completeFullCoinPayment(userId, orderId, quote, description, "PAYMENT", autoPaymentEnabled);
+        }
+        validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
         EpointPaymentRequest request = EpointPaymentRequest.builder()
                 .currency(quote.currency())
                 .amount(quote.chargeAmountAzn())
@@ -257,32 +304,10 @@ public class EpointIntegrationService {
 
         // Coins covered the full price — no bank charge; complete locally.
         if (quote.chargeAmountAzn() <= 0) {
-            if (quote.coinsUsed() == null || quote.coinsUsed().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            if (!isFullCoinCover(quote)) {
                 throw new IllegalArgumentException("Amount must be positive and non-zero");
             }
-            Payment payment = new Payment();
-            payment.setProvider("EPOINT");
-            payment.setOrderId(orderId);
-            payment.setTransactionId("COIN-" + orderId);
-            payment.setAmount(0.0);
-            payment.setCurrency(quote.currency());
-            payment.setStatus("SUCCESS");
-            payment.setUserId(userId);
-            payment.setDescription(description);
-            payment.setType("PAYMENT");
-            payment.setAutoPaymentEnabled(Boolean.TRUE.equals(autoPaymentEnabled));
-            payment.setCoinsUsed(quote.coinsUsed());
-            payment.setCallbackProcessed(true);
-            payment.setMessage("Paid fully with FitNest Coins");
-            payment = paymentRepository.save(payment);
-            paymentSubscriptionService.assignFromPaymentDescription(payment, userId, quote.packageRefDescription());
-            return EpointResponse.builder()
-                    .status("success")
-                    .transaction(payment.getTransactionId())
-                    .orderId(orderId)
-                    .amount(0.0)
-                    .message(payment.getMessage())
-                    .build();
+            return completeFullCoinPayment(userId, orderId, quote, description, "PAYMENT", autoPaymentEnabled);
         }
 
         validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
@@ -589,13 +614,16 @@ public class EpointIntegrationService {
         Double amount = quote.chargeAmountAzn();
         String currency = quote.currency();
 
-        validatePaymentRequest(amount, currency);
-
         String orderId = java.util.UUID.randomUUID().toString();
         String deviceType = az.fitnest.payment.util.DeviceDetector.detectDeviceType();
         String paymentTypeDescription = Boolean.TRUE.equals(autoPaymentEnabled) ? "Monthly payment" : "One-time payment";
         String description = quote.packageRefDescription()
                 + ",device:" + deviceType + ",type:" + paymentTypeDescription;
+
+        if (isFullCoinCover(quote)) {
+            return completeFullCoinPayment(userId, orderId, quote, description, "WIDGET_PAYMENT", autoPaymentEnabled);
+        }
+        validatePaymentRequest(amount, currency);
 
         if (userId != null) {
             String redisKey = "payment-user:" + orderId;
@@ -1138,12 +1166,15 @@ public class EpointIntegrationService {
     public EpointResponse initiatePayment(Long userId, Long packageId, Long optionId, Boolean autoPaymentEnabled, Boolean isCoinUsed) {
         var quote = subscriptionCheckoutService.quote(userId, packageId, optionId, isCoinUsed, autoPaymentEnabled);
         subscriptionCheckoutService.requireOneMonthForAutoPay(quote, autoPaymentEnabled);
-        validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
         String orderId = java.util.UUID.randomUUID().toString();
         String description = PaymentPackageRef.appendToDescription(
                 Boolean.TRUE.equals(autoPaymentEnabled) ? "Fitness package monthly payment" : "Fitness package payment",
                 packageId,
                 optionId);
+        if (isFullCoinCover(quote)) {
+            return completeFullCoinPayment(userId, orderId, quote, description, "PAYMENT", autoPaymentEnabled);
+        }
+        validatePaymentRequest(quote.chargeAmountAzn(), quote.currency());
         EpointPaymentRequest request = EpointPaymentRequest.builder()
                 .currency(quote.currency())
                 .amount(quote.chargeAmountAzn())
