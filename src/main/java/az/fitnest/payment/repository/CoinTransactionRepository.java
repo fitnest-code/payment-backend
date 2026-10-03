@@ -50,4 +50,6 @@ public interface CoinTransactionRepository extends JpaRepository<CoinTransaction
     List<CoinTransaction> findByUserIdAndOrderIdAndTypeIn(Long userId, String orderId, Collection<CoinTransactionType> types);
 
     boolean existsByUserIdAndType(Long userId, CoinTransactionType type);
+
+    void deleteByUserId(Long userId);
 }

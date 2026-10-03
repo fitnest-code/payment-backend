@@ -102,13 +102,11 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
 
         try {
             // Auto-renewals always apply the full available FitNest Coin balance.
-            EpointResponse epointResponse = integrationService.executePayWithCard(
+            EpointResponse epointResponse = integrationService.executeRenewalWithCard(
                     request.getUserId(),
                     request.getCardId(),
                     request.getPackageId(),
-                    request.getOptionId(),
-                    true,
-                    false);
+                    request.getOptionId());
 
             PayWithCardResponse response = PayWithCardResponse.newBuilder()
                     .setStatus(epointResponse.status() != null ? epointResponse.status() : "error")

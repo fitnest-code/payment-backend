@@ -361,6 +361,13 @@ public class PaymentController {
         }
     }
 
+    @Operation(summary = "Epoint ödəniş statusunu transactionId ilə sinxronlaşdır", description = "Mobil tətbiqin sorğuladığı köhnə yol; bankdan canlı status oxuyur.")
+    @GetMapping("/epoint/get-status")
+    public ResponseEntity<EpointResponse> getStatusByTransactionId(@RequestParam("transactionId") String transactionId) {
+        log.info("[Status] GET /epoint/get-status?transactionId={}", transactionId);
+        return ResponseEntity.ok(integrationService.getStatus(transactionId));
+    }
+
     @Operation(summary = "Epoint ödəniş statusunu sinxronlaşdır", description = "Bankdan canlı status oxuyur; uğurlu olduqda abunəlik və coin tərəflərini tamamlayır.")
     @GetMapping("/payment/payment/status/{orderId}")
     public ResponseEntity<EpointResponse> getPaymentStatus(@PathVariable("orderId") String orderId) {

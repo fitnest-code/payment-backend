@@ -17,6 +17,8 @@ public interface CoinWalletRepository extends JpaRepository<CoinWallet, Long> {
 
     Optional<CoinWallet> findByUserId(Long userId);
 
+    void deleteByUserId(Long userId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT w FROM CoinWallet w WHERE w.userId = :userId")
     Optional<CoinWallet> findByUserIdWithLock(@Param("userId") Long userId);

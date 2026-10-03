@@ -2,8 +2,11 @@ package az.fitnest.payment.event;
 
 import az.fitnest.payment.dto.coin.WelcomeBonusRequest;
 import az.fitnest.payment.exception.ConflictException;
+import az.fitnest.payment.repository.CoinTransactionRepository;
+import az.fitnest.payment.repository.CoinWalletRepository;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.repository.UserCardRepository;
+import az.fitnest.payment.repository.WelcomeBonusIdentifierRepository;
 import az.fitnest.payment.service.CoinWalletService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,6 +29,9 @@ public class PaymentEventListener {
 
     private final UserCardRepository userCardRepository;
     private final PaymentRepository paymentRepository;
+    private final CoinTransactionRepository coinTransactionRepository;
+    private final CoinWalletRepository coinWalletRepository;
+    private final WelcomeBonusIdentifierRepository welcomeBonusIdentifierRepository;
     private final CoinWalletService coinWalletService;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
@@ -58,6 +64,12 @@ public class PaymentEventListener {
         transactionTemplate.executeWithoutResult(status -> {
             userCardRepository.deleteByUserId(userId);
             paymentRepository.deleteByUserId(userId);
+            // Full erase so a re-registered same-phone user starts clean:
+            // leftover coin rows and phone/email-hash identifiers would otherwise
+            // block the welcome bonus (ConflictException) on the new account.
+            coinTransactionRepository.deleteByUserId(userId);
+            coinWalletRepository.deleteByUserId(userId);
+            welcomeBonusIdentifierRepository.deleteByUserId(userId);
         });
     }
 
