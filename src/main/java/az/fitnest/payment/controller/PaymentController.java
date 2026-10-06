@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.core.Authentication;
@@ -362,7 +363,7 @@ public class PaymentController {
     }
 
     @Operation(summary = "Epoint ödəniş statusunu transactionId ilə sinxronlaşdır", description = "Mobil tətbiqin sorğuladığı köhnə yol; bankdan canlı status oxuyur.")
-    @GetMapping("/epoint/get-status")
+    @RequestMapping(value = "/epoint/get-status", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<EpointResponse> getStatusByTransactionId(@RequestParam("transactionId") String transactionId) {
         log.info("[Status] GET /epoint/get-status?transactionId={}", transactionId);
         return ResponseEntity.ok(integrationService.getStatus(transactionId));
