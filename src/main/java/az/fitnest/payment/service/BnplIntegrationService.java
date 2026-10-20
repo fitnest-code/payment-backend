@@ -324,18 +324,23 @@ public class BnplIntegrationService {
         return term + " ay";
     }
 
-    private String normalizePhone(String phone) {
-        String digits = phone.replaceAll("[^0-9+]", "");
-        if (digits.startsWith("+994")) {
-            return digits.substring(4);
-        }
-        if (digits.startsWith("994") && digits.length() > 10) {
-            return digits.substring(3);
+    /**
+     * ABB expects the international format, e.g. {@code +994451394578}.
+     * Accepts +994XXXXXXXXX, 994XXXXXXXXX, 0XXXXXXXXX and XXXXXXXXX.
+     */
+    static String normalizePhone(String phone) {
+        String digits = phone.replaceAll("[^0-9]", "");
+        if (digits.startsWith("994") && digits.length() == 12) {
+            return "+" + digits;
         }
         if (digits.startsWith("0") && digits.length() == 10) {
-            return digits.substring(1);
+            return "+994" + digits.substring(1);
         }
-        return digits.replace("+", "");
+        if (digits.length() == 9) {
+            return "+994" + digits;
+        }
+        // Unknown shape — send as-is and let ABB validate.
+        return phone.trim();
     }
 
     private String resolveProductName(Long packageId, Long optionId) {
