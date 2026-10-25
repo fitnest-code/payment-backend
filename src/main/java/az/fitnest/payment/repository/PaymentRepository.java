@@ -23,6 +23,18 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("SELECT p FROM Payment p WHERE p.transactionId = :transactionId")
     Optional<Payment> findByTransactionIdForUpdate(@Param("transactionId") String transactionId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Payment p WHERE p.id = :id")
+    Optional<Payment> findByIdForUpdate(@Param("id") Long id);
+
+    /** Stale non-terminal payments for the reconciliation job. */
+    List<Payment> findByProviderAndStatusInAndCreatedDateBefore(
+            String provider, java.util.Collection<String> statuses, java.time.LocalDateTime before);
+
+    /** Recent unfinished payments of one user — used for init idempotency/recovery. */
+    List<Payment> findTop20ByProviderAndUserIdAndStatusInAndCreatedDateAfterOrderByCreatedDateDesc(
+            String provider, Long userId, java.util.Collection<String> statuses, java.time.LocalDateTime after);
+
     List<Payment> findAllByUserId(Long userId);
     List<Payment> findByStatusAndCreatedDateBetween(String status, java.time.LocalDateTime start, java.time.LocalDateTime end);
 

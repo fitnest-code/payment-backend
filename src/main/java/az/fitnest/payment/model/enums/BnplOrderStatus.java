@@ -40,12 +40,20 @@ public enum BnplOrderStatus {
         }
     }
 
-    /** FitNest Payment.status mapping. */
+    /**
+     * FitNest Payment.status mapping.
+     *
+     * <p>{@link #CLOSED} is one of ABB's credit-application statuses and must not be
+     * collapsed into {@code FAILED}: doing so downgraded already successful payments.
+     * It gets its own {@code CLOSED} payment status; callers keep a prior {@code SUCCESS}
+     * untouched (see {@code BnplContractRules#resolvePaymentStatus}).</p>
+     */
     public String toPaymentStatus() {
         return switch (this) {
             case INIT, IN_PROGRESS -> "PENDING_USER_ACTION";
             case COMPLETED -> "SUCCESS";
-            case CANCELLED, REJECTED, EXPIRED, FAILED, CLOSED -> "FAILED";
+            case CLOSED -> "CLOSED";
+            case CANCELLED, REJECTED, EXPIRED, FAILED -> "FAILED";
             case REVERSED -> "REVERSED";
         };
     }

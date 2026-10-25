@@ -16,6 +16,13 @@ public final class OutboxEventType {
 
     public static final String PAYMENT_SUCCEEDED = "PAYMENT_SUCCEEDED";
     public static final String PAYMENT_FAILED = "PAYMENT_FAILED";
+
+    /**
+     * Emitted when a successful payment is fully reversed (BNPL partial reversals that add
+     * up to the full amount included). Kept separate from {@code PAYMENT_FAILED} so
+     * notifications and analytics do not treat a refund as a failed charge.
+     */
+    public static final String PAYMENT_REVERSED = "PAYMENT_REVERSED";
     public static final String CARD_REGISTERED = "CARD_REGISTERED";
 
     /**

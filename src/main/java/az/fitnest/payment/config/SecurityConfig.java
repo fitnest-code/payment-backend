@@ -52,9 +52,11 @@ public class SecurityConfig {
                         .requestMatchers("/payment/abb/callback").permitAll()
                         .requestMatchers("/payment/abb/redirect/**").permitAll()
                         .requestMatchers("/payment/abb/installment").permitAll()
-                        // ABB BNPL callback — secured via Basic Auth + optional HMAC (not FitNest JWT)
+                        // ABB BNPL callback — secured via HMAC (X-Signature) or Basic Auth, not FitNest JWT
                         .requestMatchers("/payment/abb/bnpl/callback").permitAll()
+                        .requestMatchers("/api/v2/payment/abb/bnpl/callback").permitAll()
                         .requestMatchers("/payment/abb/bnpl/terms").permitAll()
+                        .requestMatchers("/payment/abb/bnpl/terms/detail").permitAll()
                         // Bank of Baku (SmartVista) endpoints
                         .requestMatchers("/payment/bob/callback").permitAll()
                         .requestMatchers("/payment/bob/redirect/**").permitAll()

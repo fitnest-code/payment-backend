@@ -21,6 +21,10 @@ import java.util.Map;
 
 /**
  * ABB BNPL (Buy Now Pay Later) endpoints for mobile + bank callback.
+ *
+ * <p>The callback is exposed at both {@code /payment/abb/bnpl/callback} (direct) and
+ * {@code /api/v2/payment/abb/bnpl/callback} (through the gateway, which forwards the path
+ * unchanged).</p>
  */
 @Slf4j
 @RestController
@@ -28,12 +32,12 @@ import java.util.Map;
 @Tag(name = "ABB BNPL", description = "ABB Buy Now Pay Later partner integration")
 public class BnplPaymentController {
 
+    private static final String MAINTENANCE_MESSAGE =
+            "Hazırda ABB BNPL ödəniş sistemində texniki işlər aparılır. Xidmət tezliklə istifadəyə veriləcək";
+
     private final BnplIntegrationService bnplIntegrationService;
     private final AbbBnplProperties properties;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
-
-    private static final String MAINTENANCE_MESSAGE =
-            "Hazırda ABB BNPL ödəniş sistemində texniki işlər aparılır. Xidmət tezliklə istifadəyə veriləcək";
 
     private void checkMaintenance(String endpoint) {
         if (properties.isMaintenanceMode()) {
@@ -81,18 +85,55 @@ public class BnplPaymentController {
         }
 
         try {
-            return ResponseEntity.ok(bnplIntegrationService.initiate(userId, request));
+            BnplInitResponse response = bnplIntegrationService.initiate(userId, request);
+            HttpStatus status = resolveInitHttpStatus(response);
+            return ResponseEntity.status(status).body(response);
         } catch (BnplPaymentException e) {
-            return ResponseEntity.badRequest()
-                    .body(BnplInitResponse.error(e.getErrorCode(), e.getMessage()));
+            return ResponseEntity.status(e.getHttpStatus())
+                    .body(BnplInitResponse.error(e.getErrorCode(), e.getMessage(),
+                            e.isRetryable(), safeTerms()));
         }
     }
 
-    @Operation(summary = "Dəstəklənən BNPL kredit müddətləri")
+    /**
+     * 200 = new order created; 202 = outcome unknown, poll the reference;
+     * 409 = an active order already exists and its reference is returned.
+     */
+    private HttpStatus resolveInitHttpStatus(BnplInitResponse response) {
+        if (response == null) {
+            return HttpStatus.OK;
+        }
+        if ("BNPL_ORDER_ALREADY_EXISTS".equals(response.getErrorCode())) {
+            return HttpStatus.CONFLICT;
+        }
+        if ("pending".equalsIgnoreCase(response.getStatus())) {
+            return HttpStatus.ACCEPTED;
+        }
+        return HttpStatus.OK;
+    }
+
+    private List<Integer> safeTerms() {
+        try {
+            return bnplIntegrationService.getSupportedTerms();
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    @Operation(summary = "Dəstəklənən BNPL kredit müddətləri (rəqəm)",
+            description = "ABB `term` sahəsini rəqəm kimi gözləyir. Bu siyahı konfiqurasiyadan gəlir.")
     @GetMapping("/payment/abb/bnpl/terms")
     public ResponseEntity<List<Integer>> getTerms() {
         checkMaintenance("/terms");
         return ResponseEntity.ok(bnplIntegrationService.getSupportedTerms());
+    }
+
+    @Operation(summary = "Dəstəklənən BNPL müddətləri (rəqəm + etiket)",
+            description = "Etiket yalnız göstərmək üçündür; ABB-yə həmişə `value` göndərilir.")
+    @GetMapping("/payment/abb/bnpl/terms/detail")
+    public ResponseEntity<List<BnplTermOption>> getTermOptions() {
+        checkMaintenance("/terms/detail");
+        return ResponseEntity.ok(bnplIntegrationService.getTermOptions());
     }
 
     @Operation(summary = "BNPL status (lokal + lazım olsa ABB-dən fallback poll)")
@@ -109,21 +150,26 @@ public class BnplPaymentController {
 
     @Operation(
             summary = "ABB BNPL callback webhook",
-            description = "ABB status dəyişikliklərini Basic Auth + X-ABB-Callback-Id ilə qəbul edir. "
-                    + "5 saniyə ərzində HTTP 200 qaytarmalıdır."
+            description = "ABB status dəyişikliklərini HMAC-SHA256 (X-Signature) və ya Basic Auth ilə göndərir. "
+                    + "5 saniyə ərzində HTTP 200 qaytarmalıdır; naməlum sifarişlər üçün də 200 qaytarılır və "
+                    + "hadisə reconciliation üçün saxlanılır."
     )
-    @PostMapping(value = "/payment/abb/bnpl/callback", consumes = {"application/json", "*/*"})
+    @PostMapping(value = {"/payment/abb/bnpl/callback", "/api/v2/payment/abb/bnpl/callback"},
+            consumes = {"application/json", "*/*"})
     public ResponseEntity<Map<String, String>> handleCallback(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestHeader(value = "X-ABB-Callback-Id", required = false) String callbackId,
+            @RequestHeader(value = "X-ABB-Timestamp", required = false) String timestamp,
             @RequestHeader(value = "X-Signature", required = false) String signature,
-            @RequestBody(required = false) String rawBody) {
+            @RequestBody(required = false) byte[] rawBody) {
+
+        String body = rawBody != null ? new String(rawBody, java.nio.charset.StandardCharsets.UTF_8) : null;
 
         BnplCallbackPayload payload = null;
         try {
-            if (rawBody != null && !rawBody.isBlank()) {
+            if (body != null && !body.isBlank()) {
                 payload = new com.fasterxml.jackson.databind.ObjectMapper()
-                        .readValue(rawBody, BnplCallbackPayload.class);
+                        .readValue(body, BnplCallbackPayload.class);
             }
         } catch (Exception e) {
             log.warn("[BNPL][Callback] Invalid JSON body: {}", e.getMessage());
@@ -137,7 +183,10 @@ public class BnplPaymentController {
                 payload != null ? payload.getStatus() : null);
 
         try {
-            bnplIntegrationService.processCallback(payload, callbackId, authorization, signature, rawBody);
+            bnplIntegrationService.processCallback(
+                    payload,
+                    new BnplIntegrationService.CallbackHeaders(callbackId, timestamp, signature, authorization),
+                    rawBody);
             return ResponseEntity.ok(Map.of("status", "OK"));
         } catch (BnplPaymentException e) {
             if ("BNPL_CALLBACK_UNAUTHORIZED".equals(e.getErrorCode())
@@ -147,12 +196,12 @@ public class BnplPaymentController {
                         .body(Map.of("status", "UNAUTHORIZED", "message", e.getMessage()));
             }
             log.error("[BNPL][Callback] Processing error: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("status", "ERROR", "message", e.getMessage()));
+            // Do not 400 on transient problems: ABB only retries twice.
+            return ResponseEntity.accepted()
+                    .body(Map.of("status", "RETRY", "message", e.getMessage()));
         } catch (Exception e) {
             log.error("[BNPL][Callback] Unexpected error", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("status", "ERROR"));
+            return ResponseEntity.accepted().body(Map.of("status", "RETRY"));
         }
     }
 
@@ -161,22 +210,37 @@ public class BnplPaymentController {
         return ResponseEntity.ok("OK");
     }
 
-    @Operation(summary = "BNPL full reverse")
+    @Operation(summary = "BNPL full reverse",
+            description = "Yalnız tamamlanmış və heç bir partial reverse edilməmiş sifariş üçün, "
+                    + "sorğu tarixindən 30 gün ərzində.")
     @PutMapping("/payment/abb/bnpl/{id}/reverse")
     public ResponseEntity<Map<String, Object>> fullReverse(@PathVariable String id) {
         checkMaintenance("/reverse");
         bnplIntegrationService.fullReverse(id);
-        return ResponseEntity.ok(Map.of("status", "OK", "id", id));
+        BnplStatusResponse status = bnplIntegrationService.getLocalStatus(id);
+        return ResponseEntity.ok(Map.of(
+                "status", "OK",
+                "id", id,
+                "paymentStatus", status.getPaymentStatus(),
+                "reversedAmount", status.getReversedAmount()));
     }
 
-    @Operation(summary = "BNPL partial reverse (optional; MVP may disable on mobile)")
+    @Operation(summary = "BNPL partial reverse (məbləğ yığılır)",
+            description = "Sifariş COMPLETED qalır; yığılan məbləğ tam məbləğə çatdıqda REVERSED olur.")
     @PutMapping("/payment/abb/bnpl/{id}/partial-reverse")
     public ResponseEntity<Map<String, Object>> partialReverse(
             @PathVariable String id,
             @Valid @RequestBody BnplPartialReverseRequest body) {
         checkMaintenance("/partial-reverse");
         bnplIntegrationService.partialReverse(id, body.getAmount());
-        return ResponseEntity.ok(Map.of("status", "OK", "id", id, "amount", body.getAmount()));
+        BnplStatusResponse status = bnplIntegrationService.getLocalStatus(id);
+        return ResponseEntity.ok(Map.of(
+                "status", "OK",
+                "id", id,
+                "amount", body.getAmount(),
+                "paymentStatus", status.getPaymentStatus(),
+                "reversedAmount", status.getReversedAmount(),
+                "reversableAmount", status.getReversableAmount()));
     }
 
     private Long extractUserId(Authentication authentication) {

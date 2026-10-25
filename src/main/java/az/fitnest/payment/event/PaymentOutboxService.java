@@ -55,6 +55,30 @@ public class PaymentOutboxService {
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
+    public void recordPaymentReversed(Payment payment) {
+        if (payment == null || payment.getOrderId() == null || payment.getOrderId().isBlank()) {
+            return;
+        }
+        if (alreadyEnqueued(payment.getOrderId(), OutboxEventType.PAYMENT_REVERSED)) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("eventType", OutboxEventType.PAYMENT_REVERSED);
+        payload.put("paymentId", payment.getId());
+        payload.put("orderId", payment.getOrderId());
+        payload.put("transactionId", payment.getTransactionId());
+        payload.put("userId", payment.getUserId());
+        payload.put("amount", payment.getAmount());
+        payload.put("currency", payment.getCurrency());
+        payload.put("provider", payment.getProvider());
+        payload.put("status", payment.getStatus());
+        payload.put("occurredAt", Instant.now().toString());
+
+        enqueue(OutboxEventType.PAYMENT_REVERSED, OutboxEventType.TOPIC_PAYMENT_EVENTS,
+                payment.getOrderId(), payload);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
     public void recordCardRegistered(Long userId, String cardId, String cardMask) {
         if (userId == null || cardId == null || cardId.isBlank()) {
             return;

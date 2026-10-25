@@ -102,6 +102,24 @@ public class PaymentSubscriptionService {
         }
     }
 
+    /**
+     * Full reversal: refund the coins spent on the order and record the reversal event.
+     *
+     * <p>Coin refund is idempotent ({@code REFUND} transaction dedupe). Subscription
+     * revocation lives in order-backend and consumes {@code PAYMENT_REVERSED}; it is not a
+     * synchronous call here so a slow consumer cannot block the bank callback.</p>
+     */
+    @Transactional
+    public void onPaymentReversed(Payment payment) {
+        if (payment == null) {
+            return;
+        }
+        coinPaymentProcessor.onPaymentRefund(payment);
+        paymentOutboxService.recordPaymentReversed(payment);
+        log.info("[Payment] Reversal processed orderId={}, provider={}, coinsUsed={}",
+                payment.getOrderId(), payment.getProvider(), payment.getCoinsUsed());
+    }
+
     /** Records FAILED/ERROR outcomes to Kafka so failures are never silent. */
     @Transactional
     public void onPaymentFailed(Payment payment) {

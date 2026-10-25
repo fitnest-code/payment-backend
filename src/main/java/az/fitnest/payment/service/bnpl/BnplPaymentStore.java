@@ -1,8 +1,10 @@
 package az.fitnest.payment.service.bnpl;
 
 import az.fitnest.payment.event.PaymentOutboxService;
+import az.fitnest.payment.model.entity.AbbBnplCallbackEvent;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.enums.BnplOrderStatus;
+import az.fitnest.payment.repository.AbbBnplCallbackEventRepository;
 import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.util.PaymentPackageRef;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,10 +13,20 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * Persistence for ABB BNPL payments and callbacks.
+ *
+ * <p>All mutating methods load the row with a pessimistic lock and take an id, never a
+ * detached entity: the submit call to ABB happens <b>outside</b> any transaction and the
+ * entity could otherwise be stale when the response arrives.</p>
+ */
 @Component
 @RequiredArgsConstructor
 public class BnplPaymentStore {
@@ -22,9 +34,82 @@ public class BnplPaymentStore {
     public static final String PROVIDER = "ABB_BNPL";
     public static final String TYPE = "ABB_BNPL";
 
+    public static final String STATUS_PENDING = "PENDING_USER_ACTION";
+    public static final String STATUS_SUBMIT_UNKNOWN = "SUBMIT_UNKNOWN";
+    public static final String STATUS_FAILED = "FAILED";
+    public static final String STATUS_SUCCESS = "SUCCESS";
+    public static final String STATUS_REVERSED = "REVERSED";
+
     private final PaymentRepository paymentRepository;
+    private final AbbBnplCallbackEventRepository callbackEventRepository;
     private final ObjectMapper objectMapper;
     private final PaymentOutboxService paymentOutboxService;
+
+    // ------------------------------------------------------------------ read
+
+    @Transactional(readOnly = true)
+    public Optional<Payment> findById(Long id) {
+        return paymentRepository.findById(id);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Payment> findByReference(String reference) {
+        return paymentRepository.findByTransactionId(reference);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Payment> findByAbbOrderId(String abbOrderId) {
+        return paymentRepository.findByOrderId(abbOrderId);
+    }
+
+    /**
+     * Idempotency: an unfinished order for the same user/package/option created inside the
+     * recovery window. ABB cannot look an order up by reference, so we must not create a
+     * second one — it would answer "Order already exists" and the customer would be stuck.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Payment> findRecoverable(Long userId, Long packageId, Long optionId, int windowMinutes) {
+        if (userId == null || packageId == null || optionId == null) {
+            return Optional.empty();
+        }
+        LocalDateTime since = LocalDateTime.now().minusMinutes(Math.max(1, windowMinutes));
+        return paymentRepository
+                .findTop20ByProviderAndUserIdAndStatusInAndCreatedDateAfterOrderByCreatedDateDesc(
+                        PROVIDER, userId, List.of(STATUS_PENDING, STATUS_SUBMIT_UNKNOWN), since)
+                .stream()
+                .filter(payment -> {
+                    PaymentPackageRef.Ref ref = PaymentPackageRef.parse(payment.getDescription());
+                    return packageId.equals(ref.packageId()) && optionId.equals(ref.optionId());
+                })
+                .findFirst();
+    }
+
+    /** Recent unfinished orders of a user — used to explain a duplicate-submit response. */
+    @Transactional(readOnly = true)
+    public List<Payment> findRecentUnfinished(Long userId, int lookbackHours) {
+        if (userId == null) {
+            return List.of();
+        }
+        return paymentRepository
+                .findTop20ByProviderAndUserIdAndStatusInAndCreatedDateAfterOrderByCreatedDateDesc(
+                        PROVIDER,
+                        userId,
+                        List.of(STATUS_PENDING, STATUS_SUBMIT_UNKNOWN),
+                        LocalDateTime.now().minusHours(Math.max(1, lookbackHours)));
+    }
+
+    /** Recent unfinished order of a user. */
+    @Transactional(readOnly = true)
+    public Optional<Payment> findMostRecentUnfinished(Long userId, int lookbackHours) {
+        return findRecentUnfinished(userId, lookbackHours).stream().findFirst();
+    }
+
+    @Transactional(readOnly = true)
+    public List<Payment> findStale(List<String> statuses, LocalDateTime before) {
+        return paymentRepository.findByProviderAndStatusInAndCreatedDateBefore(PROVIDER, statuses, before);
+    }
+
+    // ----------------------------------------------------------------- write
 
     @Transactional
     public Payment createPending(Long userId,
@@ -50,77 +135,179 @@ public class BnplPaymentStore {
         payment.setAutoPaymentEnabled(false);
         payment.setCoinsUsed(coinsUsed != null ? coinsUsed : BigDecimal.ZERO);
         payment.setCode(BnplOrderStatus.INIT.name());
-        payment.setBankResponse(writeMeta(fin, phone, term, productName, 0, null));
+        payment.setBankResponse(writeMeta(fin, phone, term, productName, 0, null, BigDecimal.ZERO));
         return paymentRepository.save(payment);
     }
 
     @Transactional
-    public Payment markSubmitted(Payment payment, Long abbOrderId, String abbStatus, String message) {
+    public Payment markSubmitted(Long paymentId, Long abbOrderId, String abbStatus, String message) {
+        Payment payment = locked(paymentId);
         payment.setOrderId(String.valueOf(abbOrderId));
         payment.setCode(abbStatus != null ? abbStatus : BnplOrderStatus.INIT.name());
         payment.setMessage(message);
+        payment.setOperationCode(null);
         BnplOrderStatus status = BnplOrderStatus.from(abbStatus);
-        payment.setStatus(status != null ? status.toPaymentStatus() : "PENDING_USER_ACTION");
+        payment.setStatus(status != null
+                ? BnplContractRules.resolvePaymentStatus(payment.getStatus(), status)
+                : STATUS_PENDING);
         return paymentRepository.save(payment);
     }
 
+    /**
+     * Ambiguous submit (timeout / 5xx / duplicate). The order may exist at ABB, so this is
+     * explicitly <b>not</b> {@code FAILED} — it stays pollable and is picked up by the
+     * reconciliation job.
+     */
     @Transactional
-    public Payment markFailed(Payment payment, String message, String operationCode, String bankResponse) {
-        payment.setStatus("FAILED");
+    public Payment markSubmitUnknown(Long paymentId, String message, String operationCode, String detail) {
+        Payment payment = locked(paymentId);
+        payment.setStatus(STATUS_SUBMIT_UNKNOWN);
+        payment.setMessage(message);
+        payment.setOperationCode(operationCode);
+        if (detail != null) {
+            payment.setBankTransaction(truncate(detail));
+        }
+        return paymentRepository.save(payment);
+    }
+
+    /** Definitive rejection by ABB (invalid FIN / phone / term, customer not found). */
+    @Transactional
+    public Payment markRejected(Long paymentId, String message, String operationCode, String detail) {
+        Payment payment = locked(paymentId);
+        payment.setStatus(STATUS_FAILED);
         payment.setMessage(message);
         if (operationCode != null) {
             payment.setOperationCode(operationCode);
         }
-        if (bankResponse != null) {
-            payment.setBankResponse(truncate(bankResponse));
+        if (detail != null) {
+            payment.setBankTransaction(truncate(detail));
         }
         Payment saved = paymentRepository.save(payment);
         paymentOutboxService.recordPaymentOutcome(saved);
         return saved;
     }
 
+    public record StatusUpdate(Payment payment, String previousPaymentStatus, boolean changed) {
+    }
+
     @Transactional
-    public Payment applyAbbStatus(Payment payment,
-                                  BnplOrderStatus abbStatus,
-                                  Integer partialReverseCount,
-                                  String rawPayload) {
-        if (abbStatus == null) {
-            return payment;
+    public StatusUpdate applyStatus(Long paymentId,
+                                    BnplOrderStatus next,
+                                    String rawPayload) {
+        Payment payment = locked(paymentId);
+        BnplOrderStatus previous = BnplOrderStatus.from(payment.getCode());
+        String previousPaymentStatus = payment.getStatus();
+        BnplOrderStatus resolved = BnplContractRules.resolveStatus(previous, next);
+        if (resolved == null) {
+            return new StatusUpdate(payment, previousPaymentStatus, false);
         }
-        payment.setCode(abbStatus.name());
-        payment.setStatus(abbStatus.toPaymentStatus());
-        payment.setMessage(abbStatus.toUserMessageAz());
+
+        String nextPaymentStatus = BnplContractRules.resolvePaymentStatus(previousPaymentStatus, resolved);
+        boolean changed = !Objects.equals(previousPaymentStatus, nextPaymentStatus)
+                || !Objects.equals(payment.getCode(), resolved.name());
+
+        payment.setCode(resolved.name());
+        payment.setStatus(nextPaymentStatus);
+        payment.setMessage(resolved.toUserMessageAz());
         if (rawPayload != null) {
             payment.setBankTransaction(truncate(rawPayload));
         }
 
         Map<String, Object> meta = readMeta(payment.getBankResponse());
-        if (partialReverseCount != null) {
-            meta.put("partialReverseCount", partialReverseCount);
-        }
-        meta.put("abbStatus", abbStatus.name());
+        meta.put("abbStatus", resolved.name());
         payment.setBankResponse(writeMetaMap(meta));
 
-        if (abbStatus.isTerminal()) {
+        if (resolved.isTerminal()) {
             payment.setCallbackProcessed(true);
+        }
+        return new StatusUpdate(paymentRepository.save(payment), previousPaymentStatus, changed);
+    }
+
+    /**
+     * Partial reversal: the order stays {@code COMPLETED} until the cumulative amount
+     * reaches the full order amount (ABB contract rule).
+     */
+    @Transactional
+    public Payment recordPartialReversal(Long paymentId,
+                                         int count,
+                                         BigDecimal reversedAmount,
+                                         String rawPayload) {
+        Payment payment = locked(paymentId);
+        Map<String, Object> meta = readMeta(payment.getBankResponse());
+        meta.put("partialReverseCount", count);
+        meta.put("reversedAmount", reversedAmount != null ? reversedAmount : BigDecimal.ZERO);
+        meta.put("abbStatus", BnplOrderStatus.COMPLETED.name());
+        payment.setBankResponse(writeMetaMap(meta));
+        if (rawPayload != null) {
+            payment.setBankTransaction(truncate(rawPayload));
         }
         return paymentRepository.save(payment);
     }
 
-    @Transactional(readOnly = true)
-    public Optional<Payment> findByReference(String reference) {
-        return paymentRepository.findByTransactionId(reference);
-    }
-
-    @Transactional(readOnly = true)
-    public Optional<Payment> findByAbbOrderId(String abbOrderId) {
-        return paymentRepository.findByOrderId(abbOrderId);
+    @Transactional
+    public Payment recordReversal(Long paymentId, BigDecimal reversedAmount, String rawPayload) {
+        Payment payment = locked(paymentId);
+        Map<String, Object> meta = readMeta(payment.getBankResponse());
+        meta.put("abbStatus", BnplOrderStatus.REVERSED.name());
+        meta.put("reversedAmount", reversedAmount != null ? reversedAmount : payment.getAmount());
+        payment.setBankResponse(writeMetaMap(meta));
+        payment.setCode(BnplOrderStatus.REVERSED.name());
+        payment.setStatus(STATUS_REVERSED);
+        payment.setMessage(BnplOrderStatus.REVERSED.toUserMessageAz());
+        payment.setCallbackProcessed(true);
+        if (rawPayload != null) {
+            payment.setBankTransaction(truncate(rawPayload));
+        }
+        Payment saved = paymentRepository.save(payment);
+        // The reversal event is emitted by PaymentSubscriptionService#onPaymentReversed
+        // (as PAYMENT_REVERSED, not PAYMENT_FAILED).
+        return saved;
     }
 
     @Transactional
     public Payment save(Payment payment) {
         return paymentRepository.save(payment);
     }
+
+    // -------------------------------------------------------------- callbacks
+
+    @Transactional
+    public AbbBnplCallbackEvent recordCallbackEvent(String callbackId,
+                                                    Long abbOrderId,
+                                                    String reference,
+                                                    String status,
+                                                    String payload,
+                                                    boolean signatureValid,
+                                                    String result) {
+        AbbBnplCallbackEvent event = new AbbBnplCallbackEvent();
+        event.setCallbackId(callbackId);
+        event.setAbbOrderId(abbOrderId != null ? String.valueOf(abbOrderId) : null);
+        event.setReference(reference);
+        event.setStatus(status);
+        event.setPayload(truncate(payload));
+        event.setSignatureValid(signatureValid);
+        event.setProcessingResult(result != null && result.length() > 512 ? result.substring(0, 512) : result);
+        event.setProcessed(result != null && result.startsWith("APPLIED"));
+        if (event.getProcessed()) {
+            event.setProcessedAt(LocalDateTime.now());
+        }
+        return callbackEventRepository.save(event);
+    }
+
+    @Transactional
+    public void markCallbackEventProcessed(AbbBnplCallbackEvent event, String result) {
+        event.setProcessed(true);
+        event.setProcessedAt(LocalDateTime.now());
+        event.setProcessingResult(result != null && result.length() > 512 ? result.substring(0, 512) : result);
+        callbackEventRepository.save(event);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AbbBnplCallbackEvent> findUnprocessedCallbacks() {
+        return callbackEventRepository.findTop50ByProcessedFalseOrderByReceivedAtAsc();
+    }
+
+    // ------------------------------------------------------------------ meta
 
     public String buildDescription(Long packageId, Long optionId, String productName) {
         String base = productName != null ? productName : "FitNest BNPL";
@@ -133,6 +320,21 @@ public class BnplPaymentStore {
             return n.intValue();
         }
         return 0;
+    }
+
+    public BigDecimal readReversedAmount(Payment payment) {
+        Object value = readMeta(payment.getBankResponse()).get("reversedAmount");
+        if (value instanceof Number n) {
+            return BigDecimal.valueOf(n.doubleValue());
+        }
+        if (value instanceof String s) {
+            try {
+                return new BigDecimal(s);
+            } catch (NumberFormatException ignored) {
+                return BigDecimal.ZERO;
+            }
+        }
+        return BigDecimal.ZERO;
     }
 
     public Integer readTerm(Payment payment) {
@@ -156,13 +358,15 @@ public class BnplPaymentStore {
     }
 
     private String writeMeta(String fin, String phone, Integer term, String productName,
-                             Integer partialReverseCount, String abbStatus) {
+                             Integer partialReverseCount, String abbStatus, BigDecimal reversedAmount) {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("fin", maskFin(fin));
-        meta.put("phone", phone);
+        // PII: keep only the shape needed for support calls.
+        meta.put("phone", maskPhone(phone));
         meta.put("term", term);
         meta.put("productName", productName);
         meta.put("partialReverseCount", partialReverseCount != null ? partialReverseCount : 0);
+        meta.put("reversedAmount", reversedAmount != null ? reversedAmount : BigDecimal.ZERO);
         if (abbStatus != null) {
             meta.put("abbStatus", abbStatus);
         }
@@ -177,11 +381,23 @@ public class BnplPaymentStore {
         }
     }
 
+    private Payment locked(Long paymentId) {
+        return paymentRepository.findByIdForUpdate(paymentId)
+                .orElseThrow(() -> new IllegalStateException("BNPL payment not found: " + paymentId));
+    }
+
     private static String maskFin(String fin) {
         if (fin == null || fin.length() < 3) {
             return fin;
         }
         return fin.substring(0, 2) + "***" + fin.substring(fin.length() - 1);
+    }
+
+    private static String maskPhone(String phone) {
+        if (phone == null || phone.length() < 7) {
+            return phone;
+        }
+        return phone.substring(0, 4) + "***" + phone.substring(phone.length() - 3);
     }
 
     private static String truncate(String value) {
