@@ -6,41 +6,51 @@ import az.fitnest.payment.client.abb.bnpl.AbbBnplRestClient;
 import az.fitnest.payment.dto.abb.bnpl.*;
 import az.fitnest.payment.exception.BnplMaintenanceException;
 import az.fitnest.payment.exception.BnplPaymentException;
+import az.fitnest.payment.model.entity.AbbBnplCallbackEvent;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.enums.BnplOrderStatus;
+import az.fitnest.payment.service.bnpl.BnplContractRules;
 import az.fitnest.payment.service.bnpl.BnplPaymentStore;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import az.fitnest.payment.service.coin.CoinCheckoutHelper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Duration;
-import java.util.Base64;
-import java.util.HexFormat;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.Set;
 
 /**
- * ABB BNPL orchestration: submit order, callback handling, status fallback, reverse.
+ * ABB BNPL orchestration: submit order, callback handling, status fallback, reverse and
+ * reconciliation.
+ *
+ * <p>Design rules taken from the ABB contract (see {@link BnplContractRules}):</p>
+ * <ul>
+ *   <li>the ABB HTTP call never runs inside a database transaction;</li>
+ *   <li>ambiguous submit outcomes ({@code SUBMIT_UNKNOWN}) are never {@code FAILED};</li>
+ *   <li>callbacks are persisted before processing and orphan events answer 200;</li>
+ *   <li>a partial reverse keeps {@code COMPLETED} until the full amount is reversed.</li>
+ * </ul>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class BnplIntegrationService {
 
-    private static final Set<Integer> ALLOWED_TERMS = Set.of(1, 3, 4, 6, 9, 12, 18, 24);
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final String REVERSE_LOCK_PREFIX = "bnpl:reverse:";
+    private static final String CALLBACK_DEDUPE_PREFIX = "bnpl:callback:";
 
     private final AbbBnplProperties properties;
     private final AbbBnplRestClient restClient;
@@ -51,17 +61,31 @@ public class BnplIntegrationService {
     private final ObjectMapper objectMapper;
     private final CoinCheckoutHelper coinCheckoutHelper;
 
-    private void checkMaintenance() {
-        if (properties.isMaintenanceMode()) {
-            throw new BnplMaintenanceException(
-                    "Hazırda ABB BNPL ödəniş sistemində texniki işlər aparılır. Xidmət tezliklə istifadəyə veriləcək");
-        }
+    public record CallbackHeaders(String callbackId,
+                                  String timestamp,
+                                  String signature,
+                                  String authorization) {
     }
 
-    @Transactional
+    // ===================================================================== INIT
+
     public BnplInitResponse initiate(Long userId, BnplInitRequest request) {
         checkMaintenance();
         validateInitRequest(request);
+
+        String fin = request.getFin().trim().toUpperCase(Locale.ROOT);
+        String phone = BnplContractRules.normalizePhone(request.getPhone());
+
+        // Idempotency: ABB has no lookup-by-reference and rejects a second active order
+        // without returning its id, so reuse our own recent unfinished order instead.
+        Optional<Payment> recoverable = paymentStore.findRecoverable(
+                userId, request.getPackageId(), request.getOptionId(),
+                properties.getInitRecoveryWindowMinutes());
+        if (recoverable.isPresent()) {
+            log.info("[BNPL] Reusing unfinished order reference={} for userId={}",
+                    recoverable.get().getTransactionId(), userId);
+            return toRecoveredInitResponse(recoverable.get());
+        }
 
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(
                 request.getPackageId(), request.getOptionId());
@@ -79,22 +103,20 @@ public class BnplIntegrationService {
         if (coins.compareTo(BigDecimal.ZERO) < 0) {
             throw new BnplPaymentException("BNPL_INVALID_COINS", "Coin məbləği mənfi ola bilməz");
         }
-        if (netAmount < 100) {
+        if (netAmount < properties.getMinAmount()) {
             throw new BnplPaymentException("BNPL_AMOUNT_TOO_LOW",
-                    "BNPL məbləği minimum 100 AZN olmalıdır (coin endirimindən sonra)");
+                    "BNPL məbləği minimum " + formatAmount(properties.getMinAmount())
+                            + " AZN olmalıdır (coin endirimindən sonra)");
         }
-        if (netAmount > 5000) {
+        if (netAmount > properties.getMaxAmount()) {
             throw new BnplPaymentException("BNPL_AMOUNT_TOO_HIGH",
-                    "BNPL məbləği maksimum 5,000 AZN ola bilər");
+                    "BNPL məbləği maksimum " + formatAmount(properties.getMaxAmount()) + " AZN ola bilər");
         }
 
         String productName = resolveProductName(request.getPackageId(), request.getOptionId());
         String reference = generateReference();
         String description = paymentStore.buildDescription(
                 request.getPackageId(), request.getOptionId(), productName);
-        String phone = normalizePhone(request.getPhone());
-        String fin = request.getFin().trim().toUpperCase(Locale.ROOT);
-        String termValue = formatTerm(request.getTerm());
 
         Payment payment = paymentStore.createPending(
                 userId,
@@ -110,7 +132,7 @@ public class BnplIntegrationService {
 
         BnplAbbSubmitRequest abbRequest = BnplAbbSubmitRequest.builder()
                 .fin(fin)
-                .term(termValue)
+                .term(BnplContractRules.formatTerm(request.getTerm()))
                 .phone(phone)
                 .price(netAmount)
                 .productName(productName)
@@ -119,17 +141,24 @@ public class BnplIntegrationService {
 
         try {
             BnplAbbSubmitResponse abbResponse = restClient.submitOrder(abbRequest);
+
             if (abbResponse.getOrderId() == null) {
-                paymentStore.markFailed(payment, "ABB orderId qayıtmadı", "NO_ORDER_ID",
-                        String.valueOf(abbResponse));
-                throw new BnplPaymentException("BNPL_NO_ORDER_ID", "ABB sifariş ID qayıtmadı");
+                // No id = we cannot prove the order exists. Never FAILED.
+                log.error("[BNPL] Submit returned no orderId reference={} response={}",
+                        reference, writeSafe(abbResponse));
+                paymentStore.markSubmitUnknown(payment.getId(),
+                        "ABB sifariş ID qaytarmadı",
+                        "BNPL_NO_ORDER_ID",
+                        writeSafe(abbResponse));
+                return submitUnknownResponse(paymentStore.findById(payment.getId()).orElse(payment));
             }
 
             String abbStatus = abbResponse.getStatus() != null ? abbResponse.getStatus() : "INIT";
-            paymentStore.markSubmitted(payment, abbResponse.getOrderId(), abbStatus, abbResponse.getMessage());
+            paymentStore.markSubmitted(payment.getId(), abbResponse.getOrderId(), abbStatus,
+                    abbResponse.getMessage());
 
-            log.info("[BNPL] Order submitted reference={} abbOrderId={} status={}",
-                    reference, abbResponse.getOrderId(), abbStatus);
+            log.info("[BNPL] Order submitted reference={} abbOrderId={} status={} term={}",
+                    reference, abbResponse.getOrderId(), abbStatus, request.getTerm());
 
             return BnplInitResponse.success(
                     reference,
@@ -139,75 +168,259 @@ public class BnplIntegrationService {
                             ? abbResponse.getMessage()
                             : BnplOrderStatus.INIT.toUserMessageAz(),
                     netAmount,
-                    request.getTerm());
+                    priceCurrency.currency,
+                    request.getTerm(),
+                    false);
         } catch (BnplPaymentException e) {
-            paymentStore.markFailed(payment, e.getMessage(), e.getErrorCode(), e.getMessage());
-            throw e;
+            return handleSubmitFailure(payment, userId, e);
         }
     }
 
     /**
-     * ABB callback — must return quickly. Idempotent via X-ABB-Callback-Id.
+     * Duplicate and ambiguous submits keep the order pollable instead of failing it.
+     * Definitive rejections (bad FIN/phone/term, customer not found) are rethrown to the
+     * controller as 400 and only those mark the payment {@code FAILED}.
      */
-    @Transactional
-    public void processCallback(BnplCallbackPayload payload,
-                                String callbackId,
-                                String basicAuthHeader,
-                                String signature,
-                                String rawBody) {
-        validateCallbackAuth(basicAuthHeader);
-        verifyOptionalSignature(signature, rawBody);
+    private BnplInitResponse handleSubmitFailure(Payment payment, Long userId, BnplPaymentException e) {
+        String detail = e.getBankDetail() != null ? e.getBankDetail() : e.getMessage();
 
-        if (callbackId != null && !callbackId.isBlank()) {
-            String dedupeKey = "bnpl:callback:" + callbackId;
-            Boolean first = redisTemplate.opsForValue()
-                    .setIfAbsent(dedupeKey, "1", Duration.ofDays(7));
-            if (Boolean.FALSE.equals(first)) {
-                log.info("[BNPL][Callback] Duplicate callbackId={} ignored", callbackId);
-                return;
-            }
+        if (BnplContractRules.isDuplicateSubmit(detail)) {
+            log.warn("[BNPL] Duplicate submit reference={} detail={}", payment.getTransactionId(), detail);
+            paymentStore.markSubmitUnknown(payment.getId(),
+                    "ABB-də aktiv BNPL sorğusu mövcuddur",
+                    "BNPL_ORDER_ALREADY_EXISTS",
+                    detail);
+
+            Optional<Payment> existing = paymentStore.findRecentUnfinished(userId, 24).stream()
+                    .filter(candidate -> !candidate.getId().equals(payment.getId()))
+                    .findFirst();
+            BnplInitResponse response = BnplInitResponse.builder()
+                    .status("error")
+                    .errorCode("BNPL_ORDER_ALREADY_EXISTS")
+                    .errorMessage("Hazırda aktiv BNPL sorğunuz mövcuddur. Statusu yenidən yoxlayın.")
+                    .message("Hazırda aktiv BNPL sorğunuz mövcuddur. Statusu yenidən yoxlayın.")
+                    .retryable(true)
+                    .existingOrder(existing.isPresent())
+                    .reference(existing.map(Payment::getTransactionId).orElse(null))
+                    .abbOrderId(existing.map(Payment::getOrderId).orElse(null))
+                    .allowedTerms(getSupportedTerms())
+                    .build();
+            return response;
+        }
+
+        if (BnplContractRules.isAmbiguousSubmitFailure(e.getErrorCode(), detail)) {
+            log.warn("[BNPL] Ambiguous submit reference={} code={} detail={}",
+                    payment.getTransactionId(), e.getErrorCode(), detail);
+            paymentStore.markSubmitUnknown(payment.getId(),
+                    "Sifarişin nəticəsi dəqiqləşməyib", e.getErrorCode(), detail);
+            return submitUnknownResponse(paymentStore.findById(payment.getId()).orElse(payment));
+        }
+
+        log.warn("[BNPL] Definitive submit rejection reference={} code={} detail={}",
+                payment.getTransactionId(), e.getErrorCode(), detail);
+        paymentStore.markRejected(payment.getId(), e.getMessage(), e.getErrorCode(), detail);
+        throw e;
+    }
+
+    private BnplInitResponse submitUnknownResponse(Payment payment) {
+        return BnplInitResponse.builder()
+                .status("pending")
+                .reference(payment.getTransactionId())
+                .abbOrderId(payment.getOrderId())
+                .abbStatus(payment.getCode())
+                .message("Sifarişin nəticəsi hələ dəqiqləşməyib. Statusu yenidən yoxlayın.")
+                .amount(payment.getAmount())
+                .currency(payment.getCurrency())
+                .term(paymentStore.readTerm(payment))
+                .retryable(true)
+                .existingOrder(true)
+                .allowedTerms(getSupportedTerms())
+                .build();
+    }
+
+    private BnplInitResponse toRecoveredInitResponse(Payment payment) {
+        BnplOrderStatus status = BnplOrderStatus.from(payment.getCode());
+        return BnplInitResponse.builder()
+                .status(BnplPaymentStore.STATUS_SUBMIT_UNKNOWN.equals(payment.getStatus())
+                        ? "pending" : "success")
+                .reference(payment.getTransactionId())
+                .abbOrderId(payment.getOrderId())
+                .abbStatus(status != null ? status.name() : payment.getCode())
+                .message(status != null ? status.toUserMessageAz() : payment.getMessage())
+                .amount(payment.getAmount())
+                .currency(payment.getCurrency())
+                .term(paymentStore.readTerm(payment))
+                .retryable(status != null && !status.isTerminal())
+                .existingOrder(true)
+                .allowedTerms(getSupportedTerms())
+                .build();
+    }
+
+    // ================================================================= CALLBACK
+
+    /**
+     * ABB callback — must answer within 5 s (ABB retries twice and then gives up).
+     * The event is persisted before processing so nothing is lost when the order is
+     * still unknown locally.
+     */
+    public void processCallback(BnplCallbackPayload payload,
+                                CallbackHeaders headers,
+                                byte[] rawBody) {
+        boolean signatureValid = verifyCallbackAuth(headers, rawBody);
+
+        String callbackId = headers != null ? headers.callbackId() : null;
+        String raw = rawBody != null ? new String(rawBody, StandardCharsets.UTF_8) : null;
+
+        if (isDuplicateCallback(callbackId)) {
+            log.info("[BNPL][Callback] Duplicate callbackId={} ignored", callbackId);
+            return;
         }
 
         if (payload == null || payload.getOrderId() == null) {
-            throw new BnplPaymentException("BNPL_CALLBACK_INVALID", "Callback orderId məcburidir");
+            // Still record it: an orderId-less callback is a support case, not a 400 storm.
+            paymentStore.recordCallbackEvent(callbackId, null, payload != null ? payload.getReference() : null,
+                    payload != null ? payload.getStatus() : null, raw, signatureValid, "INVALID:no-order-id");
+            log.warn("[BNPL][Callback] Callback without orderId callbackId={}", callbackId);
+            return;
         }
 
-        Payment payment = paymentStore.findByAbbOrderId(String.valueOf(payload.getOrderId()))
-                .orElseThrow(() -> new BnplPaymentException("BNPL_ORDER_NOT_FOUND",
-                        "Lokal BNPL sifarişi tapılmadı: " + payload.getOrderId()));
+        AbbBnplCallbackEvent event = paymentStore.recordCallbackEvent(
+                callbackId,
+                payload.getOrderId(),
+                payload.getReference(),
+                payload.getStatus(),
+                raw,
+                signatureValid,
+                "RECEIVED");
 
-        BnplOrderStatus previous = BnplOrderStatus.from(payment.getCode());
+        Optional<Payment> found = paymentStore.findByAbbOrderId(String.valueOf(payload.getOrderId()));
+        if (found.isEmpty() && payload.getReference() != null && !payload.getReference().isBlank()) {
+            found = paymentStore.findByReference(payload.getReference());
+        }
+        if (found.isEmpty()) {
+            // Answer 200 and let the reconciliation job apply it later.
+            log.warn("[BNPL][Callback] Order not found locally orderId={} reference={} — stored for reconciliation",
+                    payload.getOrderId(), payload.getReference());
+            return;
+        }
+
+        try {
+            String result = applyCallback(found.get(), payload, raw);
+            paymentStore.markCallbackEventProcessed(event, "APPLIED:" + result);
+        } catch (Exception e) {
+            log.error("[BNPL][Callback] Failed to apply orderId={}", payload.getOrderId(), e);
+            paymentStore.markCallbackEventProcessed(event, "ERROR:" + e.getMessage());
+            throw e;
+        }
+    }
+
+    private String applyCallback(Payment payment, BnplCallbackPayload payload, String raw) {
         BnplOrderStatus next = BnplOrderStatus.from(payload.getStatus());
         if (next == null) {
             log.warn("[BNPL][Callback] Unknown status={} orderId={}", payload.getStatus(), payload.getOrderId());
-            return;
+            return "UNKNOWN_STATUS";
         }
 
-        // Do not regress from SUCCESS/REVERSED on out-of-order callbacks
-        if (previous != null && previous.isTerminal() && previous != next
-                && previous.isSuccess() && next != BnplOrderStatus.REVERSED
-                && next != BnplOrderStatus.CLOSED) {
-            log.warn("[BNPL][Callback] Ignoring status regression {} → {} orderId={}",
-                    previous, next, payload.getOrderId());
-            return;
+        var update = paymentStore.applyStatus(payment.getId(), next, raw);
+
+        // ABB may include partial reversal info directly in the callback. Applied even when
+        // the status itself did not change, so a COMPLETED→COMPLETED callback is not lost.
+        if (next == BnplOrderStatus.COMPLETED && payload.getPartialReverseCount() != null
+                && payload.getPartialReverseCount() > 0) {
+            applyPartialReversalMeta(update.payment(), payload.getPartialReverseCount(),
+                    payload.getPartialReverseAmount(), raw);
         }
 
-        boolean alreadyCompleted = "SUCCESS".equals(payment.getStatus());
-        boolean alreadyFailed = "FAILED".equals(payment.getStatus());
-        paymentStore.applyAbbStatus(payment, next, payload.getPartialReverseCount(), rawBody);
+        if (!update.changed()) {
+            log.info("[BNPL][Callback] No-op transition orderId={} status={}", payload.getOrderId(), next);
+            return "NOOP:" + next;
+        }
 
-        if (next.isSuccess() && !alreadyCompleted) {
-            paymentSubscriptionService.assignFromPaymentDescription(payment, false);
+        String previousPaymentStatus = update.previousPaymentStatus();
+
+        if (next == BnplOrderStatus.COMPLETED && !BnplPaymentStore.STATUS_SUCCESS.equalsIgnoreCase(previousPaymentStatus)) {
+            paymentSubscriptionService.assignFromPaymentDescription(update.payment(), false);
             log.info("[BNPL][Callback] COMPLETED → subscription assigned orderId={}", payload.getOrderId());
-        } else if (next.isTerminal() && !next.isSuccess() && "FAILED".equals(payment.getStatus()) && !alreadyFailed) {
-            paymentSubscriptionService.onPaymentFailed(payment);
+        } else if (next == BnplOrderStatus.REVERSED) {
+            paymentSubscriptionService.onPaymentReversed(update.payment());
+            log.info("[BNPL][Callback] REVERSED → refund processed orderId={}", payload.getOrderId());
+        } else if (BnplPaymentStore.STATUS_FAILED.equalsIgnoreCase(update.payment().getStatus())
+                && !BnplPaymentStore.STATUS_FAILED.equalsIgnoreCase(previousPaymentStatus)) {
+            paymentSubscriptionService.onPaymentFailed(update.payment());
         }
 
-        log.info("[BNPL][Callback] Processed orderId={} status={} partialReverseCount={}",
-                payload.getOrderId(), next, payload.getPartialReverseCount());
+        log.info("[BNPL][Callback] Processed orderId={} status={} previousPaymentStatus={}",
+                payload.getOrderId(), next, previousPaymentStatus);
+        return next.name();
     }
 
-    @Transactional
+    /**
+     * Callback auth: HMAC-SHA256 over the raw body is the contract. Basic Auth is kept as
+     * a compatibility path for environments where ABB sends it instead.
+     */
+    private boolean verifyCallbackAuth(CallbackHeaders headers, byte[] rawBody) {
+        String signature = headers != null ? headers.signature() : null;
+        String authorization = headers != null ? headers.authorization() : null;
+        String timestamp = headers != null ? headers.timestamp() : null;
+
+        String secret = properties.getCallbackHmacSecret();
+        String expectedUser = properties.getCallbackUsername();
+        String expectedPass = properties.getCallbackPassword();
+
+        boolean hmacConfigured = !isBlank(secret);
+        boolean basicConfigured = !isBlank(expectedUser) && !isBlank(expectedPass);
+
+        boolean signatureValid = hmacConfigured
+                && BnplContractRules.isValidSignature(secret, rawBody, signature);
+        boolean basicValid = basicConfigured
+                && BnplContractRules.isValidBasicAuth(authorization, expectedUser, expectedPass);
+
+        if (basicValid && !signatureValid && hmacConfigured) {
+            log.warn("[BNPL][Callback] Accepted via Basic Auth — HMAC signature missing/invalid");
+        }
+
+        if (!signatureValid && !basicValid) {
+            if (properties.isCallbackRequireSignature() || hmacConfigured || basicConfigured) {
+                log.warn("[BNPL][Callback] Rejected — signatureValid={} basicValid={} hmacConfigured={} basicConfigured={}",
+                        signatureValid, basicValid, hmacConfigured, basicConfigured);
+                throw new BnplPaymentException("BNPL_CALLBACK_UNAUTHORIZED",
+                        "Callback doğrulaması uğursuz", HttpStatus.UNAUTHORIZED, false, null);
+            }
+            log.warn("[BNPL][Callback] No callback auth configured — accepting unsigned callback (non-prod only)");
+        }
+
+        if (!isBlank(timestamp)) {
+            Instant parsed = BnplContractRules.parseTimestamp(timestamp);
+            if (parsed == null || !BnplContractRules.isFresh(parsed, properties.getCallbackTimestampToleranceSeconds())) {
+                log.warn("[BNPL][Callback] Stale/invalid X-ABB-Timestamp={}", timestamp);
+                throw new BnplPaymentException("BNPL_CALLBACK_SIGNATURE",
+                        "Callback timestamp etibarsızdır", HttpStatus.UNAUTHORIZED, false, null);
+            }
+        } else if (properties.isCallbackRequireTimestamp()) {
+            log.warn("[BNPL][Callback] Missing X-ABB-Timestamp (required)");
+            throw new BnplPaymentException("BNPL_CALLBACK_SIGNATURE",
+                    "X-ABB-Timestamp tələb olunur", HttpStatus.UNAUTHORIZED, false, null);
+        }
+
+        return signatureValid;
+    }
+
+    private boolean isDuplicateCallback(String callbackId) {
+        if (callbackId == null || callbackId.isBlank()) {
+            return false;
+        }
+        try {
+            Boolean first = redisTemplate.opsForValue()
+                    .setIfAbsent(CALLBACK_DEDUPE_PREFIX + callbackId, "1", Duration.ofDays(7));
+            return Boolean.FALSE.equals(first);
+        } catch (Exception e) {
+            log.warn("[BNPL][Callback] Redis dedupe unavailable: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    // =================================================================== STATUS
+
     public BnplStatusResponse refreshStatus(String referenceOrAbbOrderId) {
         checkMaintenance();
         Payment payment = findPayment(referenceOrAbbOrderId)
@@ -218,35 +431,41 @@ public class BnplIntegrationService {
         if (local != null && local.isTerminal()) {
             return toStatusResponse(payment, local);
         }
-
         if (payment.getOrderId() == null) {
             return toStatusResponse(payment, local);
         }
 
         try {
-            long abbOrderId = Long.parseLong(payment.getOrderId());
+            long abbOrderId = abbOrderIdOf(payment);
             BnplAbbOrderDetail detail = restClient.getOrder(abbOrderId);
             BnplOrderStatus remote = BnplOrderStatus.from(detail.getStatus());
             if (remote != null) {
-                boolean alreadyCompleted = "SUCCESS".equals(payment.getStatus());
-                boolean alreadyFailed = "FAILED".equals(payment.getStatus());
-                paymentStore.applyAbbStatus(payment, remote, null, writeSafe(detail));
-                if (remote.isSuccess() && !alreadyCompleted) {
-                    paymentSubscriptionService.assignFromPaymentDescription(payment, false);
-                } else if (remote.isTerminal() && !remote.isSuccess()
-                        && "FAILED".equals(payment.getStatus()) && !alreadyFailed) {
-                    paymentSubscriptionService.onPaymentFailed(payment);
+                var update = paymentStore.applyStatus(payment.getId(), remote, writeSafe(detail));
+                if (update.changed()) {
+                    if (remote == BnplOrderStatus.COMPLETED
+                            && !BnplPaymentStore.STATUS_SUCCESS.equalsIgnoreCase(update.previousPaymentStatus())) {
+                        paymentSubscriptionService.assignFromPaymentDescription(update.payment(), false);
+                    } else if (remote == BnplOrderStatus.REVERSED) {
+                        paymentSubscriptionService.onPaymentReversed(update.payment());
+                    } else if (BnplPaymentStore.STATUS_FAILED.equalsIgnoreCase(update.payment().getStatus())
+                            && !BnplPaymentStore.STATUS_FAILED.equalsIgnoreCase(update.previousPaymentStatus())) {
+                        paymentSubscriptionService.onPaymentFailed(update.payment());
+                    }
                 }
-                local = remote;
+                // Report the persisted status, not the raw remote one: a regressive
+                // response must not make the client think COMPLETED went back to INIT.
+                payment = update.payment();
+                local = BnplOrderStatus.from(payment.getCode());
             }
         } catch (BnplPaymentException e) {
             log.warn("[BNPL][Status] Fallback poll failed for {}: {}", referenceOrAbbOrderId, e.getMessage());
+            payment = paymentStore.findById(payment.getId()).orElse(payment);
+            local = BnplOrderStatus.from(payment.getCode());
         }
 
         return toStatusResponse(payment, local);
     }
 
-    @Transactional(readOnly = true)
     public BnplStatusResponse getLocalStatus(String referenceOrAbbOrderId) {
         Payment payment = findPayment(referenceOrAbbOrderId)
                 .orElseThrow(() -> new BnplPaymentException("BNPL_ORDER_NOT_FOUND",
@@ -254,93 +473,295 @@ public class BnplIntegrationService {
         return toStatusResponse(payment, BnplOrderStatus.from(payment.getCode()));
     }
 
-    @Transactional
+    // ================================================================== REVERSE
+
     public void fullReverse(String referenceOrAbbOrderId) {
         checkMaintenance();
         Payment payment = findPayment(referenceOrAbbOrderId)
                 .orElseThrow(() -> new BnplPaymentException("BNPL_ORDER_NOT_FOUND",
                         "BNPL sifarişi tapılmadı"));
-        if (!"SUCCESS".equals(payment.getStatus())
-                && BnplOrderStatus.from(payment.getCode()) != BnplOrderStatus.COMPLETED) {
-            throw new BnplPaymentException("BNPL_INVALID_STATUS",
-                    "Yalnız tamamlanmış BNPL sifarişi geri qaytarıla bilər");
+
+        requireReversibleStatus(payment);
+        BigDecimal alreadyReversed = paymentStore.readReversedAmount(payment);
+        if (paymentStore.readPartialReverseCount(payment) > 0
+                || alreadyReversed.compareTo(BigDecimal.ZERO) > 0) {
+            // ABB: after the first partial reverse only further partials are allowed.
+            throw new BnplPaymentException("BNPL_PARTIAL_ALREADY_DONE",
+                    "Qismən geri qaytarma edildikdən sonra tam reverse mümkün deyil. "
+                            + "Qalan məbləği partial reverse ilə qaytarın.",
+                    HttpStatus.BAD_REQUEST, false, null);
         }
-        long abbOrderId = Long.parseLong(payment.getOrderId());
-        restClient.fullReverse(abbOrderId);
-        paymentStore.applyAbbStatus(payment, BnplOrderStatus.REVERSED, null, "full-reverse");
+        requireReverseWindow(payment);
+
+        BigDecimal fullAmount = totalAmountOf(payment);
+        long abbOrderId = abbOrderIdOf(payment);
+        withReverseLock(payment.getId(), () -> {
+            restClient.fullReverse(abbOrderId);
+            Payment reversed = paymentStore.recordReversal(payment.getId(), fullAmount, "full-reverse");
+            paymentSubscriptionService.onPaymentReversed(reversed);
+        });
         log.info("[BNPL] Full reverse done abbOrderId={}", abbOrderId);
     }
 
-    @Transactional
     public void partialReverse(String referenceOrAbbOrderId, double amount) {
         checkMaintenance();
-        if (amount < 1) {
+        BigDecimal requested = BigDecimal.valueOf(amount).setScale(2, RoundingMode.HALF_UP);
+        if (requested.compareTo(BigDecimal.ONE) < 0) {
             throw new BnplPaymentException("BNPL_INVALID_AMOUNT", "Partial reverse minimum 1 AZN olmalıdır");
         }
+
         Payment payment = findPayment(referenceOrAbbOrderId)
                 .orElseThrow(() -> new BnplPaymentException("BNPL_ORDER_NOT_FOUND",
                         "BNPL sifarişi tapılmadı"));
-        long abbOrderId = Long.parseLong(payment.getOrderId());
-        restClient.partialReverse(abbOrderId, amount);
-        Integer count = paymentStore.readPartialReverseCount(payment);
-        paymentStore.applyAbbStatus(payment, BnplOrderStatus.REVERSED, count + 1,
-                "partial-reverse:" + amount);
-        log.info("[BNPL] Partial reverse done abbOrderId={} amount={}", abbOrderId, amount);
+        requireReversibleStatus(payment);
+        requireReverseWindow(payment);
+
+        long abbOrderId = abbOrderIdOf(payment);
+        withReverseLock(payment.getId(), () -> {
+            Payment fresh = paymentStore.findById(payment.getId()).orElse(payment);
+            BigDecimal total = totalAmountOf(fresh);
+            BigDecimal already = paymentStore.readReversedAmount(fresh)
+                    .setScale(2, RoundingMode.HALF_UP);
+            BnplContractRules.ReverseOutcome outcome =
+                    BnplContractRules.reverseOutcome(total, already, requested);
+            if (outcome == BnplContractRules.ReverseOutcome.EXCEEDS) {
+                throw new BnplPaymentException("BNPL_INVALID_AMOUNT",
+                        "Geri qaytarılan məbləğ sifariş məbləğindən çox ola bilməz. Qalan: "
+                                + total.subtract(already) + " AZN");
+            }
+
+            restClient.partialReverse(abbOrderId, requested.doubleValue());
+
+            BigDecimal cumulative = already.add(requested);
+            int count = paymentStore.readPartialReverseCount(fresh) + 1;
+
+            if (outcome == BnplContractRules.ReverseOutcome.COMPLETE) {
+                Payment reversed = paymentStore.recordReversal(
+                        payment.getId(), cumulative, "partial-reverse:" + requested + " (full)");
+                paymentSubscriptionService.onPaymentReversed(reversed);
+                log.info("[BNPL] Partial reverse completed the full amount abbOrderId={} total={}",
+                        abbOrderId, cumulative);
+            } else {
+                paymentStore.recordPartialReversal(payment.getId(), count, cumulative,
+                        "partial-reverse:" + requested);
+                log.info("[BNPL] Partial reverse done abbOrderId={} amount={} cumulative={}/{}",
+                        abbOrderId, requested, cumulative, total);
+            }
+        });
     }
 
-    @Transactional(readOnly = true)
-    public List<Integer> getSupportedTerms() {
-        List<Integer> configured = properties.getActiveTerms();
-        if (configured == null || configured.isEmpty()) {
-            return List.copyOf(ALLOWED_TERMS);
+    private long abbOrderIdOf(Payment payment) {
+        String raw = payment.getOrderId();
+        if (raw == null || raw.isBlank()) {
+            throw new BnplPaymentException("BNPL_INVALID_STATUS", "ABB sifariş ID-si yoxdur");
         }
-        return configured.stream().filter(ALLOWED_TERMS::contains).toList();
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            throw new BnplPaymentException("BNPL_INVALID_STATUS",
+                    "ABB sifariş ID-si düzgün formatda deyil: " + raw);
+        }
+    }
+
+    private BigDecimal totalAmountOf(Payment payment) {
+        if (payment.getAmount() == null || payment.getAmount() <= 0) {
+            throw new BnplPaymentException("BNPL_INVALID_STATUS", "Sifariş məbləği məlum deyil");
+        }
+        return BigDecimal.valueOf(payment.getAmount()).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private void requireReversibleStatus(Payment payment) {
+        BnplOrderStatus status = BnplOrderStatus.from(payment.getCode());
+        boolean completed = status == BnplOrderStatus.COMPLETED
+                || BnplPaymentStore.STATUS_SUCCESS.equalsIgnoreCase(payment.getStatus());
+        if (!completed) {
+            throw new BnplPaymentException("BNPL_INVALID_STATUS",
+                    "Yalnız tamamlanmış BNPL sifarişi geri qaytarıla bilər");
+        }
+        if (status == BnplOrderStatus.REVERSED) {
+            throw new BnplPaymentException("BNPL_INVALID_STATUS", "Sifariş artıq geri qaytarılıb");
+        }
+        if (payment.getOrderId() == null) {
+            throw new BnplPaymentException("BNPL_INVALID_STATUS", "ABB sifariş ID-si yoxdur");
+        }
+    }
+
+    private void requireReverseWindow(Payment payment) {
+        LocalDateTime createdAt = payment.getCreatedDate();
+        if (!BnplContractRules.isWithinReverseWindow(createdAt, properties.getReverseWindowDays())) {
+            throw new BnplPaymentException("BNPL_REVERSE_WINDOW_EXPIRED",
+                    "Reverse yalnız sorğu tarixindən " + properties.getReverseWindowDays()
+                            + " gün ərzində mümkündür");
+        }
+    }
+
+    private void withReverseLock(Long paymentId, Runnable action) {
+        String key = REVERSE_LOCK_PREFIX + paymentId;
+        boolean locked;
+        try {
+            locked = Boolean.TRUE.equals(redisTemplate.opsForValue()
+                    .setIfAbsent(key, "1", Duration.ofSeconds(30)));
+        } catch (Exception e) {
+            // Redis unavailable — fall back to the row-level lock inside the store.
+            log.warn("[BNPL] Reverse lock unavailable ({}), continuing with DB checks", e.getMessage());
+            action.run();
+            return;
+        }
+        if (!locked) {
+            throw new BnplPaymentException("BNPL_REVERSE_IN_PROGRESS",
+                    "Bu sifariş üzrə reverse əməliyyatı davam edir");
+        }
+        try {
+            action.run();
+        } finally {
+            try {
+                redisTemplate.delete(key);
+            } catch (Exception ignored) {
+                // TTL cleans it up.
+            }
+        }
+    }
+
+    private void applyPartialReversalMeta(Payment payment, int count, Double amount, String raw) {
+        BigDecimal already = paymentStore.readReversedAmount(payment);
+        BigDecimal cumulative = already.add(amount != null
+                ? BigDecimal.valueOf(amount)
+                : BigDecimal.ZERO);
+        paymentStore.recordPartialReversal(payment.getId(), count, cumulative,
+                raw != null ? raw : "callback-partial");
+    }
+
+    // ==================================================================== TERMS
+
+    public List<Integer> getSupportedTerms() {
+        return new ArrayList<>(properties.getActiveTerms());
+    }
+
+    public List<BnplTermOption> getTermOptions() {
+        List<BnplTermOption> options = new ArrayList<>();
+        for (Integer term : properties.getActiveTerms()) {
+            String label = properties.getTermLabels() != null
+                    ? properties.getTermLabels().get(term)
+                    : null;
+            if (label == null || label.isBlank()) {
+                label = term + " ay";
+            }
+            options.add(BnplTermOption.builder().value(term).label(label).build());
+        }
+        return options;
+    }
+
+    // ================================================================= RECONCILE
+
+    /**
+     * Local expiry + status reconciliation. ABB expires INIT orders ~15-20 min after
+     * creation (5-minute job, 15-minute threshold); relying on the mobile client to poll
+     * left the local row {@code PENDING_USER_ACTION} forever.
+     */
+    public void reconcileStaleOrders() {
+        if (!properties.isReconcileEnabled()) {
+            return;
+        }
+        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(properties.getInitExpiryMinutes());
+        List<Payment> stale = paymentStore.findStale(
+                List.of(BnplPaymentStore.STATUS_PENDING, BnplPaymentStore.STATUS_SUBMIT_UNKNOWN),
+                cutoff);
+
+        for (Payment payment : stale) {
+            try {
+                reconcileOne(payment);
+            } catch (Exception e) {
+                log.warn("[BNPL][Reconcile] Skipped paymentId={}: {}", payment.getId(), e.getMessage());
+            }
+        }
+    }
+
+    private void reconcileOne(Payment payment) {
+        if (payment.getOrderId() == null) {
+            LocalDateTime created = payment.getCreatedDate();
+            boolean expired = created != null
+                    && created.isBefore(LocalDateTime.now().minusHours(properties.getSubmitUnknownExpiryHours()));
+            if (expired) {
+                log.warn("[BNPL][Reconcile] Closing unconfirmed submit paymentId={} reference={}",
+                        payment.getId(), payment.getTransactionId());
+                paymentStore.markRejected(payment.getId(),
+                        "Sifarişin nəticəsi təsdiqlənmədi",
+                        "BNPL_SUBMIT_UNKNOWN_EXPIRED",
+                        "no-order-id");
+            }
+            return;
+        }
+
+        long abbOrderId = abbOrderIdOf(payment);
+        BnplAbbOrderDetail detail = restClient.getOrder(abbOrderId);
+        BnplOrderStatus remote = BnplOrderStatus.from(detail.getStatus());
+        if (remote == null) {
+            return;
+        }
+        var update = paymentStore.applyStatus(payment.getId(), remote, writeSafe(detail));
+        if (!update.changed()) {
+            return;
+        }
+        if (remote == BnplOrderStatus.COMPLETED
+                && !BnplPaymentStore.STATUS_SUCCESS.equalsIgnoreCase(update.previousPaymentStatus())) {
+            paymentSubscriptionService.assignFromPaymentDescription(update.payment(), false);
+        } else if (remote == BnplOrderStatus.REVERSED) {
+            paymentSubscriptionService.onPaymentReversed(update.payment());
+        } else if (BnplPaymentStore.STATUS_FAILED.equalsIgnoreCase(update.payment().getStatus())
+                && !BnplPaymentStore.STATUS_FAILED.equalsIgnoreCase(update.previousPaymentStatus())) {
+            paymentSubscriptionService.onPaymentFailed(update.payment());
+        }
+        log.info("[BNPL][Reconcile] {} → {} reference={}", payment.getCode(), remote, payment.getTransactionId());
+    }
+
+    /** Retries callbacks that arrived before the local order existed. */
+    public void retryOrphanCallbacks() {
+        if (!properties.isReconcileEnabled()) {
+            return;
+        }
+        for (AbbBnplCallbackEvent event : paymentStore.findUnprocessedCallbacks()) {
+            if (event.getPayload() == null || event.getAbbOrderId() == null) {
+                continue;
+            }
+            Optional<Payment> payment = paymentStore.findByAbbOrderId(event.getAbbOrderId());
+            if (payment.isEmpty() && event.getReference() != null) {
+                payment = paymentStore.findByReference(event.getReference());
+            }
+            if (payment.isEmpty()) {
+                continue;
+            }
+            try {
+                BnplCallbackPayload payload = objectMapper.readValue(event.getPayload(), BnplCallbackPayload.class);
+                applyCallback(payment.get(), payload, event.getPayload());
+                paymentStore.markCallbackEventProcessed(event, "APPLIED:reconciled");
+            } catch (Exception e) {
+                log.warn("[BNPL][Reconcile] Orphan callback retry failed eventId={}: {}",
+                        event.getId(), e.getMessage());
+            }
+        }
+    }
+
+    // ================================================================== HELPERS
+
+    private void checkMaintenance() {
+        if (properties.isMaintenanceMode()) {
+            throw new BnplMaintenanceException(
+                    "Hazırda ABB BNPL ödəniş sistemində texniki işlər aparılır. Xidmət tezliklə istifadəyə veriləcək");
+        }
     }
 
     private void validateInitRequest(BnplInitRequest request) {
         if (request.getFin() == null || request.getFin().isBlank() || request.getFin().trim().length() > 7) {
             throw new BnplPaymentException("BNPL_INVALID_FIN", "FIN maksimum 7 simvol olmalıdır");
         }
-        if (request.getTerm() == null || !ALLOWED_TERMS.contains(request.getTerm())) {
+        if (!BnplContractRules.isConfiguredTerm(request.getTerm(), properties.getActiveTerms())) {
             throw new BnplPaymentException("BNPL_INVALID_TERM",
-                    "Dəstəklənməyən kredit müddəti. İcazə verilənlər: " + ALLOWED_TERMS);
+                    "Dəstəklənməyən kredit müddəti. İcazə verilənlər: " + getSupportedTerms());
         }
         if (request.getPhone() == null || request.getPhone().isBlank()) {
             throw new BnplPaymentException("BNPL_INVALID_PHONE", "Telefon nömrəsi məcburidir");
         }
-    }
-
-    /**
-     * Doc sample uses "3 ay"; enum values are numeric. We send "{n} ay" for month terms
-     * and numeric string for special codes 1 / 4 until ABB clarifies the exact format.
-     */
-    private String formatTerm(Integer term) {
-        if (term == null) {
-            return null;
-        }
-        if (term == 1 || term == 4) {
-            return String.valueOf(term);
-        }
-        return term + " ay";
-    }
-
-    /**
-     * ABB expects the international format, e.g. {@code +994451394578}.
-     * Accepts +994XXXXXXXXX, 994XXXXXXXXX, 0XXXXXXXXX and XXXXXXXXX.
-     */
-    static String normalizePhone(String phone) {
-        String digits = phone.replaceAll("[^0-9]", "");
-        if (digits.startsWith("994") && digits.length() == 12) {
-            return "+" + digits;
-        }
-        if (digits.startsWith("0") && digits.length() == 10) {
-            return "+994" + digits.substring(1);
-        }
-        if (digits.length() == 9) {
-            return "+994" + digits;
-        }
-        // Unknown shape — send as-is and let ABB validate.
-        return phone.trim();
+        BnplContractRules.normalizePhone(request.getPhone());
     }
 
     private String resolveProductName(Long packageId, Long optionId) {
@@ -378,6 +799,17 @@ public class BnplIntegrationService {
                 ? abbStatus
                 : BnplOrderStatus.from(payment.getCode());
         String message = status != null ? status.toUserMessageAz() : payment.getMessage();
+
+        BigDecimal total = BigDecimal.valueOf(payment.getAmount() != null ? payment.getAmount() : 0d)
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal reversed = paymentStore.readReversedAmount(payment).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal remaining = total.subtract(reversed).max(BigDecimal.ZERO);
+        int partialCount = paymentStore.readPartialReverseCount(payment);
+
+        boolean completed = status == BnplOrderStatus.COMPLETED
+                || BnplPaymentStore.STATUS_SUCCESS.equalsIgnoreCase(payment.getStatus());
+        boolean submitUnknown = BnplPaymentStore.STATUS_SUBMIT_UNKNOWN.equals(payment.getStatus());
+
         return BnplStatusResponse.builder()
                 .reference(payment.getTransactionId())
                 .abbOrderId(payment.getOrderId())
@@ -389,69 +821,14 @@ public class BnplIntegrationService {
                 .amount(payment.getAmount())
                 .currency(payment.getCurrency())
                 .term(paymentStore.readTerm(payment))
-                .partialReverseCount(paymentStore.readPartialReverseCount(payment))
+                .partialReverseCount(partialCount)
+                .reversedAmount(reversed.doubleValue())
+                .reversableAmount(remaining.doubleValue())
+                .fullReverseAllowed(completed && partialCount == 0 && reversed.signum() == 0)
+                .partialReverseAllowed(completed && remaining.signum() > 0)
+                .retryable(submitUnknown || (status != null && !status.isTerminal()))
+                .submitUnknown(submitUnknown)
                 .build();
-    }
-
-    private void validateCallbackAuth(String authorizationHeader) {
-        String expectedUser = properties.getCallbackUsername();
-        String expectedPass = properties.getCallbackPassword();
-        if (isBlank(expectedUser) || isBlank(expectedPass)) {
-            log.warn("[BNPL][Callback] Callback credentials not configured — rejecting");
-            throw new BnplPaymentException("BNPL_CALLBACK_UNAUTHORIZED", "Callback credentials konfiqurasiya olunmayıb");
-        }
-        if (authorizationHeader == null || !authorizationHeader.regionMatches(true, 0, "Basic ", 0, 6)) {
-            throw new BnplPaymentException("BNPL_CALLBACK_UNAUTHORIZED", "Basic Auth tələb olunur");
-        }
-        try {
-            String decoded = new String(Base64.getDecoder().decode(authorizationHeader.substring(6).trim()),
-                    StandardCharsets.UTF_8);
-            int idx = decoded.indexOf(':');
-            if (idx < 0) {
-                throw new BnplPaymentException("BNPL_CALLBACK_UNAUTHORIZED", "Etibarsız Basic Auth");
-            }
-            String user = decoded.substring(0, idx);
-            String pass = decoded.substring(idx + 1);
-            if (!MessageDigest.isEqual(user.getBytes(StandardCharsets.UTF_8), expectedUser.getBytes(StandardCharsets.UTF_8))
-                    || !MessageDigest.isEqual(pass.getBytes(StandardCharsets.UTF_8), expectedPass.getBytes(StandardCharsets.UTF_8))) {
-                throw new BnplPaymentException("BNPL_CALLBACK_UNAUTHORIZED", "Basic Auth uğursuz");
-            }
-        } catch (BnplPaymentException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new BnplPaymentException("BNPL_CALLBACK_UNAUTHORIZED", "Basic Auth parse xətası");
-        }
-    }
-
-    /**
-     * X-Signature HMAC verification when abb-bnpl.callback-hmac-secret is set.
-     * Canonical string pending ABB clarification — currently HMAC-SHA256(rawBody).
-     */
-    private void verifyOptionalSignature(String signatureHeader, String rawBody) {
-        String secret = properties.getCallbackHmacSecret();
-        if (isBlank(secret)) {
-            return;
-        }
-        if (isBlank(signatureHeader) || isBlank(rawBody)) {
-            throw new BnplPaymentException("BNPL_CALLBACK_SIGNATURE", "X-Signature yoxdur");
-        }
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            String expected = HexFormat.of().formatHex(mac.doFinal(rawBody.getBytes(StandardCharsets.UTF_8)));
-            String provided = signatureHeader.trim();
-            if (provided.startsWith("sha256=")) {
-                provided = provided.substring(7);
-            }
-            if (!MessageDigest.isEqual(expected.getBytes(StandardCharsets.US_ASCII),
-                    provided.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.US_ASCII))) {
-                throw new BnplPaymentException("BNPL_CALLBACK_SIGNATURE", "X-Signature doğrulaması uğursuz");
-            }
-        } catch (BnplPaymentException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new BnplPaymentException("BNPL_CALLBACK_SIGNATURE", "X-Signature yoxlanıla bilmədi");
-        }
     }
 
     private String writeSafe(Object value) {
@@ -460,6 +837,10 @@ public class BnplIntegrationService {
         } catch (Exception e) {
             return String.valueOf(value);
         }
+    }
+
+    private static String formatAmount(double value) {
+        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
     }
 
     private static boolean isBlank(String value) {
