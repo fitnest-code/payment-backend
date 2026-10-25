@@ -122,7 +122,7 @@ public class BnplPaymentController {
 
     @Operation(summary = "Dəstəklənən BNPL kredit müddətləri (rəqəm)",
             description = "ABB `term` sahəsini rəqəm kimi gözləyir. Bu siyahı konfiqurasiyadan gəlir.")
-    @GetMapping("/payment/abb/bnpl/terms")
+    @GetMapping({"/payment/abb/bnpl/terms", "/api/v2/payment/abb/bnpl/terms"})
     public ResponseEntity<List<Integer>> getTerms() {
         checkMaintenance("/terms");
         return ResponseEntity.ok(bnplIntegrationService.getSupportedTerms());
@@ -130,14 +130,14 @@ public class BnplPaymentController {
 
     @Operation(summary = "Dəstəklənən BNPL müddətləri (rəqəm + etiket)",
             description = "Etiket yalnız göstərmək üçündür; ABB-yə həmişə `value` göndərilir.")
-    @GetMapping("/payment/abb/bnpl/terms/detail")
+    @GetMapping({"/payment/abb/bnpl/terms/detail", "/api/v2/payment/abb/bnpl/terms/detail"})
     public ResponseEntity<List<BnplTermOption>> getTermOptions() {
         checkMaintenance("/terms/detail");
         return ResponseEntity.ok(bnplIntegrationService.getTermOptions());
     }
 
     @Operation(summary = "BNPL status (lokal + lazım olsa ABB-dən fallback poll)")
-    @GetMapping("/payment/abb/bnpl/status/{id}")
+    @GetMapping({"/payment/abb/bnpl/status/{id}", "/api/v2/payment/abb/bnpl/status/{id}"})
     public ResponseEntity<BnplStatusResponse> getStatus(
             @PathVariable String id,
             @RequestParam(defaultValue = "true") boolean refresh) {
@@ -205,7 +205,7 @@ public class BnplPaymentController {
         }
     }
 
-    @GetMapping("/payment/abb/bnpl/callback")
+    @GetMapping({"/payment/abb/bnpl/callback", "/api/v2/payment/abb/bnpl/callback"})
     public ResponseEntity<String> callbackProbe() {
         return ResponseEntity.ok("OK");
     }
@@ -213,7 +213,7 @@ public class BnplPaymentController {
     @Operation(summary = "BNPL full reverse",
             description = "Yalnız tamamlanmış və heç bir partial reverse edilməmiş sifariş üçün, "
                     + "sorğu tarixindən 30 gün ərzində.")
-    @PutMapping("/payment/abb/bnpl/{id}/reverse")
+    @PutMapping({"/payment/abb/bnpl/{id}/reverse", "/api/v2/payment/abb/bnpl/{id}/reverse"})
     public ResponseEntity<Map<String, Object>> fullReverse(@PathVariable String id) {
         checkMaintenance("/reverse");
         bnplIntegrationService.fullReverse(id);
@@ -227,7 +227,7 @@ public class BnplPaymentController {
 
     @Operation(summary = "BNPL partial reverse (məbləğ yığılır)",
             description = "Sifariş COMPLETED qalır; yığılan məbləğ tam məbləğə çatdıqda REVERSED olur.")
-    @PutMapping("/payment/abb/bnpl/{id}/partial-reverse")
+    @PutMapping({"/payment/abb/bnpl/{id}/partial-reverse", "/api/v2/payment/abb/bnpl/{id}/partial-reverse"})
     public ResponseEntity<Map<String, Object>> partialReverse(
             @PathVariable String id,
             @Valid @RequestBody BnplPartialReverseRequest body) {

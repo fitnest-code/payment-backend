@@ -57,6 +57,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v2/payment/abb/bnpl/callback").permitAll()
                         .requestMatchers("/payment/abb/bnpl/terms").permitAll()
                         .requestMatchers("/payment/abb/bnpl/terms/detail").permitAll()
+                        .requestMatchers("/api/v2/payment/abb/bnpl/terms").permitAll()
+                        .requestMatchers("/api/v2/payment/abb/bnpl/terms/detail").permitAll()
                         // Bank of Baku (SmartVista) endpoints
                         .requestMatchers("/payment/bob/callback").permitAll()
                         .requestMatchers("/payment/bob/redirect/**").permitAll()
