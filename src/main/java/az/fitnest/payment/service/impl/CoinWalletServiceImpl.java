@@ -1,6 +1,7 @@
 package az.fitnest.payment.service.impl;
 
 import az.fitnest.payment.client.IdentityBackendClient;
+import az.fitnest.payment.client.UserBackendClient;
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.client.UserGrpcClient;
 import az.fitnest.payment.dto.coin.*;
@@ -41,11 +42,20 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -59,11 +69,36 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final IdentityBackendClient identityBackendClient;
     private final UserGrpcClient userGrpcClient;
+    private final UserBackendClient userBackendClient;
     private final CoinNotificationPublisher coinNotificationPublisher;
     private final CoinEarnCalculator coinEarnCalculator;
     private final PaymentRepository paymentRepository;
     private final PaymentOutboxService paymentOutboxService;
     private final TransactionTemplate transactionTemplate;
+
+    private static final List<CoinTransactionType> EARNED_TRANSACTION_TYPES =
+            List.of(CoinTransactionType.BONUS, CoinTransactionType.EARN, CoinTransactionType.CAMPAIGN_BONUS);
+    private static final List<CoinTransactionType> EXPIRED_TRANSACTION_TYPES =
+            List.of(CoinTransactionType.EXPIRE);
+    private static final int USER_CACHE_MAX_ENTRIES = 2_000;
+    private static final int PACKAGE_TITLE_CACHE_MAX_ENTRIES = 500;
+    private static final int ADMIN_SEARCH_USER_LIMIT = 50;
+    private static final long USER_CACHE_TTL_SECONDS = 30;
+
+    /** Bounded LRU caches — history pages resolve users/packages repeatedly, but memory must stay flat. */
+    private final Map<Long, UserBackendClient.UserSummary> userCache = lruCache(USER_CACHE_MAX_ENTRIES);
+    private final Map<Long, Long> userCacheTimestamps = new ConcurrentHashMap<>();
+    private final Map<String, String> packageTitleCache = lruCache(PACKAGE_TITLE_CACHE_MAX_ENTRIES);
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> packageTitleTimestamps = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static <K, V> Map<K, V> lruCache(int maxEntries) {
+        return Collections.synchronizedMap(new LinkedHashMap<>(maxEntries, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+                return size() > maxEntries;
+            }
+        });
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -141,29 +176,15 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     @Override
     @Transactional(readOnly = true)
     public Page<CoinTransactionResponse> getTransactionHistory(Long userId, CoinTransactionCategory category, Pageable pageable) {
-        if (category == null || category == CoinTransactionCategory.ALL) {
-            return transactionRepository.findByUserIdOrderByCreatedDateDesc(userId, pageable)
-                    .map(this::mapToTransactionResponse);
-        }
-
-        return switch (category) {
+        Page<CoinTransaction> page = switch (category == null ? CoinTransactionCategory.ALL : category) {
             case EARNED -> transactionRepository.findEarnedTransactionsByUserId(
-                    userId,
-                    List.of(CoinTransactionType.BONUS, CoinTransactionType.EARN, CoinTransactionType.CAMPAIGN_BONUS),
-                    pageable
-            ).map(this::mapToTransactionResponse);
-            case SPENT -> transactionRepository.findSpentTransactionsByUserId(
-                    userId,
-                    pageable
-            ).map(this::mapToTransactionResponse);
+                    userId, EARNED_TRANSACTION_TYPES, pageable);
+            case SPENT -> transactionRepository.findSpentTransactionsByUserId(userId, pageable);
             case EXPIRED -> transactionRepository.findByUserIdAndTypeInOrderByCreatedDateDesc(
-                    userId,
-                    List.of(CoinTransactionType.EXPIRE),
-                    pageable
-            ).map(this::mapToTransactionResponse);
-            default -> transactionRepository.findByUserIdOrderByCreatedDateDesc(userId, pageable)
-                    .map(this::mapToTransactionResponse);
+                    userId, EXPIRED_TRANSACTION_TYPES, pageable);
+            case ALL -> transactionRepository.findByUserIdOrderByCreatedDateDesc(userId, pageable);
         };
+        return mapPageToResponses(page);
     }
 
     @Override
@@ -818,9 +839,157 @@ public class CoinWalletServiceImpl implements CoinWalletService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<CoinTransactionResponse> getAllTransactionsForAdmin(Pageable pageable) {
-        return transactionRepository.findAllByOrderByCreatedDateDesc(pageable)
-                .map(this::mapToTransactionResponse);
+    public Page<CoinTransactionResponse> getAllTransactionsForAdmin(Pageable pageable, String category, String search) {
+        AdminSearchScope scope = resolveAdminSearchScope(search);
+
+        Page<CoinTransaction> page = transactionRepository.searchForAdmin(
+                scope.filterByUserIds(),
+                scope.userIds(),
+                scope.filterByOrderId(),
+                scope.orderId() != null ? scope.orderId() : "",
+                parseCategory(category).name(),
+                EARNED_TRANSACTION_TYPES,
+                EXPIRED_TRANSACTION_TYPES,
+                pageable);
+
+        return mapPageToResponses(page);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CoinTransactionSummaryResponse getTransactionSummary() {
+        Object[] totals = transactionRepository.summarizeLedger().stream()
+                .findFirst()
+                .orElseGet(() -> new Object[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0L});
+
+        return CoinTransactionSummaryResponse.builder()
+                .totalEarned(toBigDecimal(totals[0]))
+                .totalSpent(toBigDecimal(totals[1]))
+                .totalExpired(toBigDecimal(totals[2]))
+                .totalTransactions(totals[3] != null ? ((Number) totals[3]).longValue() : 0L)
+                .activeWallets(walletRepository.countByBalanceGreaterThan(BigDecimal.ZERO))
+                .totalWallets(walletRepository.count())
+                .build();
+    }
+
+    /**
+     * Search resolution: a numeric term is a userId, a term matching users (name/email/mobile)
+     * resolves to their ids, anything else is treated as an orderId prefix match.
+     */
+    private AdminSearchScope resolveAdminSearchScope(String search) {
+        if (search == null || search.isBlank()) {
+            return AdminSearchScope.none();
+        }
+        String trimmed = search.trim();
+        if (trimmed.chars().allMatch(Character::isDigit) && trimmed.length() <= 18) {
+            try {
+                return new AdminSearchScope(true, List.of(Long.parseLong(trimmed)), false, null);
+            } catch (NumberFormatException ignored) {
+                // fall through to text search
+            }
+        }
+        List<Long> userIds = userBackendClient.searchUserIds(trimmed, ADMIN_SEARCH_USER_LIMIT);
+        if (!userIds.isEmpty()) {
+            return new AdminSearchScope(true, userIds, false, null);
+        }
+        return new AdminSearchScope(false, AdminSearchScope.NO_USER_IDS, true, trimmed);
+    }
+
+    private Page<CoinTransactionResponse> mapPageToResponses(Page<CoinTransaction> page) {
+        List<CoinTransaction> transactions = page.getContent();
+        if (transactions.isEmpty()) {
+            return page.map(tx -> mapToTransactionResponse(tx, null, null));
+        }
+        Map<Long, UserBackendClient.UserSummary> users = resolveUsers(transactions);
+        Map<Long, Payment> payments = resolvePayments(transactions);
+        return page.map(tx -> mapToTransactionResponse(
+                tx,
+                tx.getUserId() != null ? users.get(tx.getUserId()) : null,
+                tx.getPaymentId() != null ? payments.get(tx.getPaymentId()) : null));
+    }
+
+    private Map<Long, UserBackendClient.UserSummary> resolveUsers(List<CoinTransaction> transactions) {
+        Set<Long> userIds = transactions.stream()
+                .map(CoinTransaction::getUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, UserBackendClient.UserSummary> resolved = new HashMap<>();
+        List<Long> missing = new ArrayList<>();
+
+        for (Long userId : userIds) {
+            UserBackendClient.UserSummary cached = userCache.get(userId);
+            if (cached != null) {
+                resolved.put(userId, cached);
+            } else {
+                missing.add(userId);
+            }
+        }
+
+        if (!missing.isEmpty()) {
+            Map<Long, UserBackendClient.UserSummary> fetched = userBackendClient.getUsers(missing);
+            fetched.forEach((userId, summary) -> {
+                resolved.put(userId, summary);
+                userCache.put(userId, summary);
+            });
+        }
+        return resolved;
+    }
+
+    private Map<Long, Payment> resolvePayments(List<CoinTransaction> transactions) {
+        Set<Long> paymentIds = transactions.stream()
+                .map(CoinTransaction::getPaymentId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (paymentIds.isEmpty()) {
+            return Map.of();
+        }
+        return paymentRepository.findAllById(paymentIds).stream()
+                .collect(Collectors.toMap(Payment::getId, Function.identity(), (left, right) -> left));
+    }
+
+    private UserBackendClient.UserSummary resolveUser(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        long now = System.currentTimeMillis();
+        UserBackendClient.UserSummary cached = userCache.get(userId);
+        Long cacheTs = userCacheTimestamps.get(userId);
+        if (cached != null && cacheTs != null && now - cacheTs < 30000) {
+            return cached;
+        }
+        Map<Long, UserBackendClient.UserSummary> fetched = userBackendClient.getUsers(List.of(userId));
+        if (fetched != null && fetched.containsKey(userId)) {
+            UserBackendClient.UserSummary summary = fetched.get(userId);
+            userCache.put(userId, summary);
+            userCacheTimestamps.put(userId, System.currentTimeMillis());
+            return summary;
+        }
+        return null;
+    }
+
+    private static BigDecimal toBigDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof BigDecimal decimal) {
+            return decimal;
+        }
+        return BigDecimal.valueOf(((Number) value).doubleValue());
+    }
+
+    private CoinTransactionCategory parseCategory(String category) {
+        if (category == null || category.isBlank()) {
+            return CoinTransactionCategory.ALL;
+        }
+        try {
+            return CoinTransactionCategory.valueOf(category.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return CoinTransactionCategory.ALL;
+        }
     }
 
     // Helper method to resolve actual package price dynamically from SubscriptionPackageGrpcClient
@@ -894,16 +1063,23 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     }
 
     private CoinTransactionResponse mapToTransactionResponse(CoinTransaction tx) {
-        Payment linkedPayment = resolveLinkedPayment(tx);
+        return mapToTransactionResponse(tx, resolveUser(tx.getUserId()), resolveLinkedPayment(tx));
+    }
+
+    private CoinTransactionResponse mapToTransactionResponse(CoinTransaction tx,
+                                                             UserBackendClient.UserSummary user,
+                                                             Payment linkedPayment) {
         CoinTransactionSourceType sourceType = resolveSourceType(tx);
-        String sourceTitle = resolveSourceTitle(tx, sourceType, linkedPayment);
 
         return CoinTransactionResponse.builder()
                 .id(tx.getId())
+                .userId(tx.getUserId())
+                .userName(user != null ? user.displayName() : null)
+                .userPhone(user != null ? user.mobile() : null)
                 .type(tx.getType())
                 .refundAction(tx.getRefundAction())
                 .sourceType(sourceType)
-                .sourceTitle(sourceTitle)
+                .sourceTitle(resolveSourceTitle(tx, sourceType, linkedPayment))
                 .amount(tx.getAmount())
                 .balanceAfter(tx.getBalanceAfter())
                 .orderId(tx.getOrderId())
@@ -971,12 +1147,19 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     }
 
     private String buildSubscriptionHistoryTitle(Long packageId, Long optionId) {
+        String cacheKey = packageId + ":" + optionId;
+        String cached = packageTitleCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
         PackageContext ctx = resolvePackageContext(packageId, optionId, null, null);
         String name = (ctx.packageName() != null && !ctx.packageName().isBlank())
                 ? ctx.packageName().trim()
                 : "Abunəlik";
         int months = ctx.durationMonths() != null && ctx.durationMonths() > 0 ? ctx.durationMonths() : 1;
-        return name + " - " + months + " aylıq abunəlik";
+        String title = name + " - " + months + " aylıq abunəlik";
+        packageTitleCache.put(cacheKey, title);
+        return title;
     }
 
     private CoinSettingsResponse mapToSettingsResponse(CoinSettings settings) {
@@ -1152,6 +1335,19 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     }
 
     private record PackageContext(Long packageId, String packageName, Integer durationMonths) {}
+
+    /**
+     * Which predicate(s) the admin history query should apply. {@code NO_USER_IDS} keeps the
+     * collection parameter non-empty because the JPQL {@code IN} is bound even when disabled.
+     */
+    private record AdminSearchScope(boolean filterByUserIds, List<Long> userIds,
+                                    boolean filterByOrderId, String orderId) {
+        private static final List<Long> NO_USER_IDS = List.of(-1L);
+
+        static AdminSearchScope none() {
+            return new AdminSearchScope(false, NO_USER_IDS, false, null);
+        }
+    }
 
     private PackageContext resolvePackageContext(Long packageId, Long optionId, String tierName, Integer durationMonths) {
         Long resolvedPackageId = packageId;

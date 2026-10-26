@@ -80,6 +80,9 @@ class CoinWalletServiceTest {
     @Mock
     private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
+    @Mock
+    private az.fitnest.payment.client.UserBackendClient userBackendClient;
+
     @InjectMocks
     private CoinWalletServiceImpl coinWalletService;
 
@@ -104,6 +107,9 @@ class CoinWalletServiceTest {
             }
             return amount.multiply(rate != null ? rate : BigDecimal.ZERO);
         });
+        // Mock userGrpcClient.getUser() to avoid NPE in mapToTransactionResponse
+        lenient().when(userGrpcClient.getUser(anyLong())).thenReturn(null);
+        lenient().when(userBackendClient.getUsers(any())).thenReturn(java.util.Map.of());
     }
 
     @Test
@@ -247,6 +253,7 @@ class CoinWalletServiceTest {
     void testHistoryMapping_EarnTransaction_HasCorrectSourceType() {
         Long userId = 50L;
         CoinTransaction tx = new CoinTransaction();
+        tx.setUserId(userId);
         tx.setType(CoinTransactionType.EARN);
         tx.setAmount(new BigDecimal("52.50"));
         tx.setBalanceAfter(new BigDecimal("152.50"));
@@ -271,6 +278,7 @@ class CoinWalletServiceTest {
     void testHistoryMapping_BonusTransaction_WelcomeBonusSourceType() {
         Long userId = 50L;
         CoinTransaction tx = new CoinTransaction();
+        tx.setUserId(userId);
         tx.setType(CoinTransactionType.BONUS);
         tx.setAmount(new BigDecimal("50.00"));
         tx.setBalanceAfter(new BigDecimal("50.00"));
