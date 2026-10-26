@@ -49,6 +49,11 @@ public interface CoinWalletService {
 
     Page<CoinTransactionResponse> getAllTransactionsForAdmin(Pageable pageable);
 
+    Page<AdminCoinTransactionHistoryResponse> getAdminTransactionHistory(
+            CoinTransactionCategory category, String search, Pageable pageable);
+
+    CoinTransactionSummaryResponse getAdminTransactionSummary();
+
     // V2 earn formula
     CoinSettingsV2Response getSettingsV2();
 

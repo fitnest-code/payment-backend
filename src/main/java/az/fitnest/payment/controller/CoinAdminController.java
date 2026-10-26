@@ -2,6 +2,7 @@ package az.fitnest.payment.controller;
 
 import az.fitnest.payment.dto.coin.*;
 import az.fitnest.payment.dto.common.PaginatedResponse;
+import az.fitnest.payment.model.enums.CoinTransactionCategory;
 import az.fitnest.payment.service.CoinTermsService;
 import az.fitnest.payment.service.CoinWalletService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -12,6 +13,8 @@ import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -129,5 +132,21 @@ public class CoinAdminController {
     public ResponseEntity<PaginatedResponse<CoinTransactionResponse>> getAllTransactions(@ParameterObject Pageable pageable) {
         Page<CoinTransactionResponse> page = coinWalletService.getAllTransactionsForAdmin(pageable);
         return ResponseEntity.ok(PaginatedResponse.of(page));
+    }
+
+    @GetMapping("/api/v2/admin/coins/history")
+    @Operation(summary = "Coin admin ledger v2", description = "Paged ledger with server-side category/search filters and user display data. V1 remains unchanged for existing clients.")
+    public ResponseEntity<PaginatedResponse<AdminCoinTransactionHistoryResponse>> getAllTransactionsV2(
+            @RequestParam(required = false, defaultValue = "ALL") CoinTransactionCategory category,
+            @RequestParam(required = false) String search,
+            @ParameterObject @PageableDefault(size = 10, sort = {"createdDate", "id"}, direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(PaginatedResponse.of(
+                coinWalletService.getAdminTransactionHistory(category, search, pageable)));
+    }
+
+    @GetMapping("/api/v2/admin/coins/history/summary")
+    @Operation(summary = "Coin admin ledger summary v2")
+    public ResponseEntity<CoinTransactionSummaryResponse> getAllTransactionsSummaryV2() {
+        return ResponseEntity.ok(coinWalletService.getAdminTransactionSummary());
     }
 }
