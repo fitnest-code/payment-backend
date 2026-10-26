@@ -47,3 +47,4 @@ application-prod.yml
 abb-keys/
 *.pem
 *_base64.txt
+local.properties
