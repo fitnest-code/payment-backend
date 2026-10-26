@@ -3,6 +3,7 @@ package az.fitnest.payment.service.impl;
 import az.fitnest.payment.client.IdentityBackendClient;
 import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.client.UserGrpcClient;
+import az.fitnest.payment.client.UserBackendClient;
 import az.fitnest.payment.dto.coin.*;
 import az.fitnest.payment.event.PaymentOutboxService;
 import az.fitnest.payment.exception.BadRequestException;
@@ -30,6 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -46,6 +48,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -59,6 +62,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final IdentityBackendClient identityBackendClient;
     private final UserGrpcClient userGrpcClient;
+    private final UserBackendClient userBackendClient;
     private final CoinNotificationPublisher coinNotificationPublisher;
     private final CoinEarnCalculator coinEarnCalculator;
     private final PaymentRepository paymentRepository;
@@ -821,6 +825,115 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     public Page<CoinTransactionResponse> getAllTransactionsForAdmin(Pageable pageable) {
         return transactionRepository.findAllByOrderByCreatedDateDesc(pageable)
                 .map(this::mapToTransactionResponse);
+    }
+
+    /**
+     * Admin-only v2 ledger.  Identity details are deliberately resolved after
+     * paging, so a page costs one batched user-directory request rather than an
+     * N+1 lookup and mobile's v1 response remains unchanged.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<AdminCoinTransactionHistoryResponse> getAdminTransactionHistory(
+            CoinTransactionCategory category, String search, Pageable pageable) {
+        String normalized = search == null ? "" : search.trim();
+        List<Long> matchedUserIds = normalized.isBlank()
+                ? List.of()
+                : userBackendClient.searchUserIds(normalized, 500);
+        if (normalized.matches("\\d+")) {
+            try {
+                matchedUserIds = new ArrayList<>(matchedUserIds);
+                matchedUserIds.add(Long.valueOf(normalized));
+            } catch (NumberFormatException ignored) {
+                // A too-large numeric search is simply treated as text.
+            }
+        }
+
+        final List<Long> userIds = matchedUserIds.stream().distinct().toList();
+        Specification<CoinTransaction> specification = Specification.where(categorySpecification(category));
+        if (!normalized.isBlank()) {
+            String like = "%" + normalized.toLowerCase(Locale.ROOT) + "%";
+            specification = specification.and((root, query, cb) -> {
+                var directMatch = cb.or(
+                        cb.like(cb.lower(cb.coalesce(root.get("orderId"), "")), like),
+                        cb.like(cb.lower(cb.coalesce(root.get("description"), "")), like));
+                return userIds.isEmpty() ? directMatch : cb.or(directMatch, root.get("userId").in(userIds));
+            });
+        }
+
+        Page<CoinTransaction> transactions = transactionRepository.findAll(specification, pageable);
+        Map<Long, UserBackendClient.UserSummary> users = userBackendClient.getUsers(
+                transactions.getContent().stream().map(CoinTransaction::getUserId).toList());
+        return transactions.map(transaction -> {
+            UserBackendClient.UserSummary user = users.get(transaction.getUserId());
+            CoinTransactionSourceType sourceType = resolveSourceType(transaction);
+            return AdminCoinTransactionHistoryResponse.builder()
+                    .id(transaction.getId())
+                    .userId(transaction.getUserId())
+                    .userName(user != null ? user.displayName() : null)
+                    .userPhone(user != null ? user.mobile() : null)
+                    .type(transaction.getType())
+                    .refundAction(transaction.getRefundAction())
+                    .sourceType(sourceType)
+                    .sourceTitle(resolveSourceTitle(transaction, sourceType, resolveLinkedPayment(transaction)))
+                    .amount(transaction.getAmount())
+                    .balanceAfter(transaction.getBalanceAfter())
+                    .orderId(transaction.getOrderId())
+                    .createdDate(transaction.getCreatedDate())
+                    .build();
+        });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CoinTransactionSummaryResponse getAdminTransactionSummary() {
+        BigDecimal earned = BigDecimal.ZERO;
+        BigDecimal spent = BigDecimal.ZERO;
+        BigDecimal expired = BigDecimal.ZERO;
+        long activeWallets = 0;
+        // This is an aggregate view in API terms.  Iterating the ledger here
+        // avoids changing the established transaction schema and is safe for
+        // the current ledger size; it can later be replaced with a materialized
+        // reporting aggregate without changing this v2 API.
+        for (CoinTransaction transaction : transactionRepository.findAll()) {
+            if (isEarned(transaction)) earned = earned.add(transaction.getAmount().max(BigDecimal.ZERO));
+            if (isSpent(transaction)) spent = spent.add(transaction.getAmount().abs());
+            if (transaction.getType() == CoinTransactionType.EXPIRE) expired = expired.add(transaction.getAmount().abs());
+        }
+        for (CoinWallet wallet : walletRepository.findAll()) {
+            if (wallet.getBalance() != null && wallet.getBalance().compareTo(BigDecimal.ZERO) > 0) activeWallets++;
+        }
+        return CoinTransactionSummaryResponse.builder()
+                .totalEarned(earned).totalSpent(spent).totalExpired(expired)
+                .totalTransactions(transactionRepository.count())
+                .activeWallets(activeWallets).totalWallets(walletRepository.count()).build();
+    }
+
+    private Specification<CoinTransaction> categorySpecification(CoinTransactionCategory category) {
+        CoinTransactionCategory selected = category == null ? CoinTransactionCategory.ALL : category;
+        return switch (selected) {
+            case ALL -> (root, query, cb) -> cb.conjunction();
+            case EARNED -> (root, query, cb) -> cb.or(
+                    root.get("type").in(CoinTransactionType.BONUS, CoinTransactionType.EARN, CoinTransactionType.CAMPAIGN_BONUS),
+                    cb.and(cb.equal(root.get("type"), CoinTransactionType.ADJUSTMENT), cb.greaterThan(root.get("amount"), BigDecimal.ZERO)),
+                    cb.and(cb.equal(root.get("type"), CoinTransactionType.REFUND), cb.equal(root.get("refundAction"), CoinRefundAction.RESTORE_SPENT_COINS)));
+            case SPENT -> (root, query, cb) -> cb.or(
+                    cb.equal(root.get("type"), CoinTransactionType.SPEND),
+                    cb.and(cb.equal(root.get("type"), CoinTransactionType.REFUND), cb.equal(root.get("refundAction"), CoinRefundAction.REVERSE_EARNED_COINS)));
+            case EXPIRED -> (root, query, cb) -> cb.equal(root.get("type"), CoinTransactionType.EXPIRE);
+        };
+    }
+
+    private boolean isEarned(CoinTransaction transaction) {
+        return transaction.getType() == CoinTransactionType.BONUS || transaction.getType() == CoinTransactionType.EARN
+                || transaction.getType() == CoinTransactionType.CAMPAIGN_BONUS
+                || (transaction.getType() == CoinTransactionType.ADJUSTMENT && transaction.getAmount().signum() > 0)
+                || (transaction.getType() == CoinTransactionType.REFUND && transaction.getRefundAction() == CoinRefundAction.RESTORE_SPENT_COINS);
+    }
+
+    private boolean isSpent(CoinTransaction transaction) {
+        return transaction.getType() == CoinTransactionType.SPEND
+                || (transaction.getType() == CoinTransactionType.REFUND && transaction.getRefundAction() == CoinRefundAction.REVERSE_EARNED_COINS);
     }
 
     // Helper method to resolve actual package price dynamically from SubscriptionPackageGrpcClient
