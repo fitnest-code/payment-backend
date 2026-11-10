@@ -1,5 +1,6 @@
 package az.fitnest.payment.service;
 
+import az.fitnest.payment.dto.common.PaymentOrderStatusV2Response;
 import az.fitnest.payment.dto.common.PaymentResponse;
 import az.fitnest.payment.dto.common.UserCardResponse;
 import az.fitnest.payment.dto.common.PaginatedResponse;
@@ -193,14 +194,33 @@ public class UserPaymentService {
         return mapToPaymentResponse(payment, resolveUserLanguage());
     }
 
+    /**
+     * v1 poll: status only. Shares one indexed lookup + pending sync with v2.
+     */
     public String getRawPaymentStatusByOrderId(String orderId, Long userId) {
-        log.info("Fetching raw payment status with order id: {} for user: {}", orderId, userId);
+        return getPaymentOrderStatusByOrderId(orderId, userId).status();
+    }
+
+    /**
+     * v2 poll: status + transactionId for receipt chain
+     * ({@code GET /api/v1/me/payments/history/{transactionId}}).
+     * Avoids full PaymentResponse mapping (i18n / card / owner) on the hot path.
+     */
+    public PaymentOrderStatusV2Response getPaymentOrderStatusByOrderId(String orderId, Long userId) {
+        log.info("Fetching payment order status with order id: {} for user: {}", orderId, userId);
         Payment payment = paymentRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
         verifyOwnership(payment, userId);
         payment = syncPendingProviderStatus(payment);
-        String status = payment.getStatus() != null ? payment.getStatus().toUpperCase() : "PENDING";
-        
+        return PaymentOrderStatusV2Response.of(
+                normalizeClientStatus(payment.getStatus()),
+                payment.getTransactionId()
+        );
+    }
+
+    /** Maps provider/DB statuses to the four client poll values. */
+    static String normalizeClientStatus(String rawStatus) {
+        String status = rawStatus != null ? rawStatus.toUpperCase() : "PENDING";
         return switch (status) {
             case "SUCCESS" -> "SUCCESS";
             case "FAILED", "ERROR", "SERVER_ERROR" -> "FAILED";
