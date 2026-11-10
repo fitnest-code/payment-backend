@@ -75,6 +75,12 @@ public class PaymentSubscriptionService {
         log.info("[Subscription] Success lifecycle: userId={}, orderId={}, paymentId={}",
                 effectiveUserId, payment.getOrderId(), payment.getId());
 
+        String mergedDescription = PaymentPackageRef.ensurePackageRefOnDescription(
+                payment.getDescription(), fallbackAttr);
+        if (mergedDescription != null && !mergedDescription.equals(payment.getDescription())) {
+            payment.setDescription(mergedDescription);
+        }
+
         paymentOutboxService.recordPaymentOutcome(payment);
 
         try {
@@ -88,7 +94,8 @@ public class PaymentSubscriptionService {
                         ref.packageId(),
                         ref.optionId(),
                         autoPaymentEnabled,
-                        payment.getOrderId());
+                        payment.getOrderId(),
+                        ref.campaignId());
                 log.info("[Subscription] Enqueued assign userId={}, packageId={}, optionId={}, autoPay={}",
                         effectiveUserId, ref.packageId(), ref.optionId(), autoPaymentEnabled);
             } else {

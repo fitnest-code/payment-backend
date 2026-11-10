@@ -43,12 +43,14 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
 
             Long packageId = null;
             Long optionId = null;
+            String campaignId = null;
             if (!prePriced) {
                 try {
                     var ref = PaymentPackageRef.parseWithFallback(request.getDescription(), otherAttr);
                     if (ref.isComplete()) {
                         packageId = ref.packageId();
                         optionId = ref.optionId();
+                        campaignId = ref.campaignId();
                     }
                 } catch (Exception ignored) {
                     // fall through to amount validation
@@ -58,7 +60,7 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                     var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
                     amount = priceCurrency.amount;
                     currency = priceCurrency.currency != null ? priceCurrency.currency : currency;
-                    otherAttr = PaymentPackageRef.encode(packageId, optionId);
+                    otherAttr = PaymentPackageRef.encode(packageId, optionId, campaignId);
                 }
             }
 

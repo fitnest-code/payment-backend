@@ -3,6 +3,7 @@ package az.fitnest.payment.event;
 import az.fitnest.payment.model.entity.Payment;
 import az.fitnest.payment.model.entity.PaymentOutboxEvent;
 import az.fitnest.payment.repository.PaymentOutboxEventRepository;
+import az.fitnest.payment.util.PaymentPackageRef;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -50,6 +51,11 @@ public class PaymentOutboxService {
         payload.put("status", payment.getStatus());
         payload.put("autoPaymentEnabled", payment.getAutoPaymentEnabled());
         payload.put("occurredAt", Instant.now().toString());
+
+        PaymentPackageRef.Ref packageRef = PaymentPackageRef.parse(payment.getDescription());
+        if (packageRef.campaignId() != null && !packageRef.campaignId().isBlank()) {
+            payload.put("campaignId", packageRef.campaignId());
+        }
 
         enqueue(eventType, OutboxEventType.TOPIC_PAYMENT_EVENTS, payment.getOrderId(), payload);
     }
@@ -102,6 +108,13 @@ public class PaymentOutboxService {
     @Transactional(propagation = Propagation.REQUIRED)
     public void requestSubscriptionAssignment(Long userId, Long packageId, Long optionId,
                                               Boolean autoPaymentEnabled, String orderId) {
+        requestSubscriptionAssignment(userId, packageId, optionId, autoPaymentEnabled, orderId, null);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void requestSubscriptionAssignment(Long userId, Long packageId, Long optionId,
+                                              Boolean autoPaymentEnabled, String orderId,
+                                              String campaignId) {
         if (orderId == null || orderId.isBlank()) {
             return;
         }
@@ -115,6 +128,9 @@ public class PaymentOutboxService {
         payload.put("optionId", optionId);
         payload.put("autoPaymentEnabled", autoPaymentEnabled);
         payload.put("orderId", orderId);
+        if (campaignId != null && !campaignId.isBlank()) {
+            payload.put("campaignId", campaignId.trim());
+        }
 
         // No topic: the relay delivers this one over gRPC to order-backend.
         enqueue(OutboxEventType.SUBSCRIPTION_ASSIGNMENT_REQUESTED, null, orderId, payload);
