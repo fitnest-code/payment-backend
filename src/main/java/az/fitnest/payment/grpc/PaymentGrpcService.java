@@ -3,6 +3,7 @@ package az.fitnest.payment.grpc;
 import az.fitnest.payment.dto.coin.CoinWalletResponse;
 import az.fitnest.payment.dto.epoint.EpointPaymentRequest;
 import az.fitnest.payment.dto.epoint.EpointResponse;
+import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.service.CoinWalletService;
 import az.fitnest.payment.service.EpointIntegrationService;
 import io.grpc.stub.StreamObserver;
@@ -16,6 +17,9 @@ import az.fitnest.payment.util.PaymentPackageRef;
 
 import az.fitnest.payment.service.UserPaymentService;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 @GrpcService
 @RequiredArgsConstructor
 public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBase {
@@ -26,6 +30,7 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
     private final UserPaymentService userPaymentService;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final CoinWalletService coinWalletService;
+    private final PaymentRepository paymentRepository;
 
     @Override
     public void createPayment(CreatePaymentRequest request, StreamObserver<CreatePaymentResponse> responseObserver) {
@@ -90,6 +95,17 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                     .build();
 
             EpointResponse epointResponse = integrationService.initiatePayment(paymentRequest, userId);
+
+            // Pre-priced BF/promo checkouts already subtracted FitCoin from amount; persist
+            // coins_used so SUCCESS spends the same units (preview total == bank charge).
+            if (request.getCoinsUsed() > 0) {
+                BigDecimal coins = BigDecimal.valueOf(request.getCoinsUsed()).setScale(2, RoundingMode.HALF_UP);
+                paymentRepository.findByOrderId(request.getOrderId()).ifPresent(payment -> {
+                    payment.setCoinsUsed(coins);
+                    paymentRepository.save(payment);
+                    log.info("[CreatePayment] Attached coinsUsed={} to orderId={}", coins, request.getOrderId());
+                });
+            }
 
             CreatePaymentResponse response = CreatePaymentResponse.newBuilder()
                     .setStatus(epointResponse.status() != null ? epointResponse.status() : "error")
