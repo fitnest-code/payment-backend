@@ -4,7 +4,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * ABB BNPL (Buy Now Pay Later) External API configuration.
@@ -69,13 +71,50 @@ public class AbbBnplProperties {
     private String callbackPassword;
 
     /**
-     * Optional HMAC secret for X-Signature verification.
-     * Algorithm details pending ABB clarification — when blank, signature check is skipped.
+     * Optional HMAC secret for X-Signature verification (HMAC-SHA256 over the raw body).
+     * When blank, signature verification is skipped (Basic Auth still applies).
      */
     private String callbackHmacSecret;
 
-    /** Supported credit terms shown to mobile (ABB may still reject unavailable ones). */
-    private List<Integer> activeTerms = List.of(1, 3, 4, 6, 9, 12, 18, 24);
+    /** When true a valid X-Signature is mandatory for callbacks. */
+    private boolean callbackRequireSignature = false;
+
+    /** When true X-ABB-Timestamp is mandatory and must be fresh. */
+    private boolean callbackRequireTimestamp = false;
+
+    /** Allowed clock skew for X-ABB-Timestamp (seconds). */
+    private long callbackTimestampToleranceSeconds = 300;
+
+    /**
+     * Credit terms enabled for this client/contract (test client: 1,4,12).
+     * Validation and /terms both use this list; ABB rejects anything outside it.
+     */
+    private List<Integer> activeTerms = List.of(1, 4, 12);
+
+    /** Optional human labels per term; value 4 is 8 weeks for some contracts. */
+    private Map<Integer, String> termLabels = new LinkedHashMap<>();
+
+    /** Minimum / maximum BNPL amount in AZN (contract-dependent). */
+    private double minAmount = 100;
+    private double maxAmount = 5000;
+
+    /** How long an unfinished local order blocks a duplicate init (minutes). */
+    private int initRecoveryWindowMinutes = 20;
+
+    /** INIT orders older than this are reconciled/expired locally (minutes). */
+    private int initExpiryMinutes = 16;
+
+    /** Final grace before an unknown submit is closed for good (hours). */
+    private int submitUnknownExpiryHours = 24;
+
+    /** ABB allows reverse only within 30 days of the request date. */
+    private int reverseWindowDays = 30;
+
+    /** Enables the scheduled reconciliation job. */
+    private boolean reconcileEnabled = true;
+
+    /** Reconciliation interval (ms). */
+    private long reconcileIntervalMs = 60000;
 
     /**
      * When true, public BNPL endpoints return maintenance / NOT_FOUND.

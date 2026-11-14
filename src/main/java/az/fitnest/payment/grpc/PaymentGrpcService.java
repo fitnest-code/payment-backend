@@ -3,6 +3,7 @@ package az.fitnest.payment.grpc;
 import az.fitnest.payment.dto.coin.CoinWalletResponse;
 import az.fitnest.payment.dto.epoint.EpointPaymentRequest;
 import az.fitnest.payment.dto.epoint.EpointResponse;
+import az.fitnest.payment.repository.PaymentRepository;
 import az.fitnest.payment.service.CoinWalletService;
 import az.fitnest.payment.service.EpointIntegrationService;
 import io.grpc.stub.StreamObserver;
@@ -16,6 +17,9 @@ import az.fitnest.payment.util.PaymentPackageRef;
 
 import az.fitnest.payment.service.UserPaymentService;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 @GrpcService
 @RequiredArgsConstructor
 public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBase {
@@ -26,13 +30,16 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
     private final UserPaymentService userPaymentService;
     private final SubscriptionPackageGrpcClient subscriptionPackageGrpcClient;
     private final CoinWalletService coinWalletService;
+    private final PaymentRepository paymentRepository;
 
     @Override
     public void createPayment(CreatePaymentRequest request, StreamObserver<CreatePaymentResponse> responseObserver) {
         log.info("Received gRPC CreatePayment request for orderId: {}", request.getOrderId());
 
         try {
-            // Prefer server-side package pricing when package/option are present; never trust client amount alone.
+            // If the amount is pre-resolved (e.g. with promo discount), do not re-price
+            // from package/option — keep the amount the client (order-backend) set.
+            boolean prePriced = request.getPrePriced();
             Double amount = request.getAmount();
             String currency = request.getCurrency();
             String otherAttr = request.getOtherAttrList().isEmpty()
@@ -41,21 +48,25 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
 
             Long packageId = null;
             Long optionId = null;
-            try {
-                var ref = PaymentPackageRef.parseWithFallback(request.getDescription(), otherAttr);
-                if (ref.isComplete()) {
-                    packageId = ref.packageId();
-                    optionId = ref.optionId();
+            String campaignId = null;
+            if (!prePriced) {
+                try {
+                    var ref = PaymentPackageRef.parseWithFallback(request.getDescription(), otherAttr);
+                    if (ref.isComplete()) {
+                        packageId = ref.packageId();
+                        optionId = ref.optionId();
+                        campaignId = ref.campaignId();
+                    }
+                } catch (Exception ignored) {
+                    // fall through to amount validation
                 }
-            } catch (Exception ignored) {
-                // fall through to amount validation
-            }
 
-            if (packageId != null && optionId != null) {
-                var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-                amount = priceCurrency.amount;
-                currency = priceCurrency.currency != null ? priceCurrency.currency : currency;
-                otherAttr = PaymentPackageRef.encode(packageId, optionId);
+                if (packageId != null && optionId != null) {
+                    var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+                    amount = priceCurrency.amount;
+                    currency = priceCurrency.currency != null ? priceCurrency.currency : currency;
+                    otherAttr = PaymentPackageRef.encode(packageId, optionId, campaignId);
+                }
             }
 
             if (amount == null || amount <= 0) {
@@ -63,6 +74,13 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                         .withDescription("Amount must be resolved from package/option or provided as positive")
                         .asRuntimeException());
                 return;
+            }
+
+            // Proto3 scalar: 0 means unset. Checkout must send the owning user so
+            // GET /me/payments/order/{id} ownership checks do not 403 on null user_id.
+            Long userId = request.getUserId() > 0 ? request.getUserId() : null;
+            if (userId == null) {
+                log.warn("CreatePayment missing user_id for orderId={}", request.getOrderId());
             }
 
             EpointPaymentRequest paymentRequest = EpointPaymentRequest.builder()
@@ -76,7 +94,18 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                     .otherAttr(otherAttr)
                     .build();
 
-            EpointResponse epointResponse = integrationService.initiatePayment(paymentRequest, null);
+            EpointResponse epointResponse = integrationService.initiatePayment(paymentRequest, userId);
+
+            // Pre-priced BF/promo checkouts already subtracted FitCoin from amount; persist
+            // coins_used so SUCCESS spends the same units (preview total == bank charge).
+            if (request.getCoinsUsed() > 0) {
+                BigDecimal coins = BigDecimal.valueOf(request.getCoinsUsed()).setScale(2, RoundingMode.HALF_UP);
+                paymentRepository.findByOrderId(request.getOrderId()).ifPresent(payment -> {
+                    payment.setCoinsUsed(coins);
+                    paymentRepository.save(payment);
+                    log.info("[CreatePayment] Attached coinsUsed={} to orderId={}", coins, request.getOrderId());
+                });
+            }
 
             CreatePaymentResponse response = CreatePaymentResponse.newBuilder()
                     .setStatus(epointResponse.status() != null ? epointResponse.status() : "error")

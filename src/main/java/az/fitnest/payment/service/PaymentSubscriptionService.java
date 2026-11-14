@@ -75,6 +75,12 @@ public class PaymentSubscriptionService {
         log.info("[Subscription] Success lifecycle: userId={}, orderId={}, paymentId={}",
                 effectiveUserId, payment.getOrderId(), payment.getId());
 
+        String mergedDescription = PaymentPackageRef.ensurePackageRefOnDescription(
+                payment.getDescription(), fallbackAttr);
+        if (mergedDescription != null && !mergedDescription.equals(payment.getDescription())) {
+            payment.setDescription(mergedDescription);
+        }
+
         paymentOutboxService.recordPaymentOutcome(payment);
 
         try {
@@ -88,7 +94,8 @@ public class PaymentSubscriptionService {
                         ref.packageId(),
                         ref.optionId(),
                         autoPaymentEnabled,
-                        payment.getOrderId());
+                        payment.getOrderId(),
+                        ref.campaignId());
                 log.info("[Subscription] Enqueued assign userId={}, packageId={}, optionId={}, autoPay={}",
                         effectiveUserId, ref.packageId(), ref.optionId(), autoPaymentEnabled);
             } else {
@@ -100,6 +107,24 @@ public class PaymentSubscriptionService {
             log.error("[Subscription] Failed preparing side-effects for orderId={}", payment.getOrderId(), ex);
             throw ex instanceof RuntimeException re ? re : new IllegalStateException(ex);
         }
+    }
+
+    /**
+     * Full reversal: refund the coins spent on the order and record the reversal event.
+     *
+     * <p>Coin refund is idempotent ({@code REFUND} transaction dedupe). Subscription
+     * revocation lives in order-backend and consumes {@code PAYMENT_REVERSED}; it is not a
+     * synchronous call here so a slow consumer cannot block the bank callback.</p>
+     */
+    @Transactional
+    public void onPaymentReversed(Payment payment) {
+        if (payment == null) {
+            return;
+        }
+        coinPaymentProcessor.onPaymentRefund(payment);
+        paymentOutboxService.recordPaymentReversed(payment);
+        log.info("[Payment] Reversal processed orderId={}, provider={}, coinsUsed={}",
+                payment.getOrderId(), payment.getProvider(), payment.getCoinsUsed());
     }
 
     /** Records FAILED/ERROR outcomes to Kafka so failures are never silent. */

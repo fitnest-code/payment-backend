@@ -206,12 +206,32 @@ abb-bnpl:
   token-audience: ${ABB_BNPL_TOKEN_AUDIENCE:}
   scope: ${ABB_BNPL_SCOPE:openid}
   timeout-ms: ${ABB_BNPL_TIMEOUT_MS:10000}
-  # Credentials FitNest provides to ABB for inbound callbacks (Basic Auth)
+  # Credentials FitNest provides to ABB for inbound callbacks (Basic Auth, legacy compat)
   callback-username: ${ABB_BNPL_CALLBACK_USERNAME:}
   callback-password: ${ABB_BNPL_CALLBACK_PASSWORD:}
-  # Optional HMAC secret for X-Signature (algorithm pending ABB clarification)
+  # HMAC-SHA256 secret for X-Signature over the raw body (ABB contract)
   callback-hmac-secret: ${ABB_BNPL_CALLBACK_HMAC_SECRET:}
-  active-terms: ${ABB_BNPL_ACTIVE_TERMS:1,3,4,6,9,12,18,24}
+  # When true a valid X-Signature is mandatory (enable in prod once ABB shares the secret)
+  callback-require-signature: ${ABB_BNPL_CALLBACK_REQUIRE_SIGNATURE:false}
+  # X-ABB-Timestamp replay protection
+  callback-require-timestamp: ${ABB_BNPL_CALLBACK_REQUIRE_TIMESTAMP:false}
+  callback-timestamp-tolerance-seconds: ${ABB_BNPL_CALLBACK_TIMESTAMP_TOLERANCE:300}
+  # Credit terms enabled for this client. ABB rejects anything else ("term not available").
+  # Test client: 1,4,12. Prod values come from the signed contract.
+  active-terms: ${ABB_BNPL_ACTIVE_TERMS:1,4,12}
+  # Display labels only — the numeric value is what ABB receives.
+  term-labels: {}
+  # Amount limits (AZN) after coin discount
+  min-amount: ${ABB_BNPL_MIN_AMOUNT:100}
+  max-amount: ${ABB_BNPL_MAX_AMOUNT:5000}
+  # Duplicate-init recovery window (ABB INIT orders live 15-20 min)
+  init-recovery-window-minutes: ${ABB_BNPL_INIT_RECOVERY_MINUTES:20}
+  init-expiry-minutes: ${ABB_BNPL_INIT_EXPIRY_MINUTES:16}
+  submit-unknown-expiry-hours: ${ABB_BNPL_SUBMIT_UNKNOWN_EXPIRY_HOURS:24}
+  # Reverse is allowed only within 30 days of the request date
+  reverse-window-days: ${ABB_BNPL_REVERSE_WINDOW_DAYS:30}
+  reconcile-enabled: ${ABB_BNPL_RECONCILE_ENABLED:true}
+  reconcile-interval-ms: ${ABB_BNPL_RECONCILE_INTERVAL_MS:60000}
   default-product-name: ${ABB_BNPL_DEFAULT_PRODUCT_NAME:FitNest Abunəlik}
   # Keep true until ABB onboarding (keys, IP whitelist, callback) is complete
   maintenance-mode: ${ABB_BNPL_MAINTENANCE_MODE:true}

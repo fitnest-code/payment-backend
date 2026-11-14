@@ -102,26 +102,43 @@ public class AbbBnplRestClient {
             return response;
         } catch (BnplPaymentException e) {
             throw e;
+        } catch (java.net.http.HttpTimeoutException e) {
+            log.error("[BNPL][Client] {} {} timed out", method, path, e);
+            throw new BnplPaymentException("BNPL_TIMEOUT",
+                    "ABB BNPL servisi cavab vermədi. Nəticə sonra yoxlanılacaq.",
+                    org.springframework.http.HttpStatus.GATEWAY_TIMEOUT, true, e.toString());
         } catch (Exception e) {
             log.error("[BNPL][Client] {} {} failed", method, path, e);
             throw new BnplPaymentException("BNPL_CONNECTION_ERROR",
-                    "ABB BNPL servisi ilə əlaqə qurula bilmədi: " + e.getMessage(), e);
+                    "ABB BNPL servisi ilə əlaqə qurula bilmədi: " + e.getMessage(),
+                    org.springframework.http.HttpStatus.BAD_GATEWAY, true, e.toString());
         }
     }
 
     private BnplPaymentException mapHttpError(int status, String body) {
-        String message = extractMessage(body);
+        String detail = extractMessage(body);
         String code = switch (status) {
             case 400 -> "BNPL_BAD_REQUEST";
             case 401 -> "BNPL_UNAUTHORIZED";
             case 403 -> "BNPL_FORBIDDEN";
             case 404 -> "BNPL_NOT_FOUND";
+            case 408 -> "BNPL_TIMEOUT";
+            case 409 -> "BNPL_CONFLICT";
             case 429 -> "BNPL_RATE_LIMIT";
-            default -> "BNPL_HTTP_" + status;
+            default -> status >= 500 ? "BNPL_HTTP_" + status : "BNPL_HTTP_" + status;
         };
-        String userMessage = mapUserFacingMessage(message, status);
-        log.error("[BNPL][Client] HTTP {} body={}", status, body);
-        return new BnplPaymentException(code, userMessage);
+        String userMessage = mapUserFacingMessage(detail, status);
+        boolean retryable = status >= 500 || status == 429 || status == 408;
+        org.springframework.http.HttpStatus httpStatus = switch (status) {
+            case 400 -> org.springframework.http.HttpStatus.BAD_REQUEST;
+            case 401, 403 -> org.springframework.http.HttpStatus.BAD_GATEWAY;
+            case 404 -> org.springframework.http.HttpStatus.NOT_FOUND;
+            case 409 -> org.springframework.http.HttpStatus.CONFLICT;
+            case 429 -> org.springframework.http.HttpStatus.TOO_MANY_REQUESTS;
+            default -> org.springframework.http.HttpStatus.BAD_GATEWAY;
+        };
+        log.error("[BNPL][Client] HTTP {} detail={} body={}", status, detail, body);
+        return new BnplPaymentException(code, userMessage, httpStatus, retryable, detail);
     }
 
     private String mapUserFacingMessage(String bankMessage, int status) {
