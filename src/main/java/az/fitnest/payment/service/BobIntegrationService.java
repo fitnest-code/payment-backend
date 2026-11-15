@@ -14,6 +14,7 @@ import az.fitnest.payment.service.bob.BobPaymentStore;
 import az.fitnest.payment.service.bob.BobStatusMapper;
 import az.fitnest.payment.service.coin.CoinCheckoutHelper;
 import az.fitnest.payment.service.coin.CoinPaymentProcessor;
+import az.fitnest.payment.util.PaymentPackageRef;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -138,6 +139,82 @@ public class BobIntegrationService {
                 .provider(BobPaymentStore.PROVIDER_BOB)
                 .amount(applied.finalAmountAzn())
                 .currency(priceCurrency.currency)
+                .build();
+    }
+
+    /**
+     * Black Friday / campaign BolKart checkout: order-backend already priced the order (campaign then
+     * FitCoin), so skip the list-price lookup and the coin helper (no double coin application).
+     *
+     * <p>The client orderId becomes the bank {@code orderNumber} / Payment.transactionId. Payment.orderId
+     * still ends up as the SmartVista orderId (callbacks, status sync and refunds all key on it), so
+     * {@code UserPaymentService} falls back to transactionId when the v2 poll is called with the
+     * client orderId.</p>
+     */
+    @Transactional
+    public BobInitiateResponse initiateInstallmentPaymentPrePriced(
+            Long userId,
+            Long packageId,
+            Long optionId,
+            int installmentMonths,
+            double amount,
+            String currency,
+            String clientOrderId,
+            String campaignId,
+            java.math.BigDecimal coinsUsed) {
+        checkMaintenance();
+
+        if (clientOrderId == null || clientOrderId.isBlank()) {
+            throw new IllegalArgumentException("clientOrderId required for BOB pre-priced payment");
+        }
+        if (packageId == null || optionId == null) {
+            throw new IllegalArgumentException("packageId/optionId required for BOB pre-priced payment");
+        }
+        if (!getSupportedInstallments().contains(installmentMonths)) {
+            throw new IllegalArgumentException("Unsupported BOB installment months: " + installmentMonths);
+        }
+
+        log.warn("[BOB][PrePriced] userId={}, packageId={}, optionId={}, months={}, amount={}, orderNumber={}, campaignId={}",
+                userId, packageId, optionId, installmentMonths, amount, clientOrderId, campaignId);
+
+        String resolvedCurrency = currency != null && !currency.isBlank()
+                ? currency : bobProperties.getDefaultCurrency();
+        String description = PaymentPackageRef.encode(packageId, optionId, campaignId);
+
+        Payment payment = paymentStore.createPending(
+                userId, clientOrderId, amount, resolvedCurrency, description,
+                false, null, null, "BOB_INSTALLMENT");
+        payment.setCoinsUsed(coinsUsed);
+        paymentStore.savePayment(payment);
+
+        String callbackUrl = bobProperties.getCallbackUrl();
+        String returnUrl = callbackUrl + "?orderNumber=" + clientOrderId + "&status=success";
+        String failUrl = callbackUrl + "?orderNumber=" + clientOrderId + "&status=fail";
+
+        Map<String, Object> bankResponse = bobRestClient.registerOrder(
+                clientOrderId, amount, description, returnUrl, failUrl, null, installmentMonths);
+
+        String errorCode = bankResponse.get("errorCode") != null
+                ? String.valueOf(bankResponse.get("errorCode")) : "0";
+        if (!"0".equals(errorCode)) {
+            String errorMessage = (String) bankResponse.get("errorMessage");
+            log.error("[BOB][PrePriced] Register order failed: errorCode={}, errorMessage={}", errorCode, errorMessage);
+            paymentStore.markFailed(payment, errorMessage, errorCode, String.valueOf(bankResponse));
+            throw new BobPaymentException(errorCode,
+                    "Bank of Baku ödəniş qeydiyyatı uğursuz oldu: " + errorMessage);
+        }
+
+        String bankOrderId = (String) bankResponse.get("orderId");
+        String formUrl = (String) bankResponse.get("formUrl");
+        paymentStore.markRegistered(payment, bankOrderId, formUrl);
+
+        return BobInitiateResponse.builder()
+                .orderId(bankOrderId)
+                .transactionId(clientOrderId)
+                .formUrl(formUrl)
+                .provider(BobPaymentStore.PROVIDER_BOB)
+                .amount(amount)
+                .currency(resolvedCurrency)
                 .build();
     }
 

@@ -178,11 +178,20 @@ public class UserPaymentService {
 
     public PaymentResponse getPaymentByOrderId(String orderId, Long userId) {
         log.info("Fetching payment with order id: {} for user: {}", orderId, userId);
-        Payment payment = paymentRepository.findByOrderId(orderId)
+        Payment payment = findByClientOrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
         verifyOwnership(payment, userId);
         payment = syncPendingProviderStatus(payment);
         return mapToPaymentResponse(payment, resolveUserLanguage());
+    }
+
+    /**
+     * Poll lookup by the order-backend orderId. BOB pre-priced (BolKart) payments keep the client orderId
+     * in transaction_id because order_id holds the SmartVista id used for status sync/refunds.
+     */
+    private java.util.Optional<Payment> findByClientOrderId(String orderId) {
+        java.util.Optional<Payment> byOrder = paymentRepository.findByOrderId(orderId);
+        return byOrder.isPresent() ? byOrder : paymentRepository.findByTransactionId(orderId);
     }
 
     public PaymentResponse getPaymentByTransactionId(String transactionId, Long userId) {
@@ -208,7 +217,7 @@ public class UserPaymentService {
      */
     public PaymentOrderStatusV2Response getPaymentOrderStatusByOrderId(String orderId, Long userId) {
         log.info("Fetching payment order status with order id: {} for user: {}", orderId, userId);
-        Payment payment = paymentRepository.findByOrderId(orderId)
+        Payment payment = findByClientOrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found with order id: " + orderId));
         verifyOwnership(payment, userId);
         payment = syncPendingProviderStatus(payment);
