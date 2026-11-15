@@ -81,20 +81,30 @@ class PaymentGrpcServiceInstallmentTest {
     }
 
     @Test
-    void applePayPrePricedUsesBfAmountAndReturnsEpointPaymentId() {
-        when(epoint.createApplePayPaymentPrePriced(anyLong(), anyLong(), anyLong(), anyDouble(), any(), any(), any(), any()))
-                .thenReturn(new az.fitnest.payment.dto.epoint.EpointTokenResponse(
-                        "success", "epoint-pay-123", null, null, null, null));
+    void applePayPrePricedReturnsEpointWidgetUrlAsRedirectUrl() {
+        assertWalletWidget("Apple_Pay", "ord_a1b2c3d4", "https://epoint.az/widget/111", "te111");
+    }
 
-        service.createPayment(bf("Apple_Pay").setOrderId("ord_a1b2c3d4").build(), observer);
+    /** Apple and Google Pay share one contract: pre-priced widget URL -> redirect_url, never native create. */
+    private void assertWalletWidget(String provider, String orderId, String widgetUrl, String txn) {
+        when(epoint.createWidgetUrlPrePriced(anyLong(), any(), anyDouble(), any(), any(), any(), any()))
+                .thenReturn(az.fitnest.payment.dto.epoint.EpointResponse.builder()
+                        .status("success").transaction(txn).orderId(orderId).widgetUrl(widgetUrl).build());
 
-        verify(epoint).createApplePayPaymentPrePriced(eq(7L), eq(4L), eq(102L), eq(1874.0), eq("AZN"),
-                eq("ord_a1b2c3d4"), eq("cmp-1"), eq(new BigDecimal("16.00")));
+        service.createPayment(bf(provider).setOrderId(orderId).build(), observer);
+
+        verify(epoint).createWidgetUrlPrePriced(eq(7L), eq(orderId), eq(1874.0), eq("AZN"),
+                eq(az.fitnest.payment.util.PaymentPackageRef.encode(4L, 102L, "cmp-1")),
+                eq(new BigDecimal("16.00")), eq(false));
+        verify(epoint, never()).createApplePayPaymentPrePriced(anyLong(), anyLong(), anyLong(), anyDouble(),
+                any(), any(), any(), any());
+        verify(epoint, never()).createGooglePayPaymentPrePriced(anyLong(), anyLong(), anyLong(), anyDouble(),
+                any(), any(), any(), any());
         ArgumentCaptor<CreatePaymentResponse> c = ArgumentCaptor.forClass(CreatePaymentResponse.class);
         verify(observer).onNext(c.capture());
         assertEquals("success", c.getValue().getStatus());
-        assertEquals("epoint-pay-123", c.getValue().getTransactionId());
-        assertEquals("", c.getValue().getRedirectUrl());
+        assertEquals(widgetUrl, c.getValue().getRedirectUrl());
+        assertEquals(txn, c.getValue().getTransactionId());
         verifyNoInteractions(abb, bob);
     }
 
@@ -106,22 +116,8 @@ class PaymentGrpcServiceInstallmentTest {
     }
 
     @Test
-    void googlePayPrePricedUsesBfAmountAndReturnsEpointPaymentId() {
-        when(epoint.createGooglePayPaymentPrePriced(anyLong(), anyLong(), anyLong(), anyDouble(), any(), any(), any(), any()))
-                .thenReturn(new az.fitnest.payment.dto.epoint.EpointTokenResponse(
-                        "success", "epoint-pay-456", null, null, null, null));
-
-        service.createPayment(bf("Google_Pay").setOrderId("ord_g1b2c3d4").build(), observer);
-
-        verify(epoint).createGooglePayPaymentPrePriced(eq(7L), eq(4L), eq(102L), eq(1874.0), eq("AZN"),
-                eq("ord_g1b2c3d4"), eq("cmp-1"), eq(new BigDecimal("16.00")));
-        verify(epoint, never()).createGooglePayPayment(anyLong(), anyLong(), anyLong());
-        ArgumentCaptor<CreatePaymentResponse> c = ArgumentCaptor.forClass(CreatePaymentResponse.class);
-        verify(observer).onNext(c.capture());
-        assertEquals("success", c.getValue().getStatus());
-        assertEquals("epoint-pay-456", c.getValue().getTransactionId());
-        assertEquals("", c.getValue().getRedirectUrl());
-        verifyNoInteractions(abb, bob);
+    void googlePayPrePricedReturnsEpointWidgetUrlAsRedirectUrl() {
+        assertWalletWidget("Google_Pay", "ord_g1b2c3d4", "https://epoint.az/widget/222", "te222");
     }
 
     @Test

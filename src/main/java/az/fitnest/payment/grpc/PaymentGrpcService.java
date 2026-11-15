@@ -221,71 +221,55 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
     }
 
     /**
-     * Native Apple Pay from v3 checkout. Pre-priced only: re-quoting here would drop the BF discount.
-     * transaction_id carries the Epoint paymentId mobile needs for POST /api/v2/payment/apple-pay/submit;
-     * redirect_url stays empty because Apple Pay is not a web redirect.
+     * Apple Pay from v3 checkout. iOS pays through a WKWebView on the Epoint widget (not native
+     * create/submit), so redirect_url carries a pre-priced widget URL that order-backend surfaces as
+     * payment.paymentUrl. Pre-priced only: re-quoting here would drop the BF discount.
+     * createApplePayPaymentPrePriced stays in the service but is no longer called from gRPC.
      */
     private void handleApplePayPrePriced(CreatePaymentRequest request, boolean prePriced, String otherAttr,
                                          StreamObserver<CreatePaymentResponse> responseObserver) {
-        if (!prePriced || request.getUserId() <= 0 || request.getAmount() <= 0) {
-            responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
-                    .withDescription("apple_pay requires pre_priced, user_id and positive amount")
-                    .asRuntimeException());
-            return;
-        }
-        var ref = PaymentPackageRef.parseWithFallback(request.getDescription(), otherAttr);
-        if (!ref.isComplete()) {
-            responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
-                    .withDescription("apple_pay requires packageId/optionId ref").asRuntimeException());
-            return;
-        }
-        BigDecimal coins = request.getCoinsUsed() > 0
-                ? BigDecimal.valueOf(request.getCoinsUsed()).setScale(2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
-        try {
-            var token = integrationService.createApplePayPaymentPrePriced(
-                    request.getUserId(), ref.packageId(), ref.optionId(), request.getAmount(),
-                    request.getCurrency(), request.getOrderId(), ref.campaignId(), coins);
-            responseObserver.onNext(CreatePaymentResponse.newBuilder()
-                    .setStatus("success")
-                    .setTransactionId(token.getPaymentId() != null ? token.getPaymentId() : "")
-                    .build());
-            responseObserver.onCompleted();
-        } catch (IllegalArgumentException e) {
-            responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
-                    .withDescription(e.getMessage()).asRuntimeException());
-        }
+        handleWalletWidgetPrePriced("apple_pay", request, prePriced, otherAttr, responseObserver);
     }
 
     /**
-     * Native Google Pay from v3 checkout; same contract as {@link #handleApplePayPrePriced}. Pre-priced only
-     * (re-quoting would drop the BF discount). transaction_id carries the Epoint paymentId mobile needs for
-     * POST /api/v2/payment/google-pay/submit; redirect_url stays empty (no web redirect).
+     * Google Pay from v3 checkout: same widget contract as {@link #handleApplePayPrePriced}.
+     * createGooglePayPaymentPrePriced stays in the service but is no longer called from gRPC.
      */
     private void handleGooglePayPrePriced(CreatePaymentRequest request, boolean prePriced, String otherAttr,
                                           StreamObserver<CreatePaymentResponse> responseObserver) {
+        handleWalletWidgetPrePriced("google_pay", request, prePriced, otherAttr, responseObserver);
+    }
+
+    /** Shared apple_pay/google_pay body: pre-priced Epoint widget URL -> redirect_url, widget txn -> transaction_id. */
+    private void handleWalletWidgetPrePriced(String label, CreatePaymentRequest request, boolean prePriced,
+                                             String otherAttr,
+                                             StreamObserver<CreatePaymentResponse> responseObserver) {
         if (!prePriced || request.getUserId() <= 0 || request.getAmount() <= 0) {
             responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
-                    .withDescription("google_pay requires pre_priced, user_id and positive amount")
+                    .withDescription(label + " requires pre_priced, user_id and positive amount")
                     .asRuntimeException());
             return;
         }
         var ref = PaymentPackageRef.parseWithFallback(request.getDescription(), otherAttr);
         if (!ref.isComplete()) {
             responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
-                    .withDescription("google_pay requires packageId/optionId ref").asRuntimeException());
+                    .withDescription(label + " requires packageId/optionId ref").asRuntimeException());
             return;
         }
         BigDecimal coins = request.getCoinsUsed() > 0
                 ? BigDecimal.valueOf(request.getCoinsUsed()).setScale(2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
         try {
-            var token = integrationService.createGooglePayPaymentPrePriced(
-                    request.getUserId(), ref.packageId(), ref.optionId(), request.getAmount(),
-                    request.getCurrency(), request.getOrderId(), ref.campaignId(), coins);
+            // campaignId rides in the package ref so renewal/assignment still sees the BF campaign.
+            var widget = integrationService.createWidgetUrlPrePriced(
+                    request.getUserId(), request.getOrderId(), request.getAmount(), request.getCurrency(),
+                    PaymentPackageRef.encode(ref.packageId(), ref.optionId(), ref.campaignId()),
+                    coins, false);
             responseObserver.onNext(CreatePaymentResponse.newBuilder()
-                    .setStatus("success")
-                    .setTransactionId(token.getPaymentId() != null ? token.getPaymentId() : "")
+                    .setStatus(widget.status() != null ? widget.status() : "error")
+                    .setRedirectUrl(widget.widgetUrl() != null ? widget.widgetUrl() : "")
+                    .setTransactionId(widget.transaction() != null ? widget.transaction() : "")
+                    .setMessage(widget.message() != null ? widget.message() : "")
                     .build());
             responseObserver.onCompleted();
         } catch (IllegalArgumentException e) {
