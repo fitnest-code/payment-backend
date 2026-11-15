@@ -131,6 +131,57 @@ class PaymentGrpcServiceInstallmentTest {
         verifyNoInteractions(abb, bob, epoint);
     }
 
+    private static az.fitnest.payment.dto.epoint.EpointResponse epointResponse(String status, String redirect) {
+        return az.fitnest.payment.dto.epoint.EpointResponse.builder()
+                .status(status).transaction("te001").redirectUrl(redirect).build();
+    }
+
+    @Test
+    void savedCardPrePricedChargesBfAmountWithoutRequote() {
+        when(epoint.executePayWithCardPrePriced(anyLong(), any(), any(), anyDouble(), any(), any(), any(), any()))
+                .thenReturn(epointResponse("success", null));
+
+        service.createPayment(bf("Saved_Card").setOrderId("ord_s1b2c3d4").setCardId("card-9").build(), observer);
+
+        verify(epoint).executePayWithCardPrePriced(eq(7L), eq("card-9"), eq("ord_s1b2c3d4"), eq(1874.0), eq("AZN"),
+                eq("packageId:4,optionId:102,campaignId:cmp-1,type:One-time payment"),
+                eq(new BigDecimal("16.00")), eq(false));
+        verify(epoint, never()).executePayWithCard(anyLong(), any(), anyLong(), anyLong(), any(), any());
+        ArgumentCaptor<CreatePaymentResponse> c = ArgumentCaptor.forClass(CreatePaymentResponse.class);
+        verify(observer).onNext(c.capture());
+        assertEquals("success", c.getValue().getStatus());
+        assertEquals("te001", c.getValue().getTransactionId());
+        assertEquals("", c.getValue().getRedirectUrl());
+        verifyNoInteractions(abb, bob);
+    }
+
+    @Test
+    void savedCardPassesThrough3dsRedirect() {
+        when(epoint.executePayWithCardPrePriced(anyLong(), any(), any(), anyDouble(), any(), any(), any(), any()))
+                .thenReturn(epointResponse("new", "https://epoint/3ds"));
+
+        service.createPayment(bf("saved_card").setCardId("card-9").build(), observer);
+
+        ArgumentCaptor<CreatePaymentResponse> c = ArgumentCaptor.forClass(CreatePaymentResponse.class);
+        verify(observer).onNext(c.capture());
+        assertEquals("new", c.getValue().getStatus());
+        assertEquals("https://epoint/3ds", c.getValue().getRedirectUrl());
+    }
+
+    @Test
+    void savedCardWithoutCardIdIsInvalidArgument() {
+        service.createPayment(bf("saved_card").build(), observer);
+        verify(observer).onError(any());
+        verifyNoInteractions(abb, bob, epoint);
+    }
+
+    @Test
+    void savedCardWithoutPrePricedIsInvalidArgument() {
+        service.createPayment(bf("saved_card").setCardId("card-9").setPrePriced(false).build(), observer);
+        verify(observer).onError(any());
+        verifyNoInteractions(abb, bob, epoint);
+    }
+
     @Test
     void installmentWithoutMonthsIsInvalidArgument() {
         service.createPayment(bf("abb").setInstallmentMonths(0).build(), observer);
