@@ -1456,6 +1456,127 @@ public class EpointIntegrationService {
         return tokenResponse;
     }
 
+    /**
+     * Black Friday / pre-priced Apple Pay create (v3 checkout). Unlike {@link #createApplePayPayment}, this
+     * never calls subscriptionCheckoutService.quote: that re-prices from the list price and would charge the
+     * user without the campaign discount. order-backend already resolved campaign + FitCoin, so the Epoint
+     * token is created for exactly {@code amount}, and the existing submit endpoint then charges that token.
+     * The legacy method is intentionally left untouched (non-BF behavior must not change).
+     *
+     * @return Epoint token response; its paymentId is what mobile passes to /api/v2/payment/apple-pay/submit
+     */
+    @Transactional
+    public EpointTokenResponse createApplePayPaymentPrePriced(
+            Long userId, Long packageId, Long optionId, double amount, String currency,
+            String clientOrderId, String campaignId, java.math.BigDecimal coinsUsed) {
+        if (clientOrderId == null || clientOrderId.isBlank()) {
+            throw new IllegalArgumentException("clientOrderId required for Apple Pay pre-priced payment");
+        }
+        if (packageId == null || optionId == null) {
+            throw new IllegalArgumentException("packageId/optionId required for Apple Pay pre-priced payment");
+        }
+        validatePaymentRequest(amount, currency);
+
+        // Same description format as the quote path so renewal/subscription assignment can parse the ref.
+        String description = PaymentPackageRef.encode(packageId, optionId, campaignId);
+        log.info("[ApplePayCreate][PrePriced] userId={}, orderId={}, amount={}, campaignId={}",
+                userId, clientOrderId, amount, campaignId);
+
+        EpointTokenRequest tokenRequest = EpointTokenRequest.builder()
+                .publicKey(epointProperties.getPublicKey())
+                .amount(amount)
+                .currency(currency)
+                .language("az")
+                .orderId(clientOrderId)
+                .description(description)
+                .build();
+
+        EpointTokenResponse tokenResponse = httpClient.postSigned("/token/payment", tokenRequest, EpointTokenResponse.class);
+        boolean isSuccess = "success".equalsIgnoreCase(tokenResponse.status())
+                || (tokenResponse.status() == null && tokenResponse.getPaymentId() != null);
+        if (!isSuccess) {
+            log.error("[ApplePayCreate][PrePriced] Token creation failed. Status: {}, Message: {}",
+                    tokenResponse.status(), tokenResponse.message());
+            throw new RuntimeException("Epoint token creation failed: " + tokenResponse.message());
+        }
+
+        Payment payment = new Payment();
+        payment.setProvider("EPOINT");
+        payment.setOrderId(clientOrderId);
+        // submitApplePayPayment looks the payment up by this id.
+        payment.setTransactionId(tokenResponse.getPaymentId());
+        payment.setAmount(amount);
+        payment.setCurrency(currency);
+        payment.setStatus("PENDING");
+        payment.setUserId(userId);
+        payment.setDescription(description);
+        payment.setType("APPLE_PAY");
+        payment.setAutoPaymentEnabled(false);
+        payment.setCoinsUsed(coinsUsed != null ? coinsUsed : java.math.BigDecimal.ZERO);
+        paymentRepository.save(payment);
+        return tokenResponse;
+    }
+
+    /**
+     * Black Friday / pre-priced Google Pay create (v3 checkout); mirrors {@link #createApplePayPaymentPrePriced}.
+     * {@link #createGooglePayPayment} re-quotes from the list price and would drop the campaign discount, so
+     * this variant trusts the amount order-backend already resolved (campaign + FitCoin). The legacy
+     * google-pay/create path is intentionally left untouched.
+     *
+     * @return Epoint token response; its paymentId is what mobile passes to /api/v2/payment/google-pay/submit
+     */
+    @Transactional
+    public EpointTokenResponse createGooglePayPaymentPrePriced(
+            Long userId, Long packageId, Long optionId, double amount, String currency,
+            String clientOrderId, String campaignId, java.math.BigDecimal coinsUsed) {
+        if (clientOrderId == null || clientOrderId.isBlank()) {
+            throw new IllegalArgumentException("clientOrderId required for Google Pay pre-priced payment");
+        }
+        if (packageId == null || optionId == null) {
+            throw new IllegalArgumentException("packageId/optionId required for Google Pay pre-priced payment");
+        }
+        validatePaymentRequest(amount, currency);
+
+        // Same description format as the quote path so renewal/subscription assignment can parse the ref.
+        String description = PaymentPackageRef.encode(packageId, optionId, campaignId);
+        log.info("[GooglePayCreate][PrePriced] userId={}, orderId={}, amount={}, campaignId={}",
+                userId, clientOrderId, amount, campaignId);
+
+        EpointTokenRequest tokenRequest = EpointTokenRequest.builder()
+                .publicKey(epointProperties.getPublicKey())
+                .amount(amount)
+                .currency(currency)
+                .language("az")
+                .orderId(clientOrderId)
+                .description(description)
+                .build();
+
+        EpointTokenResponse tokenResponse = httpClient.postSigned("/token/payment", tokenRequest, EpointTokenResponse.class);
+        boolean isSuccess = "success".equalsIgnoreCase(tokenResponse.status())
+                || (tokenResponse.status() == null && tokenResponse.getPaymentId() != null);
+        if (!isSuccess) {
+            log.error("[GooglePayCreate][PrePriced] Token creation failed. Status: {}, Message: {}",
+                    tokenResponse.status(), tokenResponse.message());
+            throw new RuntimeException("Epoint token creation failed: " + tokenResponse.message());
+        }
+
+        Payment payment = new Payment();
+        payment.setProvider("EPOINT");
+        payment.setOrderId(clientOrderId);
+        // submitGooglePayPayment looks the payment up by this id.
+        payment.setTransactionId(tokenResponse.getPaymentId());
+        payment.setAmount(amount);
+        payment.setCurrency(currency);
+        payment.setStatus("PENDING");
+        payment.setUserId(userId);
+        payment.setDescription(description);
+        payment.setType("GOOGLE_PAY");
+        payment.setAutoPaymentEnabled(false);
+        payment.setCoinsUsed(coinsUsed != null ? coinsUsed : java.math.BigDecimal.ZERO);
+        paymentRepository.save(payment);
+        return tokenResponse;
+    }
+
     public ApplePaySubmitResponse submitApplePayPayment(Long userId, ApplePaySubmitRequest request) {
         log.info("[ApplePaySubmit] (SERVICE) userId={}, paymentId={}, tokenLength={}",
                 userId, request.paymentId(), request.token() != null ? request.token().length() : 0);

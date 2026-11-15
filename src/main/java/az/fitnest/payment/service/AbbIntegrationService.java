@@ -123,6 +123,69 @@ public class AbbIntegrationService {
         String orderId = generateOrderId();
         String description = quote.packageRefDescription();
 
+        return buildAndPersistGatewayPayment(userId, orderId, amount, currency, description,
+                installment, quote.coinsUsed());
+    }
+
+    /**
+     * Black Friday / campaign checkout: order-backend already computed the payable (campaign discount
+     * then FitCoin), so this path must NOT call {@code subscriptionCheckoutService.quote} (it would
+     * re-price at list price and re-apply coins) and must NOT mint its own orderId (order-backend
+     * polls {@code /me/payments/order/{orderId}} with the id it generated).
+     *
+     * <p>Unlike the legacy controller mapping, unsupported months are rejected rather than silently
+     * downgraded to ACQ_INST_PAYIN=X, otherwise a TamKart user would be charged without installments.</p>
+     *
+     * @param orderId must be 6-32 digits (ABB spec); caller (order-backend) generates it numerically
+     * @param campaignId optional pricing campaign id, embedded in DESC so the subscription assignment
+     *                   and outbox events can attribute the redemption
+     * @throws IllegalArgumentException invalid orderId/months/package ref
+     * @throws AbbMaintenanceException  ABB_MAINTENANCE_MODE=true (default off-prod); the gRPC layer only
+     *                                  bypasses the controller-level maintenance check, so enforce it here
+     */
+    @Transactional
+    public AbbInitiateResponse initiateInstallmentPaymentPrePriced(
+            Long userId,
+            Long packageId,
+            Long optionId,
+            Integer installmentMonths,
+            double amount,
+            String currency,
+            String orderId,
+            String campaignId,
+            java.math.BigDecimal coinsUsed) {
+
+        if (abbProperties.isMaintenanceMode()) {
+            throw new az.fitnest.payment.exception.AbbMaintenanceException(
+                    "Hazırda ABB ödəniş sistemində texniki işlər aparılır");
+        }
+        if (orderId == null || !orderId.matches("\\d{6,32}")) {
+            throw new IllegalArgumentException("ABB orderId must be 6-32 digits");
+        }
+        if (packageId == null || optionId == null) {
+            throw new IllegalArgumentException("packageId/optionId required for ABB pre-priced payment");
+        }
+        AbbInstallmentOption installment = installmentMonths == null
+                ? AbbInstallmentOption.NONE : AbbInstallmentOption.fromMonths(installmentMonths);
+        if (!installment.isInstallment()) {
+            throw new IllegalArgumentException("Unsupported ABB installment months: " + installmentMonths);
+        }
+
+        log.info("[ABB][Init][PrePriced] userId={}, packageId={}, optionId={}, months={}, amount={}, orderId={}, campaignId={}",
+                userId, packageId, optionId, installmentMonths, amount, orderId, campaignId);
+
+        String resolvedCurrency = currency != null && !currency.isBlank()
+                ? currency : abbProperties.getDefaultCurrency();
+        String description = PaymentPackageRef.encode(packageId, optionId, campaignId);
+        return buildAndPersistGatewayPayment(userId, orderId, amount, resolvedCurrency, description,
+                installment, coinsUsed);
+    }
+
+    /** Shared by the legacy (quote-based) and pre-priced entry points so signing/persistence never diverge. */
+    private AbbInitiateResponse buildAndPersistGatewayPayment(
+            Long userId, String orderId, double amount, String currency, String description,
+            AbbInstallmentOption installment, java.math.BigDecimal coinsUsed) {
+
         // 3. Timestamp + Nonce yarat
         String timestamp = abbSigner.generateTimestamp();
         String nonce     = abbSigner.generateNonce();
@@ -173,10 +236,10 @@ public class AbbIntegrationService {
 
         // 8. Pending Payment entity-ni saxla
         Payment payment = createPendingPayment(orderId, amount, currency, userId, description, inst);
-        payment.setCoinsUsed(quote.coinsUsed());
+        payment.setCoinsUsed(coinsUsed);
         paymentRepository.save(payment);
         log.info("[ABB][Init] Pending payment saved: id={}, orderId={}, amount={}, coinsUsed={}",
-                payment.getId(), orderId, amount, quote.coinsUsed());
+                payment.getId(), orderId, amount, coinsUsed);
 
         // 9. userId-ni Redis-ə yaz (callback zamanı istifadə üçün)
         String redisKey = "abb-payment-user:" + orderId;

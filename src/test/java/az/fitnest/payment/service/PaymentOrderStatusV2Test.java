@@ -66,6 +66,16 @@ class PaymentOrderStatusV2Test {
     }
 
     @Test
+    void getPaymentOrderStatusByOrderId_fallsBackToTransactionIdForBobClientOrderId() {
+        // BolKart pre-priced: order_id is the bank id, transaction_id holds the order-backend id.
+        Payment payment = payment(5L, "SUCCESS", "ord_bob1", "bank-uuid");
+        when(paymentRepository.findByOrderId("ord_bob1")).thenReturn(Optional.empty());
+        when(paymentRepository.findByTransactionId("ord_bob1")).thenReturn(Optional.of(payment));
+
+        assertEquals("SUCCESS", userPaymentService.getPaymentOrderStatusByOrderId("ord_bob1", 5L).status());
+    }
+
+    @Test
     void getPaymentOrderStatusByOrderId_notFound() {
         when(paymentRepository.findByOrderId("missing")).thenReturn(Optional.empty());
 
