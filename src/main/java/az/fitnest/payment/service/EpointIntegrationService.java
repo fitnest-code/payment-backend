@@ -354,6 +354,42 @@ public class EpointIntegrationService {
         return executePay(epointRequest, userId, quote.coinsUsed());
     }
 
+    /**
+     * Black Friday / pre-priced saved-card charge (v3 checkout, paymentType=SAVED_CARD).
+     * {@link #executePayWithCard} re-quotes via subscriptionCheckoutService.quote at list price, which would
+     * drop the campaign discount, so this variant charges exactly {@code amount}: order-backend already resolved
+     * campaign + FitCoin and the client orderId (used for polling /me/payments/order/{id}).
+     * Persists through the same {@link #executePay} path as legacy with-card (type PAYMENT), so callbacks,
+     * coin spending and subscription assignment behave identically. The legacy method is left untouched.
+     *
+     * @param description must already carry the packageId/optionId[/campaignId] ref so assignment can parse it
+     */
+    public EpointResponse executePayWithCardPrePriced(
+            Long userId, String cardId, String orderId, double amount, String currency,
+            String description, java.math.BigDecimal coinsUsed, Boolean autoPaymentEnabled) {
+        if (orderId == null || orderId.isBlank()) {
+            throw new IllegalArgumentException("orderId required for saved-card pre-priced payment");
+        }
+        if (cardId == null || cardId.isBlank()) {
+            throw new IllegalArgumentException("cardId required for saved-card pre-priced payment");
+        }
+        validatePaymentRequest(amount, currency);
+
+        log.info("[PayWithCard][PrePriced] userId={}, orderId={}, amount={}", userId, orderId, amount);
+        EpointExecutePayRequest epointRequest = EpointExecutePayRequest.builder()
+                .publicKey(epointProperties.getPublicKey())
+                .language("az")
+                .cardId(cardId)
+                .orderId(orderId)
+                .amount(amount)
+                .currency(currency)
+                .description(description)
+                .isInstallment(0)
+                .autoPaymentEnabled(autoPaymentEnabled != null ? autoPaymentEnabled : false)
+                .build();
+        return executePay(epointRequest, userId, coinsUsed != null ? coinsUsed : java.math.BigDecimal.ZERO);
+    }
+
     public EpointResponse refundRequest(EpointRefundRequest request) {
         EpointResponse response = epointService.refundRequest(request);
         if (response.transaction() != null) {

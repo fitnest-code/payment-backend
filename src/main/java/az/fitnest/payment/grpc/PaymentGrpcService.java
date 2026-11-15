@@ -63,6 +63,10 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                 handleGooglePayPrePriced(request, prePriced, otherAttr, responseObserver);
                 return;
             }
+            if ("saved_card".equals(provider)) {
+                handleSavedCardPrePriced(request, prePriced, otherAttr, responseObserver);
+                return;
+            }
             if (!provider.isEmpty() && !"epoint".equals(provider)) {
                 responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
                         .withDescription("Unsupported provider: " + provider).asRuntimeException());
@@ -282,6 +286,49 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
             responseObserver.onNext(CreatePaymentResponse.newBuilder()
                     .setStatus("success")
                     .setTransactionId(token.getPaymentId() != null ? token.getPaymentId() : "")
+                    .build());
+            responseObserver.onCompleted();
+        } catch (IllegalArgumentException e) {
+            responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
+                    .withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    /**
+     * Epoint saved card from v3 checkout. Pre-priced only: legacy with-card re-quotes at list price and drops
+     * the BF discount. status/redirect_url are passed through from Epoint (redirect_url is set when the bank
+     * requires 3DS); transaction_id is the Epoint transaction.
+     */
+    private void handleSavedCardPrePriced(CreatePaymentRequest request, boolean prePriced, String otherAttr,
+                                          StreamObserver<CreatePaymentResponse> responseObserver) {
+        if (!prePriced || request.getUserId() <= 0 || request.getAmount() <= 0
+                || request.getCardId() == null || request.getCardId().isBlank()) {
+            responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
+                    .withDescription("saved_card requires pre_priced, user_id, positive amount and card_id")
+                    .asRuntimeException());
+            return;
+        }
+        var ref = PaymentPackageRef.parseWithFallback(request.getDescription(), otherAttr);
+        if (!ref.isComplete()) {
+            responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
+                    .withDescription("saved_card requires packageId/optionId ref").asRuntimeException());
+            return;
+        }
+        BigDecimal coins = request.getCoinsUsed() > 0
+                ? BigDecimal.valueOf(request.getCoinsUsed()).setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        // Same ",type:" suffix as legacy with-card; autopay is never enabled from BF checkout.
+        String description = PaymentPackageRef.encode(ref.packageId(), ref.optionId(), ref.campaignId())
+                + ",type:One-time payment";
+        try {
+            EpointResponse r = integrationService.executePayWithCardPrePriced(
+                    request.getUserId(), request.getCardId(), request.getOrderId(), request.getAmount(),
+                    request.getCurrency(), description, coins, false);
+            responseObserver.onNext(CreatePaymentResponse.newBuilder()
+                    .setStatus(r.status() != null ? r.status() : "error")
+                    .setRedirectUrl(r.redirectUrl() != null ? r.redirectUrl() : "")
+                    .setTransactionId(r.transaction() != null ? r.transaction() : "")
+                    .setMessage(r.message() != null ? r.message() : "")
                     .build());
             responseObserver.onCompleted();
         } catch (IllegalArgumentException e) {
