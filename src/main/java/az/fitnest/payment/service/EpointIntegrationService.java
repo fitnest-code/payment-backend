@@ -763,6 +763,107 @@ public class EpointIntegrationService {
         return response;
     }
 
+    /**
+     * Black Friday / pre-priced Epoint widget (v3 checkout APPLE_PAY). iOS renders Apple Pay inside a
+     * WKWebView on the Epoint widget instead of native create/submit, so v3 needs a widget URL for exactly
+     * the amount order-backend resolved (campaign + FitCoin). {@link #createWidgetUrl(Long, Long, Long, Boolean, Boolean)}
+     * re-quotes from the list price and would charge without the BF discount, hence this variant skips
+     * subscriptionCheckoutService.quote and trusts the caller's orderId/amount/description. The legacy REST
+     * widget-url path is intentionally left untouched.
+     *
+     * @param description package ref (packageId/optionId/campaignId) so renewal/assignment can parse it
+     */
+    @Transactional
+    public EpointResponse createWidgetUrlPrePriced(
+            Long userId, String orderId, double amount, String currency, String description,
+            java.math.BigDecimal coinsUsed, Boolean autoPaymentEnabled) {
+        if (orderId == null || orderId.isBlank()) {
+            throw new IllegalArgumentException("orderId required for pre-priced widget payment");
+        }
+        validatePaymentRequest(amount, currency);
+
+        boolean autoPay = Boolean.TRUE.equals(autoPaymentEnabled);
+        // Same suffix as createWidgetUrl so downstream parsing/reporting treats both widget rows alike.
+        String fullDescription = description
+                + ",device:" + az.fitnest.payment.util.DeviceDetector.detectDeviceType()
+                + ",type:" + (autoPay ? "Monthly payment" : "One-time payment");
+
+        if (userId != null) {
+            // Callback resolves the user from this key when Epoint reports the widget result.
+            redisTemplate.opsForValue().set("payment-user:" + orderId, String.valueOf(userId),
+                    1, java.util.concurrent.TimeUnit.DAYS);
+        }
+
+        EpointWidgetRequest request = EpointWidgetRequest.builder()
+                .amount(amount)
+                .currency(currency != null ? currency : "AZN")
+                .orderId(orderId)
+                .description(fullDescription)
+                .autoPaymentEnabled(autoPay)
+                .build();
+
+        log.info("[WidgetUrl][PrePriced] userId={}, orderId={}, amount={}, coinsUsed={}",
+                userId, orderId, amount, coinsUsed);
+
+        EpointResponse response = epointService.createWidgetUrl(request);
+        if (!"success".equalsIgnoreCase(response.status())) {
+            return response;
+        }
+
+        String widgetUrl = response.widgetUrl();
+        String transactionId = response.transaction();
+        // Same token -> transactionId extraction as createWidgetUrl (widget token is the numeric tail of the URL).
+        if (widgetUrl != null && !widgetUrl.isBlank()) {
+            int widgetIdx = widgetUrl.indexOf("/widget/");
+            if (widgetIdx != -1) {
+                String token = widgetUrl.substring(widgetIdx + "/widget/".length()).trim();
+                int questionIdx = token.indexOf('?');
+                if (questionIdx != -1) {
+                    token = token.substring(0, questionIdx);
+                }
+                int hashIdx = token.indexOf('#');
+                if (hashIdx != -1) {
+                    token = token.substring(0, hashIdx);
+                }
+                if (token.endsWith("/")) {
+                    token = token.substring(0, token.length() - 1);
+                }
+                if (!token.isBlank() && token.matches("\\d+")) {
+                    try {
+                        transactionId = EpointTransactionIds.fromWidgetToken(token);
+                    } catch (Exception e) {
+                        log.warn("[WidgetUrl][PrePriced] Failed to format widget token: {}", token, e);
+                    }
+                }
+            }
+        }
+
+        Payment payment = new Payment();
+        payment.setProvider("EPOINT");
+        payment.setOrderId(orderId);
+        payment.setTransactionId(transactionId);
+        payment.setAmount(amount);
+        payment.setCurrency(currency);
+        payment.setStatus("PENDING_USER_ACTION");
+        payment.setUserId(userId);
+        payment.setDescription(fullDescription);
+        payment.setType("WIDGET_PAYMENT");
+        payment.setAutoPaymentEnabled(autoPay);
+        payment.setRedirectUrl(widgetUrl);
+        payment.setCoinsUsed(coinsUsed != null ? coinsUsed : java.math.BigDecimal.ZERO);
+        paymentRepository.save(payment);
+        log.info("[WidgetUrl][PrePriced] Pending payment saved. orderId={}, transactionId={}", orderId, transactionId);
+
+        return EpointResponse.builder()
+                .status(response.status())
+                .transaction(transactionId)
+                .orderId(orderId)
+                .widgetUrl(widgetUrl)
+                .message(response.message())
+                .code(response.code())
+                .build();
+    }
+
     public EpointResponse createWidgetUrl(EpointWidgetRequest request) {
         return epointService.createWidgetUrl(request);
     }
