@@ -17,6 +17,14 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findByTransactionId(String transactionId);
 
+    /** Kapital bank order id lookup (payments.order_id holds the FitNest id for KAPITAL). */
+    Optional<Payment> findByProviderOrderId(String providerOrderId);
+
+    /** Row lock so callback and reconciliation cannot finalize the same Kapital payment twice. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Payment p WHERE p.providerOrderId = :providerOrderId")
+    Optional<Payment> findByProviderOrderIdForUpdate(@Param("providerOrderId") String providerOrderId);
+
     List<Payment> findByTransactionIdIn(java.util.Collection<String> transactionIds);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

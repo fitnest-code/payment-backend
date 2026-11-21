@@ -251,6 +251,27 @@ bob:
   maintenance-mode: ${BOB_MAINTENANCE_MODE:false}
   timeout-ms: ${BOB_TIMEOUT_MS:10000}
 
+# Kapital Bank HPP (Order_SMS). Credentials/keys come from Vault via env — no real defaults here.
+kapital:
+  base-url: ${KAPITAL_BASE_URL:https://txpgtst.kapitalbank.az/api}
+  username: ${KAPITAL_USERNAME:}
+  password: ${KAPITAL_PASSWORD:}
+  # Public URL of /payment/kapital/result (sent to the bank as hppRedirectUrl).
+  callback-url: ${KAPITAL_CALLBACK_URL:}
+  success-redirect-url: ${KAPITAL_SUCCESS_REDIRECT_URL:}
+  error-redirect-url: ${KAPITAL_ERROR_REDIRECT_URL:}
+  default-currency: ${KAPITAL_DEFAULT_CURRENCY:AZN}
+  default-language: ${KAPITAL_DEFAULT_LANGUAGE:az}
+  title: ${KAPITAL_TITLE:FitNest}
+  reconcile-enabled: ${KAPITAL_RECONCILE_ENABLED:true}
+  reconcile-interval-ms: ${KAPITAL_RECONCILE_INTERVAL_MS:180000}
+  pending-min-age-ms: ${KAPITAL_PENDING_MIN_AGE_MS:120000}
+  preparing-timeout-ms: ${KAPITAL_PREPARING_TIMEOUT_MS:3600000}
+  maintenance-mode: ${KAPITAL_MAINTENANCE_MODE:false}
+  timeout-ms: ${KAPITAL_TIMEOUT_MS:15000}
+  # AES-GCM key for payments.encrypted_order_password; empty = encryption fails closed.
+  order-password-encryption-key: ${KAPITAL_ORDER_PASSWORD_ENCRYPTION_KEY:}
+
 # Idempotency Key Configuration
 payment:
   card-logos-base-url: ${CARD_LOGOS_BASE_URL:https://api.fitnest.az/assets/cards}

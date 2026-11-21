@@ -63,6 +63,10 @@ public class SecurityConfig {
                         .requestMatchers("/payment/bob/callback").permitAll()
                         .requestMatchers("/payment/bob/redirect/**").permitAll()
                         .requestMatchers("/payment/bob/installment").permitAll()
+                        // Kapital Bank HPP return URL — payer arrives from the bank without a JWT;
+                        // status is re-verified server-side via GET /order, never trusted from the query.
+                        .requestMatchers("/payment/kapital/result").permitAll()
+                        .requestMatchers("/api/v1/payments/kapital/result").permitAll()
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/swagger-ui.html").permitAll()
