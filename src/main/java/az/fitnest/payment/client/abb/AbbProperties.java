@@ -89,9 +89,9 @@ public class AbbProperties {
      * Müvəqqəti texniki işlər rejimi.
      * {@code true} olduqda bütün istifadəçiyə açıq ABB endpoint-ləri
      * texniki işlər mesajı ilə cavab verir.
-     * ENV: {@code ABB_MAINTENANCE_MODE=true/false}
+     * ENV: {@code ABB_MAINTENANCE_MODE=true/false} (default false).
      */
-    private boolean maintenanceMode = true;
+    private boolean maintenanceMode = false;
 
     /**
      * Dil kodu. Default: AZ

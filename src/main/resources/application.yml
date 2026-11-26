@@ -185,9 +185,9 @@ abb:
   default-currency: ${ABB_DEFAULT_CURRENCY:AZN}
   default-language: ${ABB_DEFAULT_LANGUAGE:AZ}
   active-installment-months: ${ABB_ACTIVE_INSTALLMENT_MONTHS:3,6,12}
-  # Texniki işlər rejimi: true = bütün ABB endpoint-ləri maintenance mesajı qaytarır
-  # Inteqrasiya tamamlandıqdan sonra ABB_MAINTENANCE_MODE=false set edin
-  maintenance-mode: ${ABB_MAINTENANCE_MODE:true}
+  # Texniki işlər rejimi: true = bütün ABB endpoint-ləri maintenance mesajı qaytarır.
+  # Default false — set ABB_MAINTENANCE_MODE=true only when deliberately taking ABB offline.
+  maintenance-mode: ${ABB_MAINTENANCE_MODE:false}
 
 # ABB BNPL (Buy Now Pay Later) External API — separate from Azericard abb: block
 abb-bnpl:
