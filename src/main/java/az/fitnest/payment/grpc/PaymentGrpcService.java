@@ -35,6 +35,7 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
     private final PaymentRepository paymentRepository;
     private final AbbIntegrationService abbIntegrationService;
     private final BobIntegrationService bobIntegrationService;
+    private final az.fitnest.payment.service.KapitalIntegrationService kapitalIntegrationService;
 
     @Override
     public void createPayment(CreatePaymentRequest request, StreamObserver<CreatePaymentResponse> responseObserver) {
@@ -55,6 +56,10 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                 handleInstallmentProvider(request, provider, prePriced, otherAttr, responseObserver);
                 return;
             }
+            if ("kapital".equals(provider)) {
+                handleKapitalPrePriced(request, prePriced, otherAttr, responseObserver);
+                return;
+            }
             if ("apple_pay".equals(provider)) {
                 handleApplePayPrePriced(request, prePriced, otherAttr, responseObserver);
                 return;
@@ -73,6 +78,12 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                 return;
             }
 
+            // Proto3 scalar: 0 means unset. Resolved early so non-prePriced re-quotes can apply BF eligibility.
+            Long userId = request.getUserId() > 0 ? request.getUserId() : null;
+            if (userId == null) {
+                log.warn("CreatePayment missing user_id for orderId={}", request.getOrderId());
+            }
+
             Long packageId = null;
             Long optionId = null;
             String campaignId = null;
@@ -89,7 +100,7 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                 }
 
                 if (packageId != null && optionId != null) {
-                    var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+                    var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId, userId);
                     amount = priceCurrency.amount;
                     currency = priceCurrency.currency != null ? priceCurrency.currency : currency;
                     otherAttr = PaymentPackageRef.encode(packageId, optionId, campaignId);
@@ -101,13 +112,6 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                         .withDescription("Amount must be resolved from package/option or provided as positive")
                         .asRuntimeException());
                 return;
-            }
-
-            // Proto3 scalar: 0 means unset. Checkout must send the owning user so
-            // GET /me/payments/order/{id} ownership checks do not 403 on null user_id.
-            Long userId = request.getUserId() > 0 ? request.getUserId() : null;
-            if (userId == null) {
-                log.warn("CreatePayment missing user_id for orderId={}", request.getOrderId());
             }
 
             EpointPaymentRequest paymentRequest = EpointPaymentRequest.builder()
@@ -218,6 +222,51 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                 .setMessage(message != null ? message : "")
                 .build());
         responseObserver.onCompleted();
+    }
+
+    /**
+     * Kapital Bank HPP checkout from order-backend. Pre-priced only (same reason as abb/bob).
+     * Unlike abb/bob, installment_months is optional: 0/unset = card, 3|6|12 = TAKSIT=N; other values
+     * are rejected by the service. redirect_url carries the HPP URL, transaction_id the bank order id.
+     */
+    private void handleKapitalPrePriced(CreatePaymentRequest request, boolean prePriced, String otherAttr,
+                                        StreamObserver<CreatePaymentResponse> responseObserver) {
+        if (!prePriced || request.getUserId() <= 0 || request.getAmount() <= 0) {
+            responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
+                    .withDescription("kapital requires pre_priced, user_id and positive amount")
+                    .asRuntimeException());
+            return;
+        }
+        var ref = PaymentPackageRef.parseWithFallback(request.getDescription(), otherAttr);
+        if (!ref.isComplete()) {
+            responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
+                    .withDescription("kapital requires packageId/optionId ref").asRuntimeException());
+            return;
+        }
+        BigDecimal coins = request.getCoinsUsed() > 0
+                ? BigDecimal.valueOf(request.getCoinsUsed()).setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        Integer months = request.getInstallmentMonths() > 0 ? request.getInstallmentMonths() : null;
+        try {
+            var r = kapitalIntegrationService.initiatePaymentPrePriced(
+                    request.getUserId(), ref.packageId(), ref.optionId(), months,
+                    request.getAmount(), request.getCurrency(), request.getOrderId(), ref.campaignId(), coins);
+            responseObserver.onNext(CreatePaymentResponse.newBuilder()
+                    .setStatus("success")
+                    .setRedirectUrl(r.getHppUrl() != null ? r.getHppUrl() : "")
+                    .setTransactionId(r.getProviderOrderId() != null ? r.getProviderOrderId() : "")
+                    .build());
+            responseObserver.onCompleted();
+        } catch (IllegalArgumentException | az.fitnest.payment.exception.KapitalPaymentException e) {
+            // Validation failures (bad TAKSIT months, missing refs) and bank rejections are caller errors.
+            responseObserver.onError(io.grpc.Status.INVALID_ARGUMENT
+                    .withDescription(e.getMessage()).asRuntimeException());
+        } catch (az.fitnest.payment.exception.KapitalMaintenanceException e) {
+            log.warn("[CreatePayment] kapital in maintenance: {}", e.getMessage());
+            responseObserver.onNext(CreatePaymentResponse.newBuilder()
+                    .setStatus("error").setMessage(e.getMessage()).build());
+            responseObserver.onCompleted();
+        }
     }
 
     /**

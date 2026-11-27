@@ -179,7 +179,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
         Long planId = request.getSubscriptionPlanId();
         Long optionId = request.getOptionId();
 
-        BigDecimal originalPrice = resolvePackagePrice(planId, optionId, request.getOriginalPrice());
+        BigDecimal originalPrice = resolvePackagePrice(userId, planId, optionId, request.getOriginalPrice());
         BigDecimal availableCoinBalance = wallet.getBalance();
         BigDecimal availableCoinAzn = availableCoinBalance.divide(settings.getSpendRateCoinToAzn(), 2, RoundingMode.HALF_UP);
 
@@ -266,7 +266,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     @Transactional(readOnly = true)
     public FullPaymentEligibilityResponse checkFullPaymentEligibility(Long userId, FullPaymentEligibilityRequest request) {
         CoinBalanceResponse balance = getCoinBalance(userId);
-        BigDecimal packagePrice = resolvePackagePrice(request.getPackageId(), request.getOptionId(), null);
+        BigDecimal packagePrice = resolvePackagePrice(userId, request.getPackageId(), request.getOptionId(), null);
         boolean isEligible = balance.getAznEquivalent().compareTo(packagePrice) >= 0;
 
         return FullPaymentEligibilityResponse.builder()
@@ -286,7 +286,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
             throw new BadRequestException("subscriptionPlanId və optionId icbaridir");
         }
 
-        var priceDetails = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+        var priceDetails = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId, userId);
         if (priceDetails == null || priceDetails.amount <= 0) {
             throw new BadRequestException("Paket qiyməti müəyyən edilə bilmədi");
         }
@@ -937,11 +937,11 @@ public class CoinWalletServiceImpl implements CoinWalletService {
     }
 
     // Helper method to resolve actual package price dynamically from SubscriptionPackageGrpcClient
-    private BigDecimal resolvePackagePrice(Long subscriptionPlanId, Long optionId, BigDecimal requestPrice) {
+    private BigDecimal resolvePackagePrice(Long userId, Long subscriptionPlanId, Long optionId, BigDecimal requestPrice) {
         if (subscriptionPlanId != null) {
             try {
                 Long optId = optionId != null ? optionId : 1L;
-                var details = subscriptionPackageGrpcClient.getOptionPriceCurrency(subscriptionPlanId, optId);
+                var details = subscriptionPackageGrpcClient.getOptionPriceCurrency(subscriptionPlanId, optId, userId);
                 if (details != null && details.amount > 0) {
                     return BigDecimal.valueOf(details.amount).setScale(2, RoundingMode.HALF_UP);
                 }
@@ -1186,7 +1186,7 @@ public class CoinWalletServiceImpl implements CoinWalletService {
 
                 BigDecimal price = item.getPriceAzn() != null
                         ? item.getPriceAzn()
-                        : resolvePackagePrice(item.getPackageId(), item.getOptionId(), null);
+                        : resolvePackagePrice(null, item.getPackageId(), item.getOptionId(), null);
 
                 CoinEarnCalculator.EarnResult result = coinEarnCalculator.calculateV2(
                         price,

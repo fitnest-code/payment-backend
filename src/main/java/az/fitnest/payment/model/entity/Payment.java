@@ -10,7 +10,8 @@ import lombok.Setter;
 @Table(name = "payments", indexes = {
         @Index(name = "idx_payments_status", columnList = "status"),
         @Index(name = "idx_payments_transaction_id", columnList = "transaction_id", unique = true),
-        @Index(name = "idx_payments_order_id", columnList = "order_id")
+        @Index(name = "idx_payments_order_id", columnList = "order_id"),
+        @Index(name = "idx_payments_provider_order_id", columnList = "provider_order_id")
 })
 @Getter
 @Setter
@@ -93,6 +94,21 @@ public class Payment extends BaseAuditableEntity {
 
     @Column(name = "coins_used")
     private java.math.BigDecimal coinsUsed = java.math.BigDecimal.ZERO;
+
+    /** Kapital Bank order id (FitNest id stays in orderId/transactionId). */
+    @Column(name = "provider_order_id", length = 64)
+    private String providerOrderId;
+
+    /** Kapital HPP order password, AES-GCM encrypted (PaymentSecretEncryption). Never log or expose. */
+    @Column(name = "encrypted_order_password", columnDefinition = "TEXT")
+    private String encryptedOrderPassword;
+
+    /** Kapital TAKSIT=N months; null for card payments. */
+    @Column(name = "installment_months")
+    private Integer installmentMonths;
+
+    @Column(name = "pmo_result_code", length = 32)
+    private String pmoResultCode;
 
     public void setCardId(String cardId) {
         this.cardId = cardId;

@@ -51,7 +51,8 @@ public class SubscriptionCheckoutService {
             throw new BadRequestException("Invalid packageId or optionId");
         }
 
-        var price = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+        // Pass userId so order GetOptionDetails applies BF campaign tiers (gym legacy init path).
+        var price = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId, userId);
         if (price == null || price.amount <= 0) {
             throw new BadRequestException("Unable to resolve package price");
         }
