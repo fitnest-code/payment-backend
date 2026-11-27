@@ -172,7 +172,7 @@ class CoinWalletServiceTest {
         when(walletRepository.findByUserId(userId)).thenReturn(Optional.of(wallet));
 
         // Mock gRPC client returning official package price 50.00 AZN
-        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(eq(123L), any()))
+        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(eq(123L), any(), eq(userId)))
                 .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(50.0, "AZN", 1));
 
         CalculateDiscountResponse response = coinWalletService.calculateCheckoutDiscount(userId, request);
@@ -199,7 +199,7 @@ class CoinWalletServiceTest {
         CoinWallet wallet = new CoinWallet(userId, new BigDecimal("300.00"));
         when(walletRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(wallet));
 
-        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(eq(123L), any()))
+        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(eq(123L), any(), eq(userId)))
                 .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(10.0, "AZN", 1)); // 10 AZN = 200 coins
 
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> {
@@ -316,7 +316,7 @@ class CoinWalletServiceTest {
         CoinWallet wallet = new CoinWallet(userId, new BigDecimal("320.00"));
         when(walletRepository.findByUserId(userId)).thenReturn(Optional.of(wallet));
         when(settingsRepository.findFirstByActiveTrueOrderByIdDesc()).thenReturn(Optional.of(defaultSettings));
-        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(123L, 1L))
+        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(eq(123L), eq(1L), eq(userId)))
                 .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(50.00, "AZN", 1));
 
         CalculateDiscountRequest request = CalculateDiscountRequest.builder()

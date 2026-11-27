@@ -57,7 +57,7 @@ public class ApplePayController {
         }
 
         try {
-            var details = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+            var details = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId, userId);
             if (details == null) {
                 log.warn("[ApplePayCreate] Invalid packageId or optionId. packageId={}, optionId={}", packageId, optionId);
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)

@@ -54,21 +54,34 @@ public class SubscriptionPackageGrpcClient {
         }
     }
 
+    /** Duration / existence lookups that do not need per-user campaign eligibility. */
     public OptionPriceCurrency getOptionPriceCurrency(Long packageId, Long optionId) {
+        return getOptionPriceCurrency(packageId, optionId, null);
+    }
+
+    /**
+     * Resolves charge amount for a package option. When {@code userId} is set, order-backend applies
+     * Black Friday campaign eligibility the same way as v3 checkout (gym legacy init path).
+     */
+    public OptionPriceCurrency getOptionPriceCurrency(Long packageId, Long optionId, Long userId) {
         if (packageId == null || optionId == null) {
             throw new IllegalArgumentException("PackageId and OptionId must be provided");
         }
-        String key = packageId + ":" + optionId;
+        // Cache key includes userId: campaign eligibility (redeemed / Bakcell) differs per user.
+        String key = packageId + ":" + optionId + ":" + (userId == null ? "anon" : userId);
         CacheEntry<OptionPriceCurrency> entry = optionCache.get(key);
         if (entry != null && !entry.isExpired()) {
             return entry.value;
         }
         try {
-            az.fitnest.order.grpc.GetOptionDetailsRequest request = az.fitnest.order.grpc.GetOptionDetailsRequest.newBuilder()
-                    .setPackageId(packageId)
-                    .setOptionId(optionId)
-                    .build();
-            az.fitnest.order.grpc.GetOptionDetailsResponse response = stub.getOptionDetails(request);
+            az.fitnest.order.grpc.GetOptionDetailsRequest.Builder request =
+                    az.fitnest.order.grpc.GetOptionDetailsRequest.newBuilder()
+                            .setPackageId(packageId)
+                            .setOptionId(optionId);
+            if (userId != null && userId > 0) {
+                request.setUserId(userId);
+            }
+            az.fitnest.order.grpc.GetOptionDetailsResponse response = stub.getOptionDetails(request.build());
             OptionPriceCurrency result = new OptionPriceCurrency(response.getAmount(), response.getCurrency(), response.getDurationMonths());
             optionCache.put(key, new CacheEntry<>(result, System.currentTimeMillis() + CACHE_TTL_MS));
             return result;

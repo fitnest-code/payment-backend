@@ -178,7 +178,7 @@ class KapitalIntegrationServiceTest {
 
     @Test
     void taksitCannotExceedPackageDuration() {
-        when(packageClient.getOptionPriceCurrency(1L, 2L))
+        when(packageClient.getOptionPriceCurrency(eq(1L), eq(2L), eq(1L)))
                 .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(30.0, "AZN", 3));
         KapitalInitiateRequest request = KapitalInitiateRequest.builder()
                 .packageId(1L).optionId(2L).installmentMonths(6).build();
@@ -189,7 +189,7 @@ class KapitalIntegrationServiceTest {
 
     @Test
     void initWithTaksitSendsDescriptionAndReturnsHppUrl() throws Exception {
-        when(packageClient.getOptionPriceCurrency(1L, 2L))
+        when(packageClient.getOptionPriceCurrency(eq(1L), eq(2L), eq(1L)))
                 .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(30.0, "AZN", 12));
         when(coinCheckoutHelper.applyForSubscription(any(), any(), any(), any(), anyDouble()))
                 .thenAnswer(inv -> CoinCheckoutHelper.AppliedCheckout.noCoins(inv.getArgument(4, Double.class)));

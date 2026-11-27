@@ -88,7 +88,7 @@ public class BnplIntegrationService {
         }
 
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(
-                request.getPackageId(), request.getOptionId());
+                request.getPackageId(), request.getOptionId(), userId);
         double originalAmount = priceCurrency.amount;
         boolean useCoins = Boolean.TRUE.equals(request.getIsCoinUsed())
                 || (request.getCoinsToUse() != null && request.getCoinsToUse().compareTo(BigDecimal.ZERO) > 0);

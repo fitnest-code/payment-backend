@@ -78,6 +78,12 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                 return;
             }
 
+            // Proto3 scalar: 0 means unset. Resolved early so non-prePriced re-quotes can apply BF eligibility.
+            Long userId = request.getUserId() > 0 ? request.getUserId() : null;
+            if (userId == null) {
+                log.warn("CreatePayment missing user_id for orderId={}", request.getOrderId());
+            }
+
             Long packageId = null;
             Long optionId = null;
             String campaignId = null;
@@ -94,7 +100,7 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                 }
 
                 if (packageId != null && optionId != null) {
-                    var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+                    var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId, userId);
                     amount = priceCurrency.amount;
                     currency = priceCurrency.currency != null ? priceCurrency.currency : currency;
                     otherAttr = PaymentPackageRef.encode(packageId, optionId, campaignId);
@@ -106,13 +112,6 @@ public class PaymentGrpcService extends PaymentServiceGrpc.PaymentServiceImplBas
                         .withDescription("Amount must be resolved from package/option or provided as positive")
                         .asRuntimeException());
                 return;
-            }
-
-            // Proto3 scalar: 0 means unset. Checkout must send the owning user so
-            // GET /me/payments/order/{id} ownership checks do not 403 on null user_id.
-            Long userId = request.getUserId() > 0 ? request.getUserId() : null;
-            if (userId == null) {
-                log.warn("CreatePayment missing user_id for orderId={}", request.getOrderId());
             }
 
             EpointPaymentRequest paymentRequest = EpointPaymentRequest.builder()

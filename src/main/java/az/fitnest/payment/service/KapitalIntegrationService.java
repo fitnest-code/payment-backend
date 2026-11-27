@@ -107,7 +107,7 @@ public class KapitalIntegrationService {
                 userId, request.getPackageId(), request.getOptionId(), months);
 
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(
-                request.getPackageId(), request.getOptionId());
+                request.getPackageId(), request.getOptionId(), userId);
         validateInstallmentAgainstDuration(months, priceCurrency.durationMonths);
 
         var applied = coinCheckoutHelper.applyForSubscription(

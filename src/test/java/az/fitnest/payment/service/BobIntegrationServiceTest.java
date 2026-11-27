@@ -80,7 +80,7 @@ class BobIntegrationServiceTest {
                 .description("Test Payment")
                 .build();
 
-        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(10L, 20L))
+        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(eq(10L), eq(20L), eq(userId)))
                 .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(25.00, "AZN", 1));
         when(paymentStore.buildPackageDescription(10L, 20L, "Test Payment"))
                 .thenReturn("Test Payment,packageId:10,optionId:20");
@@ -122,7 +122,7 @@ class BobIntegrationServiceTest {
         String cardId = "BINDING_999";
         UserCard userCard = UserCard.builder().userId(userId).cardId(cardId).cardMask("411111****1111").build();
         when(bobCardService.requireSavedCard(userId, cardId)).thenReturn(userCard);
-        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(10L, 20L))
+        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(eq(10L), eq(20L), eq(userId)))
                 .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(15.00, "AZN", 1));
         when(paymentStore.buildPackageDescription(10L, 20L, "FitNest Saved Card Payment"))
                 .thenReturn("FitNest Saved Card Payment,packageId:10,optionId:20");
@@ -253,7 +253,7 @@ class BobIntegrationServiceTest {
                 .description("Gold")
                 .build();
 
-        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(10L, 20L))
+        when(subscriptionPackageGrpcClient.getOptionPriceCurrency(eq(10L), eq(20L), eq(userId)))
                 .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(726.00, "AZN", 1));
         when(paymentStore.buildPackageDescription(10L, 20L, "Gold"))
                 .thenReturn("Gold,packageId:10,optionId:20");

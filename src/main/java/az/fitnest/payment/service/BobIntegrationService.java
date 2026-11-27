@@ -65,7 +65,7 @@ public class BobIntegrationService {
                 request.getSaveCard(), request.getInstallmentMonths());
 
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(
-                request.getPackageId(), request.getOptionId());
+                request.getPackageId(), request.getOptionId(), userId);
         var applied = coinCheckoutHelper.applyForSubscription(
                 userId,
                 request.getPackageId(),
@@ -225,7 +225,7 @@ public class BobIntegrationService {
         UserCard savedCard = bobCardService.requireSavedCard(userId, request.getCardId());
 
         var priceCurrency = subscriptionPackageGrpcClient.getOptionPriceCurrency(
-                request.getPackageId(), request.getOptionId());
+                request.getPackageId(), request.getOptionId(), userId);
         var applied = coinCheckoutHelper.applyForSubscription(
                 userId,
                 request.getPackageId(),
