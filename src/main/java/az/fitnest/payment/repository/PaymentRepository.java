@@ -46,6 +46,39 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     List<Payment> findAllByUserId(Long userId);
     List<Payment> findByStatusAndCreatedDateBetween(String status, java.time.LocalDateTime start, java.time.LocalDateTime end);
 
+    /** Dashboard income: SUCCESS cash rails only (excludes FitCoin full checkout). */
+    @Query("""
+            SELECT COALESCE(SUM(p.amount), 0) FROM Payment p
+            WHERE p.status = :status
+              AND p.createdDate BETWEEN :start AND :end
+              AND (p.provider IS NULL OR p.provider <> 'COIN')
+              AND (p.type IS NULL OR p.type <> 'FULL_COIN_PAYMENT')
+            """)
+    Double sumIncomeExcludingFitCoin(
+            @Param("status") String status,
+            @Param("start") java.time.LocalDateTime start,
+            @Param("end") java.time.LocalDateTime end);
+
+    @Query("""
+            SELECT COALESCE(SUM(p.amount), 0) FROM Payment p
+            WHERE p.status = :status AND p.createdDate BETWEEN :start AND :end
+            """)
+    Double sumAmountByStatusAndCreatedDateBetween(
+            @Param("status") String status,
+            @Param("start") java.time.LocalDateTime start,
+            @Param("end") java.time.LocalDateTime end);
+
+    @Query("""
+            SELECT COALESCE(SUM(p.amount), 0) FROM Payment p
+            WHERE p.status = 'SUCCESS'
+              AND p.provider IN :providers
+              AND p.createdDate BETWEEN :start AND :end
+            """)
+    Double sumAmountByProvidersAndCreatedDateBetween(
+            @Param("providers") java.util.Collection<String> providers,
+            @Param("start") java.time.LocalDateTime start,
+            @Param("end") java.time.LocalDateTime end);
+
     /** Provider-ə görə ödənişlər (məs: "ABB", "EPOINT") */
     List<Payment> findAllByProvider(String provider);
 
