@@ -79,6 +79,21 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             @Param("start") java.time.LocalDateTime start,
             @Param("end") java.time.LocalDateTime end);
 
+    /** Dashboard sparkline: daily income excluding FitCoin. */
+    @Query("""
+            SELECT CAST(p.createdDate AS LocalDate), COALESCE(SUM(p.amount), 0)
+            FROM Payment p
+            WHERE p.status = 'SUCCESS'
+              AND p.createdDate BETWEEN :start AND :end
+              AND (p.provider IS NULL OR p.provider <> 'COIN')
+              AND (p.type IS NULL OR p.type <> 'FULL_COIN_PAYMENT')
+            GROUP BY CAST(p.createdDate AS LocalDate)
+            ORDER BY CAST(p.createdDate AS LocalDate)
+            """)
+    java.util.List<Object[]> sumIncomeByDayExcludingFitCoin(
+            @Param("start") java.time.LocalDateTime start,
+            @Param("end") java.time.LocalDateTime end);
+
     /** Provider-ə görə ödənişlər (məs: "ABB", "EPOINT") */
     List<Payment> findAllByProvider(String provider);
 
