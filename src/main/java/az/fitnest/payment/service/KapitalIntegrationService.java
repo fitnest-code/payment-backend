@@ -9,6 +9,7 @@ import az.fitnest.payment.client.kapital.KapitalProperties;
 import az.fitnest.payment.client.kapital.KapitalRestClient;
 import az.fitnest.payment.dto.kapital.KapitalInitiateRequest;
 import az.fitnest.payment.dto.kapital.KapitalInitiateResponse;
+import az.fitnest.payment.dto.kapital.KapitalInstallmentOptionsResponse;
 import az.fitnest.payment.dto.kapital.KapitalRefundRequest;
 import az.fitnest.payment.dto.kapital.KapitalRefundResponse;
 import az.fitnest.payment.dto.kapital.KapitalStatusResponse;
@@ -54,7 +55,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class KapitalIntegrationService {
 
-    /** Months the bank supports for TAKSIT; anything else is rejected before touching the bank. */
+    /** Default TAKSIT months when config is blank; keep in sync with kapital.active-installment-months. */
     static final Set<Integer> SUPPORTED_INSTALLMENTS = Set.of(3, 6, 12);
     static final ZoneId BAKU = ZoneId.of("Asia/Baku");
 
@@ -458,14 +459,44 @@ public class KapitalIntegrationService {
 
     // -------------------------------------------------------------- helpers
 
-    /** null/0 = card; 3|6|12 = TAKSIT; anything else is rejected. */
-    static Integer normalizeInstallmentMonths(Integer months) {
+    /** Bank-configured TAKSIT months (sorted). Cached parse via {@link KapitalProperties}. */
+    public List<Integer> getSupportedInstallments() {
+        return properties.resolvedInstallmentMonths();
+    }
+
+    /**
+     * Installment chips for a subscription option: configured Kapital months that do not exceed
+     * the option's catalog {@code durationMonths}. Empty when duration is unknown/&lt;=0 or nothing fits.
+     */
+    public List<Integer> getEligibleInstallments(int packageDurationMonths) {
+        if (packageDurationMonths <= 0) {
+            return List.of();
+        }
+        return getSupportedInstallments().stream()
+                .filter(m -> m <= packageDurationMonths)
+                .toList();
+    }
+
+    /**
+     * One gRPC hop (cached duration) + in-memory filter. Response body is chips only.
+     */
+    public KapitalInstallmentOptionsResponse getEligibleInstallmentsForOption(Long packageId, Long optionId) {
+        if (packageId == null || optionId == null) {
+            throw new KapitalPaymentException("INVALID_PACKAGE_OPTION", "packageId və optionId tələb olunur");
+        }
+        int durationMonths = subscriptionPackageGrpcClient.getOptionDurationMonths(packageId, optionId);
+        return new KapitalInstallmentOptionsResponse(getEligibleInstallments(durationMonths));
+    }
+
+    /** null/0 = card; configured months = TAKSIT; anything else is rejected. */
+    Integer normalizeInstallmentMonths(Integer months) {
         if (months == null || months == 0) {
             return null;
         }
-        if (!SUPPORTED_INSTALLMENTS.contains(months)) {
+        List<Integer> supported = getSupportedInstallments();
+        if (!supported.contains(months)) {
             throw new KapitalPaymentException("INVALID_INSTALLMENT",
-                    "Dəstəklənməyən taksit müddəti: " + months + " (3, 6 və ya 12 olmalıdır)");
+                    "Dəstəklənməyən taksit müddəti: " + months + " (" + supported + " olmalıdır)");
         }
         return months;
     }

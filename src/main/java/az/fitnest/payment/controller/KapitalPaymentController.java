@@ -4,6 +4,7 @@ import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.client.kapital.KapitalProperties;
 import az.fitnest.payment.dto.kapital.KapitalInitiateRequest;
 import az.fitnest.payment.dto.kapital.KapitalInitiateResponse;
+import az.fitnest.payment.dto.kapital.KapitalInstallmentOptionsResponse;
 import az.fitnest.payment.dto.kapital.KapitalRefundRequest;
 import az.fitnest.payment.dto.kapital.KapitalRefundResponse;
 import az.fitnest.payment.dto.kapital.KapitalStatusResponse;
@@ -98,6 +99,23 @@ public class KapitalPaymentController {
 
         String redirectUrl = kapitalIntegrationService.processResult(bankOrderId);
         return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(redirectUrl)).build();
+    }
+
+    @Operation(
+            summary = "Kapital taksit ayları (packageId + optionId)",
+            description = "packageId+optionId → backend resolves option duration (1 cached gRPC) → "
+                    + "returns only installmentMonths filtered from bank set (3,6,12 today)."
+    )
+    @GetMapping({"/payment/kapital/installment", "/api/v2/payment/kapital/installment"})
+    public ResponseEntity<KapitalInstallmentOptionsResponse> getEligibleInstallments(
+            @RequestParam("packageId") Long packageId,
+            @RequestParam("optionId") Long optionId) {
+        // Cheap boolean; no JWT / no extra validation hops — duration comes from cached gRPC.
+        if (kapitalProperties.isMaintenanceMode()) {
+            throw new KapitalMaintenanceException(MAINTENANCE_MESSAGE);
+        }
+        return ResponseEntity.ok(
+                kapitalIntegrationService.getEligibleInstallmentsForOption(packageId, optionId));
     }
 
     @Operation(summary = "Ödəniş statusunu yoxla", description = "Kapital order ID üzrə status (GET /order ilə sinxron).")

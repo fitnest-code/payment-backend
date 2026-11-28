@@ -67,6 +67,9 @@ public class SecurityConfig {
                         // status is re-verified server-side via GET /order, never trusted from the query.
                         .requestMatchers("/payment/kapital/result").permitAll()
                         .requestMatchers("/api/v1/payments/kapital/result").permitAll()
+                        // Taksit chip list for checkout (same stance as ABB/BOB installment GET)
+                        .requestMatchers("/payment/kapital/installment").permitAll()
+                        .requestMatchers("/api/v2/payment/kapital/installment").permitAll()
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/swagger-ui.html").permitAll()
