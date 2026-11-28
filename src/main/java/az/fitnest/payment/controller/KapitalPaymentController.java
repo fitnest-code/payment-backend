@@ -100,6 +100,19 @@ public class KapitalPaymentController {
         return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(redirectUrl)).build();
     }
 
+    @Operation(
+            summary = "Kapital taksit ayları (paket müddətinə görə)",
+            description = "Paket option durationMonths göndərilir; cavabda Kapital-ın aktiv taksit "
+                    + "aylarından (hazırda 3,6,12) yalnız paket müddətindən böyük olmayanlar qalır. "
+                    + "Məs: durationMonths=6 → [3,6]; durationMonths=12 → [3,6,12]."
+    )
+    @GetMapping({"/payment/kapital/installment", "/api/v2/payment/kapital/installment"})
+    public ResponseEntity<java.util.List<Integer>> getEligibleInstallments(
+            @RequestParam("durationMonths") int durationMonths) {
+        checkMaintenance("/installment GET");
+        return ResponseEntity.ok(kapitalIntegrationService.getEligibleInstallments(durationMonths));
+    }
+
     @Operation(summary = "Ödəniş statusunu yoxla", description = "Kapital order ID üzrə status (GET /order ilə sinxron).")
     @GetMapping("/payment/kapital/status/{providerOrderId}")
     public ResponseEntity<KapitalStatusResponse> getStatus(@PathVariable String providerOrderId) {

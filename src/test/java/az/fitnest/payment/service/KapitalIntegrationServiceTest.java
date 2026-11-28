@@ -228,10 +228,28 @@ class KapitalIntegrationServiceTest {
 
     @Test
     void cardInstallmentNormalization() {
-        assertNull(KapitalIntegrationService.normalizeInstallmentMonths(null));
-        assertNull(KapitalIntegrationService.normalizeInstallmentMonths(0));
-        assertEquals(12, KapitalIntegrationService.normalizeInstallmentMonths(12));
-        assertThrows(KapitalPaymentException.class, () -> KapitalIntegrationService.normalizeInstallmentMonths(2));
+        assertNull(service.normalizeInstallmentMonths(null));
+        assertNull(service.normalizeInstallmentMonths(0));
+        assertEquals(12, service.normalizeInstallmentMonths(12));
+        assertThrows(KapitalPaymentException.class, () -> service.normalizeInstallmentMonths(2));
+    }
+
+    @Test
+    void eligibleInstallmentsFilteredByPackageDuration() {
+        assertEquals(java.util.List.of(3, 6, 12), service.getEligibleInstallments(12));
+        assertEquals(java.util.List.of(3, 6), service.getEligibleInstallments(6));
+        assertEquals(java.util.List.of(3), service.getEligibleInstallments(3));
+        assertEquals(java.util.List.of(), service.getEligibleInstallments(1));
+        assertEquals(java.util.List.of(), service.getEligibleInstallments(0));
+    }
+
+    @Test
+    void eligibleInstallmentsRespectConfiguredBankMonths() {
+        properties.setActiveInstallmentMonths("3,6,12");
+        assertEquals(java.util.List.of(3, 6), service.getEligibleInstallments(6));
+        // When bank list expands later, only months ≤ package duration are returned.
+        properties.setActiveInstallmentMonths("1,2,3,4,5,6,12");
+        assertEquals(java.util.List.of(1, 2, 3, 4, 5, 6), service.getEligibleInstallments(6));
     }
 
     // -------------------------------------------------------------- refund

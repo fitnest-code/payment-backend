@@ -37,9 +37,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Kapital Bank (HPP, Order_SMS) orchestration: create order -> redirect to HPP -> verify via
@@ -54,7 +56,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class KapitalIntegrationService {
 
-    /** Months the bank supports for TAKSIT; anything else is rejected before touching the bank. */
+    /** Default TAKSIT months when config is blank; keep in sync with kapital.active-installment-months. */
     static final Set<Integer> SUPPORTED_INSTALLMENTS = Set.of(3, 6, 12);
     static final ZoneId BAKU = ZoneId.of("Asia/Baku");
 
@@ -458,14 +460,54 @@ public class KapitalIntegrationService {
 
     // -------------------------------------------------------------- helpers
 
-    /** null/0 = card; 3|6|12 = TAKSIT; anything else is rejected. */
-    static Integer normalizeInstallmentMonths(Integer months) {
+    /**
+     * Bank-configured TAKSIT months (sorted). Used by init validation and the installment options API.
+     * Blank/invalid config falls back to {@link #SUPPORTED_INSTALLMENTS}.
+     */
+    public List<Integer> getSupportedInstallments() {
+        String active = properties.getActiveInstallmentMonths();
+        if (active == null || active.isBlank()) {
+            return SUPPORTED_INSTALLMENTS.stream().sorted().toList();
+        }
+        try {
+            List<Integer> parsed = Arrays.stream(active.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .map(Integer::parseInt)
+                    .filter(m -> m > 0)
+                    .distinct()
+                    .sorted()
+                    .collect(Collectors.toList());
+            return parsed.isEmpty() ? SUPPORTED_INSTALLMENTS.stream().sorted().toList() : parsed;
+        } catch (NumberFormatException e) {
+            log.warn("[KAPITAL] Invalid active-installment-months='{}', using default {}",
+                    active, SUPPORTED_INSTALLMENTS);
+            return SUPPORTED_INSTALLMENTS.stream().sorted().toList();
+        }
+    }
+
+    /**
+     * Installment chips for a subscription option: configured Kapital months that do not exceed
+     * {@code packageDurationMonths}. Empty when duration is unknown/&lt;=0 or nothing fits.
+     */
+    public List<Integer> getEligibleInstallments(int packageDurationMonths) {
+        if (packageDurationMonths <= 0) {
+            return List.of();
+        }
+        return getSupportedInstallments().stream()
+                .filter(m -> m <= packageDurationMonths)
+                .toList();
+    }
+
+    /** null/0 = card; configured months = TAKSIT; anything else is rejected. */
+    Integer normalizeInstallmentMonths(Integer months) {
         if (months == null || months == 0) {
             return null;
         }
-        if (!SUPPORTED_INSTALLMENTS.contains(months)) {
+        List<Integer> supported = getSupportedInstallments();
+        if (!supported.contains(months)) {
             throw new KapitalPaymentException("INVALID_INSTALLMENT",
-                    "Dəstəklənməyən taksit müddəti: " + months + " (3, 6 və ya 12 olmalıdır)");
+                    "Dəstəklənməyən taksit müddəti: " + months + " (" + supported + " olmalıdır)");
         }
         return months;
     }

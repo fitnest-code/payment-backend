@@ -269,6 +269,8 @@ kapital:
   preparing-timeout-ms: ${KAPITAL_PREPARING_TIMEOUT_MS:3600000}
   maintenance-mode: ${KAPITAL_MAINTENANCE_MODE:false}
   timeout-ms: ${KAPITAL_TIMEOUT_MS:15000}
+  # TAKSIT months Kapital allows today; filter further by package durationMonths on /installment.
+  active-installment-months: ${KAPITAL_ACTIVE_INSTALLMENT_MONTHS:3,6,12}
   # AES-GCM key for payments.encrypted_order_password; empty = encryption fails closed.
   order-password-encryption-key: ${KAPITAL_ORDER_PASSWORD_ENCRYPTION_KEY:}
 

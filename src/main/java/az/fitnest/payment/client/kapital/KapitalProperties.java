@@ -53,6 +53,12 @@ public class KapitalProperties {
 
     private int timeoutMs = 15_000;
 
+    /**
+     * Comma-separated TAKSIT months Kapital currently allows (e.g. {@code 3,6,12}).
+     * Eligible chips for a package are this list filtered to {@code <= package duration}.
+     */
+    private String activeInstallmentMonths = "3,6,12";
+
     /** AES key (32 bytes after padding) for payments.encrypted_order_password. */
     private String orderPasswordEncryptionKey;
 }
