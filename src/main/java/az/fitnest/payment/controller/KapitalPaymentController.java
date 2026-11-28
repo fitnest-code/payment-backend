@@ -4,6 +4,7 @@ import az.fitnest.payment.client.SubscriptionPackageGrpcClient;
 import az.fitnest.payment.client.kapital.KapitalProperties;
 import az.fitnest.payment.dto.kapital.KapitalInitiateRequest;
 import az.fitnest.payment.dto.kapital.KapitalInitiateResponse;
+import az.fitnest.payment.dto.kapital.KapitalInstallmentOptionsResponse;
 import az.fitnest.payment.dto.kapital.KapitalRefundRequest;
 import az.fitnest.payment.dto.kapital.KapitalRefundResponse;
 import az.fitnest.payment.dto.kapital.KapitalStatusResponse;
@@ -101,16 +102,18 @@ public class KapitalPaymentController {
     }
 
     @Operation(
-            summary = "Kapital taksit ayları (paket müddətinə görə)",
-            description = "Paket option durationMonths göndərilir; cavabda Kapital-ın aktiv taksit "
-                    + "aylarından (hazırda 3,6,12) yalnız paket müddətindən böyük olmayanlar qalır. "
-                    + "Məs: durationMonths=6 → [3,6]; durationMonths=12 → [3,6,12]."
+            summary = "Kapital taksit ayları (packageId + optionId)",
+            description = "Mobile göndərir packageId və optionId; backend option müddətini order-backend-dən oxuyur "
+                    + "və Kapital-ın aktiv taksit aylarından (hazırda 3,6,12) yalnız müddətdən böyük olmayanları qaytarır. "
+                    + "Məs: 6 aylıq option → installmentMonths [3,6]; 12 aylıq → [3,6,12]."
     )
     @GetMapping({"/payment/kapital/installment", "/api/v2/payment/kapital/installment"})
-    public ResponseEntity<java.util.List<Integer>> getEligibleInstallments(
-            @RequestParam("durationMonths") int durationMonths) {
+    public ResponseEntity<KapitalInstallmentOptionsResponse> getEligibleInstallments(
+            @RequestParam("packageId") Long packageId,
+            @RequestParam("optionId") Long optionId) {
         checkMaintenance("/installment GET");
-        return ResponseEntity.ok(kapitalIntegrationService.getEligibleInstallments(durationMonths));
+        return ResponseEntity.ok(
+                kapitalIntegrationService.getEligibleInstallmentsForOption(packageId, optionId));
     }
 
     @Operation(summary = "Ödəniş statusunu yoxla", description = "Kapital order ID üzrə status (GET /order ilə sinxron).")

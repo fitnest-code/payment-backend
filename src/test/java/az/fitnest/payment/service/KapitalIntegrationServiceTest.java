@@ -252,6 +252,19 @@ class KapitalIntegrationServiceTest {
         assertEquals(java.util.List.of(1, 2, 3, 4, 5, 6), service.getEligibleInstallments(6));
     }
 
+    @Test
+    void eligibleInstallmentsResolvedFromPackageOption() {
+        when(packageClient.getOptionPriceCurrency(eq(4L), eq(17L)))
+                .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(30.0, "AZN", 6));
+
+        var response = service.getEligibleInstallmentsForOption(4L, 17L);
+
+        assertEquals(4L, response.getPackageId());
+        assertEquals(17L, response.getOptionId());
+        assertEquals(6, response.getDurationMonths());
+        assertEquals(java.util.List.of(3, 6), response.getInstallmentMonths());
+    }
+
     // -------------------------------------------------------------- refund
 
     private static LocalDateTime bakuNowAsLocal(long minusDays) {

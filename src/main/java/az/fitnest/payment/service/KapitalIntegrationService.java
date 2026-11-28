@@ -9,6 +9,7 @@ import az.fitnest.payment.client.kapital.KapitalProperties;
 import az.fitnest.payment.client.kapital.KapitalRestClient;
 import az.fitnest.payment.dto.kapital.KapitalInitiateRequest;
 import az.fitnest.payment.dto.kapital.KapitalInitiateResponse;
+import az.fitnest.payment.dto.kapital.KapitalInstallmentOptionsResponse;
 import az.fitnest.payment.dto.kapital.KapitalRefundRequest;
 import az.fitnest.payment.dto.kapital.KapitalRefundResponse;
 import az.fitnest.payment.dto.kapital.KapitalStatusResponse;
@@ -488,7 +489,7 @@ public class KapitalIntegrationService {
 
     /**
      * Installment chips for a subscription option: configured Kapital months that do not exceed
-     * {@code packageDurationMonths}. Empty when duration is unknown/&lt;=0 or nothing fits.
+     * the option's catalog {@code durationMonths}. Empty when duration is unknown/&lt;=0 or nothing fits.
      */
     public List<Integer> getEligibleInstallments(int packageDurationMonths) {
         if (packageDurationMonths <= 0) {
@@ -497,6 +498,23 @@ public class KapitalIntegrationService {
         return getSupportedInstallments().stream()
                 .filter(m -> m <= packageDurationMonths)
                 .toList();
+    }
+
+    /**
+     * Resolves option duration via order-backend, then returns eligible TAKSIT months for checkout chips.
+     */
+    public KapitalInstallmentOptionsResponse getEligibleInstallmentsForOption(Long packageId, Long optionId) {
+        if (packageId == null || optionId == null) {
+            throw new KapitalPaymentException("INVALID_PACKAGE_OPTION", "packageId və optionId tələb olunur");
+        }
+        var price = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
+        int durationMonths = price.durationMonths;
+        return KapitalInstallmentOptionsResponse.builder()
+                .packageId(packageId)
+                .optionId(optionId)
+                .durationMonths(durationMonths)
+                .installmentMonths(getEligibleInstallments(durationMonths))
+                .build();
     }
 
     /** null/0 = card; configured months = TAKSIT; anything else is rejected. */
