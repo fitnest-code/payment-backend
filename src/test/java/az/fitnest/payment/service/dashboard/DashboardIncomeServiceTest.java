@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -32,6 +33,8 @@ class DashboardIncomeServiceTest {
                 .thenReturn(10.0);
         when(paymentRepository.sumAmountByProvidersAndCreatedDateBetween(any(Collection.class), any(), any()))
                 .thenReturn(40.0);
+        when(paymentRepository.sumIncomeByDayExcludingFitCoin(any(), any()))
+                .thenReturn(List.<Object[]>of(new Object[]{LocalDate.of(2026, 11, 1), 50.0}));
 
         DashboardIncomeSummaryResponse res = service.getIncomeSummary(
                 LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 30));
@@ -41,6 +44,8 @@ class DashboardIncomeServiceTest {
         assertTrue(res.incomePositiveTrend());
         assertEquals(10.0, res.refundAmount());
         assertEquals(40.0, res.pendingBnplAmount());
+        assertEquals(30, res.sparkline().size());
+        assertEquals(50.0, res.sparkline().get(0));
         assertEquals("2026-11-01", res.dateFrom());
         assertEquals("2026-11-30", res.dateTo());
     }
@@ -53,11 +58,13 @@ class DashboardIncomeServiceTest {
                 .thenReturn(0.0);
         when(paymentRepository.sumAmountByProvidersAndCreatedDateBetween(any(Collection.class), any(), any()))
                 .thenReturn(0.0);
+        when(paymentRepository.sumIncomeByDayExcludingFitCoin(any(), any())).thenReturn(List.of());
 
         DashboardIncomeSummaryResponse res = service.getIncomeSummary(
                 LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 30));
 
         assertNull(res.incomeDeltaPct());
         assertTrue(res.incomePositiveTrend());
+        assertEquals(30, res.sparkline().size());
     }
 }
