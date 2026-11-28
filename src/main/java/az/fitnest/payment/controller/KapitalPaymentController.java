@@ -103,15 +103,17 @@ public class KapitalPaymentController {
 
     @Operation(
             summary = "Kapital taksit ayları (packageId + optionId)",
-            description = "Mobile göndərir packageId və optionId; backend option müddətini order-backend-dən oxuyur "
-                    + "və Kapital-ın aktiv taksit aylarından (hazırda 3,6,12) yalnız müddətdən böyük olmayanları qaytarır. "
-                    + "Məs: 6 aylıq option → installmentMonths [3,6]; 12 aylıq → [3,6,12]."
+            description = "packageId+optionId → backend resolves option duration (1 cached gRPC) → "
+                    + "returns only installmentMonths filtered from bank set (3,6,12 today)."
     )
     @GetMapping({"/payment/kapital/installment", "/api/v2/payment/kapital/installment"})
     public ResponseEntity<KapitalInstallmentOptionsResponse> getEligibleInstallments(
             @RequestParam("packageId") Long packageId,
             @RequestParam("optionId") Long optionId) {
-        checkMaintenance("/installment GET");
+        // Cheap boolean; no JWT / no extra validation hops — duration comes from cached gRPC.
+        if (kapitalProperties.isMaintenanceMode()) {
+            throw new KapitalMaintenanceException(MAINTENANCE_MESSAGE);
+        }
         return ResponseEntity.ok(
                 kapitalIntegrationService.getEligibleInstallmentsForOption(packageId, optionId));
     }

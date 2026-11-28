@@ -15,6 +15,8 @@ public class SubscriptionPackageGrpcClient {
     private SubscriptionPackageServiceGrpc.SubscriptionPackageServiceBlockingStub stub;
 
     private final Map<String, CacheEntry<OptionPriceCurrency>> optionCache = new ConcurrentHashMap<>();
+    /** Catalog duration only (not campaign/amount) — used by light chip APIs. */
+    private final Map<String, CacheEntry<Integer>> durationCache = new ConcurrentHashMap<>();
     private final Map<String, CacheEntry<Boolean>> existsCache = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 5 * 60 * 1000L; // 5 minutes
 
@@ -48,6 +50,34 @@ public class SubscriptionPackageGrpcClient {
             boolean exists = response.getExists();
             existsCache.put(key, new CacheEntry<>(exists, System.currentTimeMillis() + CACHE_TTL_MS));
             return exists;
+        } catch (Exception e) {
+            if (entry != null) return entry.value;
+            throw e;
+        }
+    }
+
+    /**
+     * Catalog option duration only (one gRPC hop, 5m cache). Prefer this over
+     * {@link #getOptionPriceCurrency} when amount/currency are unused.
+     */
+    public int getOptionDurationMonths(Long packageId, Long optionId) {
+        if (packageId == null || optionId == null) {
+            throw new IllegalArgumentException("PackageId and OptionId must be provided");
+        }
+        String key = packageId + ":" + optionId;
+        CacheEntry<Integer> entry = durationCache.get(key);
+        if (entry != null && !entry.isExpired()) {
+            return entry.value;
+        }
+        try {
+            az.fitnest.order.grpc.GetOptionDetailsResponse response = stub.getOptionDetails(
+                    az.fitnest.order.grpc.GetOptionDetailsRequest.newBuilder()
+                            .setPackageId(packageId)
+                            .setOptionId(optionId)
+                            .build());
+            int duration = response.getDurationMonths();
+            durationCache.put(key, new CacheEntry<>(duration, System.currentTimeMillis() + CACHE_TTL_MS));
+            return duration;
         } catch (Exception e) {
             if (entry != null) return entry.value;
             throw e;

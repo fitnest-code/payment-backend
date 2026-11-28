@@ -38,11 +38,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Kapital Bank (HPP, Order_SMS) orchestration: create order -> redirect to HPP -> verify via
@@ -461,30 +459,9 @@ public class KapitalIntegrationService {
 
     // -------------------------------------------------------------- helpers
 
-    /**
-     * Bank-configured TAKSIT months (sorted). Used by init validation and the installment options API.
-     * Blank/invalid config falls back to {@link #SUPPORTED_INSTALLMENTS}.
-     */
+    /** Bank-configured TAKSIT months (sorted). Cached parse via {@link KapitalProperties}. */
     public List<Integer> getSupportedInstallments() {
-        String active = properties.getActiveInstallmentMonths();
-        if (active == null || active.isBlank()) {
-            return SUPPORTED_INSTALLMENTS.stream().sorted().toList();
-        }
-        try {
-            List<Integer> parsed = Arrays.stream(active.split(","))
-                    .map(String::trim)
-                    .filter(s -> !s.isEmpty())
-                    .map(Integer::parseInt)
-                    .filter(m -> m > 0)
-                    .distinct()
-                    .sorted()
-                    .collect(Collectors.toList());
-            return parsed.isEmpty() ? SUPPORTED_INSTALLMENTS.stream().sorted().toList() : parsed;
-        } catch (NumberFormatException e) {
-            log.warn("[KAPITAL] Invalid active-installment-months='{}', using default {}",
-                    active, SUPPORTED_INSTALLMENTS);
-            return SUPPORTED_INSTALLMENTS.stream().sorted().toList();
-        }
+        return properties.resolvedInstallmentMonths();
     }
 
     /**
@@ -501,20 +478,14 @@ public class KapitalIntegrationService {
     }
 
     /**
-     * Resolves option duration via order-backend, then returns eligible TAKSIT months for checkout chips.
+     * One gRPC hop (cached duration) + in-memory filter. Response body is chips only.
      */
     public KapitalInstallmentOptionsResponse getEligibleInstallmentsForOption(Long packageId, Long optionId) {
         if (packageId == null || optionId == null) {
             throw new KapitalPaymentException("INVALID_PACKAGE_OPTION", "packageId və optionId tələb olunur");
         }
-        var price = subscriptionPackageGrpcClient.getOptionPriceCurrency(packageId, optionId);
-        int durationMonths = price.durationMonths;
-        return KapitalInstallmentOptionsResponse.builder()
-                .packageId(packageId)
-                .optionId(optionId)
-                .durationMonths(durationMonths)
-                .installmentMonths(getEligibleInstallments(durationMonths))
-                .build();
+        int durationMonths = subscriptionPackageGrpcClient.getOptionDurationMonths(packageId, optionId);
+        return new KapitalInstallmentOptionsResponse(getEligibleInstallments(durationMonths));
     }
 
     /** null/0 = card; configured months = TAKSIT; anything else is rejected. */

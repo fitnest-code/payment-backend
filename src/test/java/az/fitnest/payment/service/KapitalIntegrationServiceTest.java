@@ -254,15 +254,14 @@ class KapitalIntegrationServiceTest {
 
     @Test
     void eligibleInstallmentsResolvedFromPackageOption() {
-        when(packageClient.getOptionPriceCurrency(eq(4L), eq(17L)))
-                .thenReturn(new SubscriptionPackageGrpcClient.OptionPriceCurrency(30.0, "AZN", 6));
+        when(packageClient.getOptionDurationMonths(eq(4L), eq(17L))).thenReturn(6);
 
         var response = service.getEligibleInstallmentsForOption(4L, 17L);
 
-        assertEquals(4L, response.getPackageId());
-        assertEquals(17L, response.getOptionId());
-        assertEquals(6, response.getDurationMonths());
-        assertEquals(java.util.List.of(3, 6), response.getInstallmentMonths());
+        assertEquals(java.util.List.of(3, 6), response.installmentMonths());
+        verify(packageClient).getOptionDurationMonths(4L, 17L);
+        verify(packageClient, never()).getOptionPriceCurrency(any(), any(), any());
+        verify(packageClient, never()).getOptionPriceCurrency(any(), any());
     }
 
     // -------------------------------------------------------------- refund
